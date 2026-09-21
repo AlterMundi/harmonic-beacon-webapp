@@ -5,6 +5,11 @@ releases, deploys, incidents, backups, payments, identity, or service health,
 read `docs/ops/OPERATING_CONTRACT.md` and inspect
 `deploy/platform-services.json` before acting.
 
+Codex and Hermes share `docs/ops/OPERATOR_LOOP.md` for delivery, review and
+handoff. Read it when taking operational ownership. Missing skill discovery
+does not prevent reading these repository instructions directly. Resolve the
+canonical repository before fetching: `origin` may be a personal fork.
+
 Use a dedicated clean worktree for repository changes and preserve unrelated
 user or operator work. Before editing, inspect the current branch, status,
 upstreams, concurrent worktrees, and relevant open pull requests. Do not treat
