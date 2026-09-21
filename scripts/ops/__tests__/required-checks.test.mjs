@@ -337,9 +337,6 @@ test('C2 selects the complete integrated form only after C1 compatibility exists
     'e2e / e2e', 'e2e / account', 'required-impact-checks',
   ]);
 
-  const e2eWorkflow = readFileSync(resolve(ROOT, '.github/workflows/e2e.yml'), 'utf8');
-  assert.match(e2eWorkflow, /^ {2}pull_request:/m,
-    'the legacy emitter stays active while protected-base policy switches to integrated-v2');
 });
 
 test('integrated evidence never mixes direct legacy E2E success with missing or red CI E2E', () => {
@@ -820,11 +817,14 @@ test('closed PRs and wrong target branches fail closed', () => {
   assertState(evaluateRequiredChecks(input({ currentBaseRef: 'early-birds' })), 'failure', 'unexpected-base');
 });
 
-test('constituent workflows rerun their base-sensitive evidence after retargeting', () => {
-  for (const path of ['ci.yml', 'e2e.yml', 'audio-boundary.yml']) {
+test('PR entry workflows rerun their base-sensitive evidence after retargeting', () => {
+  for (const path of ['ci.yml', 'audio-boundary.yml']) {
     const workflow = readFileSync(resolve(ROOT, '.github', 'workflows', path), 'utf8');
     assert.match(workflow, /pull_request:\n(?:.|\n)*?types: \[[^\]]*edited[^\]]*\]/, path);
   }
+  const e2eWorkflow = readFileSync(resolve(ROOT, '.github/workflows/e2e.yml'), 'utf8');
+  assert.match(e2eWorkflow, /^ {2}workflow_call:/m);
+  assert.doesNotMatch(e2eWorkflow, /^ {2}pull_request:/m);
 });
 
 test('privileged delivery authority is never loaded by workflow_run from the default branch', () => {

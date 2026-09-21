@@ -33,6 +33,19 @@ test('commerce verifier runs inside the mapped test context', () => {
   assert.match(ciWorkflow, /^\s*- run: npm run contract:commerce:verify$/mu);
 });
 
+test('CI is the sole PR orchestrator for the reusable E2E matrix', () => {
+  assert.match(ciWorkflow, /uses: \.\/\.github\/workflows\/e2e\.yml/u);
+  assert.match(e2eWorkflow, /^ {2}workflow_call:/m);
+  assert.doesNotMatch(e2eWorkflow, /^ {2}pull_request:/m);
+  assert.doesNotMatch(e2eWorkflow, /github\.event\.pull_request\.draft/u);
+});
+
+test('the distinct audio label boundary remains a PR check', () => {
+  assert.match(audioWorkflow, /^ {2}pull_request:/m);
+  assert.match(audioWorkflow, /Require the audio-touching label/u);
+  assert.match(ciWorkflow, /^  frozen-audio-paths:/m);
+});
+
 test('candidate-executing pull request workflows grant read-only contents explicitly', () => {
   for (const [path, workflow] of [
     ['ci.yml', ciWorkflow],

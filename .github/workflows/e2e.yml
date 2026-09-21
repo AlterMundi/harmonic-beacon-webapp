@@ -15,15 +15,6 @@ name: E2E quality gates
 # emulations, not physical-device launch evidence.
 
 on:
-  pull_request:
-    branches: [main, release]
-    types: [opened, synchronize, reopened, edited, ready_for_review]
-    # Documentation-only PRs cannot affect the browser/runtime contract. Keep
-    # this filter scoped to pull_request: release deploys invoke workflow_call
-    # and must always run the complete gate.
-    paths-ignore:
-      - 'docs/**'
-      - '**/*.md'
   workflow_call:
 
 permissions:
@@ -35,10 +26,6 @@ concurrency:
 
 jobs:
   e2e:
-    # Drafts use focused checks while they are moving quickly. The
-    # ready_for_review event above runs this complete matrix before review;
-    # workflow_call (release/deploy) remains unconditional.
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-24.04
     services:
       postgres:
@@ -332,7 +319,6 @@ jobs:
 
   account:
     # Separate runner: no attachment to the legacy Account-disabled database/app.
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     permissions:
