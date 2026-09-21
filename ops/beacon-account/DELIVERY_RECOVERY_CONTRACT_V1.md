@@ -19,6 +19,13 @@ current delivery run/attempt. It never
 invokes Git in the runner checkout, consumes runner Git configuration/remotes,
 or executes a runner-workspace file.
 
+GitHub's workflow-run REST response does not expose dispatch `inputs`. The
+workflow therefore binds the complete validated dispatch coordinates in its
+`run-name`; the helper compares the API's `display_title` exactly, alongside
+the independent source, branch, event, workflow path and attempt checks. A
+missing, partial or different title is rejected. Synthetic tests must model
+the actual API shape rather than inventing an `inputs` field.
+
 Staging and production have distinct protected environments and runner labels:
 `account-staging` and `account-production`. The runner identity has no Docker,
 shell, Git, or general sudo authority. Its only privileged interface is the six

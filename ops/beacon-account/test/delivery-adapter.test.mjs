@@ -100,6 +100,11 @@ function validRun({ id, attempt, sha, workflow, event }) {
   };
 }
 
+function deliveryDisplayTitle({ target, sha, ciRun, ciAttempt, operation, configSha }) {
+  return `Account delivery|target=${target}|sha=${sha}|ci=${ciRun}/${ciAttempt}`
+    + `|operation=${operation}|config=${configSha}`;
+}
+
 function helperFixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'account-delivery-helper-'));
   const workspace = path.join(root, 'workspace');
@@ -238,14 +243,14 @@ exit 0
       }),
       status: 'in_progress',
       conclusion: null,
-      inputs: {
+      display_title: deliveryDisplayTitle({
         target: 'staging',
         sha,
-        ci_run_id: ciRun,
-        ci_run_attempt: ciAttempt,
-        config_contract_sha256: configSha,
+        ciRun,
+        ciAttempt,
+        configSha,
         operation: 'deploy',
-      },
+      }),
       ...delivery,
     }));
   };
@@ -322,6 +327,7 @@ test('workflow validates PRs and binds manual delivery to early-birds, exact run
   assert.match(workflow, /GITHUB_RUN_ATTEMPT/);
   assert.match(workflow, /early-birds-fast-forward\.yml/);
   assert.match(workflow, /HB_INPUT_CONFIG_CONTRACT_SHA256: \$\{\{ inputs\.config_contract_sha256 \}\}/);
+  assert.match(workflow, /run-name: Account delivery\|target=\$\{\{ inputs\.target[^\n]*\|sha=\$\{\{ inputs\.sha[^\n]*\|ci=\$\{\{ inputs\.ci_run_id[^\n]*\/\$\{\{ inputs\.ci_run_attempt[^\n]*\|operation=\$\{\{ inputs\.operation[^\n]*\|config=\$\{\{ inputs\.config_contract_sha256/);
   const laneWorkflow = read(path.join(REPOSITORY, '.github/workflows/early-birds-fast-forward.yml'));
   assert.equal((laneWorkflow.match(/\.github\/workflows\/account-delivery\.yml/g) ?? []).length, 2);
   assert.match(workflow, /ACCOUNT_PRODUCTION_PROTECTED_V1/);
@@ -538,7 +544,7 @@ test('installed lifecycle bundle rejects writable, symlinked, hard-linked, speci
   assert.equal(fixture.invoke('probe').status, 0);
 });
 
-test('typed workflow-dispatch evidence binds target, source, CI evidence, operation, run and attempt', (t) => {
+test('workflow-dispatch display title binds target, source, CI evidence, operation, run and attempt', (t) => {
   const fixture = helperFixture(t);
   fs.writeFileSync(path.join(fixture.state, 'production-activation'), 'account-production-protected-environment-v1\n', { mode: 0o600 });
   const invokeProduction = () => run(
@@ -548,25 +554,30 @@ test('typed workflow-dispatch evidence binds target, source, CI evidence, operat
     { cwd: fixture.workspace, env: fixture.env },
   );
 
+  const title = (overrides = {}) => deliveryDisplayTitle({
+    target: 'production', sha: fixture.currentSha, ciRun: fixture.ciRun,
+    ciAttempt: fixture.ciAttempt, operation: 'deploy', configSha: fixture.configSha,
+    ...overrides,
+  });
   const mismatches = [
-    { target: 'staging', sha: fixture.currentSha, ci_run_id: fixture.ciRun, ci_run_attempt: fixture.ciAttempt, operation: 'deploy' },
-    { target: 'production', sha: 'a'.repeat(40), ci_run_id: fixture.ciRun, ci_run_attempt: fixture.ciAttempt, operation: 'deploy' },
-    { target: 'production', sha: fixture.currentSha, ci_run_id: '999', ci_run_attempt: fixture.ciAttempt, operation: 'deploy' },
-    { target: 'production', sha: fixture.currentSha, ci_run_id: fixture.ciRun, ci_run_attempt: '9', operation: 'deploy' },
-    { target: 'production', sha: fixture.currentSha, ci_run_id: fixture.ciRun, ci_run_attempt: fixture.ciAttempt, operation: 'interruption-checkpoint' },
-    { target: 'production', sha: fixture.currentSha, ci_run_id: fixture.ciRun, ci_run_attempt: fixture.ciAttempt, config_contract_sha256: 'f'.repeat(64), operation: 'deploy' },
+    ['target', title({ target: 'staging' })],
+    ['source', title({ sha: 'a'.repeat(40) })],
+    ['CI run', title({ ciRun: '999' })],
+    ['CI attempt', title({ ciAttempt: '9' })],
+    ['operation', title({ operation: 'interruption-checkpoint' })],
+    ['config', title({ configSha: 'f'.repeat(64) })],
+    ['missing title', undefined],
   ];
-  for (const inputs of mismatches) {
-    fixture.writeRuns({ delivery: { inputs } });
+  for (const [label, displayTitle] of mismatches) {
+    fixture.writeRuns({ delivery: { display_title: displayTitle } });
     const result = invokeProduction();
-    assert.notEqual(result.status, 0, JSON.stringify(inputs));
-    assert.match(result.stderr, /dispatch inputs|input .*mismatch/i);
+    assert.notEqual(result.status, 0, label);
+    assert.match(result.stderr, /display title binding mismatch/i);
   }
-  fixture.writeRuns({ delivery: { inputs: {
-    target: 'production', sha: fixture.currentSha, ci_run_id: fixture.ciRun,
-    ci_run_attempt: fixture.ciAttempt, config_contract_sha256: fixture.configSha,
-    operation: 'deploy',
-  } } });
+  fixture.writeRuns({ delivery: { display_title: title() } });
+  const apiRun = JSON.parse(read(path.join(fixture.env.HB_ACCOUNT_DELIVERY_API_FIXTURES,
+    `${fixture.deliveryRun}-${fixture.deliveryAttempt}.json`)));
+  assert.equal(Object.hasOwn(apiRun, 'inputs'), false, 'fixture must match the real REST run shape');
   assert.equal(invokeProduction().status, 0);
 });
 
@@ -758,11 +769,13 @@ test('exact smoke replay returns the committed receipt without rerunning health 
 
 test('interruption receipt recovery advances state without repeating the cutover checkpoint', (t) => {
   const fixture = helperFixture(t);
-  fixture.writeRuns({ delivery: { inputs: {
-    target: 'staging', sha: fixture.currentSha, ci_run_id: fixture.ciRun,
-    ci_run_attempt: fixture.ciAttempt, config_contract_sha256: fixture.configSha,
-    operation: 'interruption-checkpoint',
-  } } });
+  fixture.writeRuns({ delivery: {
+    display_title: deliveryDisplayTitle({
+      target: 'staging', sha: fixture.currentSha,
+      ciRun: fixture.ciRun, ciAttempt: fixture.ciAttempt, configSha: fixture.configSha,
+      operation: 'interruption-checkpoint',
+    }),
+  } });
   const stateFile = path.join(fixture.state, `staging-${fixture.deliveryRun}-${fixture.deliveryAttempt}.json`);
   fs.writeFileSync(stateFile, `${JSON.stringify({
     phase: 'preflight', target: 'staging', operation: 'interruption-checkpoint', sha: fixture.currentSha,
@@ -902,11 +915,13 @@ test('helper rejects stale and foreign revisions, wrong lane/run evidence, concu
   const fixture = helperFixture(t);
   assert.equal(fixture.invoke('probe').status, 0);
 
-  fixture.writeRuns({ delivery: { inputs: {
-    target: 'production', sha: fixture.currentSha, ci_run_id: fixture.ciRun,
-    ci_run_attempt: fixture.ciAttempt, config_contract_sha256: fixture.configSha,
-    operation: 'deploy',
-  } } });
+  fixture.writeRuns({ delivery: {
+    display_title: deliveryDisplayTitle({
+      target: 'production', sha: fixture.currentSha, ciRun: fixture.ciRun,
+      ciAttempt: fixture.ciAttempt, configSha: fixture.configSha,
+      operation: 'deploy',
+    }),
+  } });
   const productionWithoutActivation = run(
     path.join(fixture.workspace, 'ops/beacon-account/delivery/hb-account-delivery-root'),
     ['probe', 'production', fixture.currentSha, fixture.ciRun, fixture.ciAttempt,
@@ -917,11 +932,13 @@ test('helper rejects stale and foreign revisions, wrong lane/run evidence, concu
   assert.match(productionWithoutActivation.stderr, /production-activation/);
   fixture.writeRuns();
 
-  fixture.writeRuns({ delivery: { inputs: {
-    target: 'staging', sha: fixture.currentSha, ci_run_id: fixture.ciRun,
-    ci_run_attempt: fixture.ciAttempt, config_contract_sha256: fixture.configSha,
-    operation: 'interruption-checkpoint',
-  } } });
+  fixture.writeRuns({ delivery: {
+    display_title: deliveryDisplayTitle({
+      target: 'staging', sha: fixture.currentSha, ciRun: fixture.ciRun,
+      ciAttempt: fixture.ciAttempt, configSha: fixture.configSha,
+      operation: 'interruption-checkpoint',
+    }),
+  } });
   const interruptionWithoutFixture = fixture.invoke('probe', fixture.currentSha, 'interruption-checkpoint');
   assert.notEqual(interruptionWithoutFixture.status, 0);
   assert.match(interruptionWithoutFixture.stderr, /staging-synthetic-fixture/);

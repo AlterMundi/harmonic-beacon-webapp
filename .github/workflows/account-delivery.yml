@@ -1,5 +1,5 @@
 name: Account delivery
-run-name: Account ${{ inputs.target || 'PR' }} ${{ inputs.sha || github.sha }}
+run-name: Account delivery|target=${{ inputs.target || 'PR' }}|sha=${{ inputs.sha || github.sha }}|ci=${{ inputs.ci_run_id || '0' }}/${{ inputs.ci_run_attempt || '0' }}|operation=${{ inputs.operation || 'PR' }}|config=${{ inputs.config_contract_sha256 || 'none' }}
 
 on:
   pull_request:
