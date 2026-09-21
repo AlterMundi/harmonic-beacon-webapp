@@ -19,11 +19,13 @@ const findStaffBinding = vi.fn();
 const findSession = vi.fn();
 const updateSessions = vi.fn();
 const createSession = vi.fn();
+const updateEntitlements = vi.fn();
 const createAudit = vi.fn();
 
 vi.mock('@/lib/db', () => {
     const transaction = vi.fn(async (work: (tx: unknown) => unknown) => work({
         webSession: { findUnique: findSession, updateMany: updateSessions, create: createSession },
+        ticketEntitlement: { updateMany: updateEntitlements },
         auditLog: { create: createAudit },
     }));
     return {
@@ -84,7 +86,7 @@ function stateDigest() {
     return createHash('sha256').update(STATE).digest('hex');
 }
 
-async function arrangeSuccessfulAuthorization(subject = SUBJECT) {
+async function arrangeSuccessfulAuthorization(userInfo: Record<string, unknown> = {}) {
     findAttempt.mockResolvedValue({
         stateDigest: stateDigest(),
         codeVerifier: 'pkce-verifier-value',
@@ -110,7 +112,7 @@ async function arrangeSuccessfulAuthorization(subject = SUBJECT) {
             active: true, client_id: CLIENT_ID, sub: SUBJECT,
         });
         if (url === `${ISSUER}/oauth2/userinfo`) return json({
-            sub: subject, name: 'Completed Account', profile_complete: true,
+            sub: SUBJECT, name: 'Completed Account', profile_complete: true, ...userInfo,
         });
         throw new Error(`unexpected fetch ${url}`);
     }));
@@ -141,6 +143,7 @@ beforeEach(async () => {
     findSession.mockResolvedValue(null);
     updateSessions.mockResolvedValue({ count: 0 });
     createSession.mockResolvedValue({});
+    updateEntitlements.mockResolvedValue({ count: 0 });
 });
 
 afterEach(() => {
@@ -373,6 +376,40 @@ describe('Beacon Account OAuth 2.1 RP', () => {
             now: NOW,
         })).rejects.toThrow(/UserInfo subject mismatch/);
         expect(createSession).not.toHaveBeenCalled();
+    });
+
+    it('converges missing public attendance email from fresh verified attendee UserInfo', async () => {
+        await arrangeSuccessfulAuthorization({
+            email: 'fresh-account@example.test',
+            email_verified: true,
+        });
+        const { completeAccountAuthorization } = await import('../account-rp');
+
+        await completeAccountAuthorization({
+            code: 'verified-email-authorization-code',
+            state: STATE,
+            stateCookie: STATE,
+            origin: 'http://localhost:3000',
+            now: NOW,
+        });
+
+        expect(updateEntitlements).toHaveBeenCalledWith({
+            where: {
+                accountIssuer: ISSUER,
+                accountId: SUBJECT,
+                accountEmail: null,
+                accountEmailVerified: null,
+                boundEmail: null,
+                tier: 'COMP',
+                codeLastFour: 'FREE',
+                scheduledSession: { is: { publicAccess: true } },
+                commerceEntitlement: { is: null },
+            },
+            data: {
+                accountEmail: 'fresh-account@example.test',
+                accountEmailVerified: true,
+            },
+        });
     });
 
     it('rejects an ID token whose issued-at exceeds the callback freshness window', async () => {

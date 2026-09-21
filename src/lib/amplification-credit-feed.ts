@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 
+import { AMPLIFICATION_CREDIT_EMAIL_MAX_CHARS } from '@/lib/account-attendance-email';
 import { prisma } from '@/lib/db';
 
 export const AMPLIFICATION_CREDIT_FEED_SCHEMA = 'amplification-credit-entries.v1' as const;
@@ -186,6 +187,7 @@ export async function listAmplificationCreditEntries(input: {
                 "commerce"."registration_id" AS "registration_id",
                 COALESCE("ticket"."bound_email", CASE
                     WHEN "ticket"."account_email_verified" = TRUE
+                        AND char_length("ticket"."account_email") <= ${AMPLIFICATION_CREDIT_EMAIL_MAX_CHARS}
                     THEN "ticket"."account_email" ELSE NULL END) AS "email",
                 "participant"."display_name" AS "display_name",
                 MIN("presence"."started_at") AS "entered_at"

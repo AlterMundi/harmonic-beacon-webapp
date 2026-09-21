@@ -3,6 +3,7 @@ import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypt
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 
 import { prisma } from '@/lib/db';
+import { convergeVerifiedAccountAttendanceEmail } from '@/lib/account-attendance-email';
 import { accountProfileClaims } from '@/lib/account-profile-claims';
 import {
     digestSessionToken,
@@ -526,6 +527,9 @@ export async function completeAccountAuthorization(input: {
                 lastSeenAt: now,
             },
         });
+        if (flow === 'attendee') {
+            await convergeVerifiedAccountAttendanceEmail(tx, identity);
+        }
         if (staffBinding) {
             await tx.auditLog.create({
                 data: {
