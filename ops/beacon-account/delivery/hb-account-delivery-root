@@ -376,19 +376,12 @@ if event == "push":
 else:
     if data.get("status") != "in_progress" or data.get("conclusion") is not None:
         raise SystemExit("delivery run is not the current in-progress attempt")
-    expected_inputs = {
-        "target": target,
-        "sha": sha,
-        "ci_run_id": ci_run,
-        "ci_run_attempt": ci_attempt,
-        "config_contract_sha256": config_sha256,
-        "operation": operation,
-    }
-    inputs = data.get("inputs")
-    if not isinstance(inputs, dict) or any(not isinstance(key, str) or not isinstance(value, str) for key, value in inputs.items()):
-        raise SystemExit("delivery dispatch inputs are not a typed string map")
-    if inputs != expected_inputs:
-        raise SystemExit("delivery dispatch input binding mismatch")
+    expected_title = (
+        f"Account delivery|target={target}|sha={sha}|ci={ci_run}/{ci_attempt}"
+        f"|operation={operation}|config={config_sha256}"
+    )
+    if data.get("display_title") != expected_title:
+        raise SystemExit("delivery display title binding mismatch")
 PY
   rm -f "$evidence"
   trap - RETURN
