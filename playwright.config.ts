@@ -91,7 +91,7 @@ export default defineConfig({
             grepInvert: WEBKIT_ATTENDEE_CONTINUITY,
         },
         {
-            // A second desktop engine catches focus, form, cookie and
+            // Explicit opt-in only (E2E_INCLUDE_FIREFOX=1). This engine catches focus, form, cookie and
             // navigation regressions that Chromium alone cannot expose. The
             // dedicated media-continuity matrix remains on Chromium/WebKit;
             // Firefox runs every other functional/accessibility suite.
@@ -159,7 +159,7 @@ export default defineConfig({
             },
             testMatch: PER_WIDTH,
         },
-    ],
+    ].filter(project => project.name !== 'firefox' || process.env.E2E_INCLUDE_FIREFOX === '1'),
     // Point E2E_BASE_URL at an already-running stack to skip server startup.
     webServer: process.env.E2E_BASE_URL
         ? undefined

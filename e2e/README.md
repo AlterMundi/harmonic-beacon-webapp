@@ -6,6 +6,23 @@ deterministic fixtures, no production credentials or participant data.
 
 ## What runs where
 
+Routine local, PR and release testing uses Chromium (desktop/Android/responsive)
+and WebKit. Firefox is excluded by default, including Account and the standalone
+Firefox helper. This is the owner-approved testing policy, not a claim of Firefox
+qualification or a removal of application support.
+
+For an explicitly requested full matrix, install Firefox and run:
+
+```bash
+npx playwright install --with-deps firefox
+E2E_INCLUDE_FIREFOX=1 npm run test:e2e
+```
+
+The same flag enables `firefox-account` in the isolated Account runner and the
+Firefox Node helper. In GitHub Actions, explicitly dispatch **E2E quality gates**
+with `include_firefox=true`; reusable callers can pass that boolean too. Ordinary
+callers omit it. Test listing checks both modes without launching Firefox.
+
 | Suite | Needs | Gate |
 |---|---|---|
 | `tests/smoke.spec.ts` | stack for role journeys | routing, login, keyboard focus |
@@ -54,7 +71,7 @@ they never weaken their assertions to pass.
 
    Local Playwright invocations build the app (`npm run build`) and serve the
    production output themselves. In the hosted main-browser job, the first
-   Chromium/Android invocation owns that build; the later Firefox and WebKit
+   Chromium/Android invocation owns that build; the later optional Firefox and WebKit
    invocations restart the server against the same candidate `.next` output.
    The isolated Account job remains a separate environment and performs its
    own build with its own copied source and configuration. First time only,

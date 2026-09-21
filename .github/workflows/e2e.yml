@@ -25,6 +25,19 @@ on:
       - 'docs/**'
       - '**/*.md'
   workflow_call:
+    inputs:
+      include_firefox:
+        type: boolean
+        default: false
+  workflow_dispatch:
+    inputs:
+      include_firefox:
+        description: 'Explicitly include Firefox (off for routine testing)'
+        type: boolean
+        default: false
+
+env:
+  E2E_INCLUDE_FIREFOX: ${{ inputs.include_firefox && '1' || '0' }}
 
 permissions:
   contents: read
@@ -234,9 +247,11 @@ jobs:
           --project=android-chrome
 
       - name: Install Firefox after Chromium screenshot gates
+        if: inputs.include_firefox == true
         run: npx playwright install --with-deps firefox
 
       - name: Run isolated Firefox room-exit helper regression
+        if: inputs.include_firefox == true
         run: node --import tsx --test --test-name-pattern='^Firefox automation reload' e2e/helpers/continuity-stack.test.ts
 
       - name: Start isolated browser audio backend
@@ -257,6 +272,7 @@ jobs:
           printf 'PULSE_SERVER=unix:%s\n' "$socket" >> "$GITHUB_ENV"
 
       - name: Run Firefox functional and accessibility gates
+        if: inputs.include_firefox == true
         run: npx playwright test --retries=0 --workers=1 --project=firefox
         env:
           E2E_REUSE_NEXT_BUILD: '1'
@@ -358,11 +374,15 @@ jobs:
 
       - name: Install all Account browser engines and private audio dependencies
         run: |
-          npx playwright install --with-deps chromium firefox webkit
+          npx playwright install --with-deps chromium webkit
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends pulseaudio pulseaudio-utils
 
-      - name: Run isolated real Account four-project matrix
+      - name: Install optional Account Firefox engine
+        if: inputs.include_firefox == true
+        run: npx playwright install --with-deps firefox
+
+      - name: Run isolated real Account browser matrix
         # run.ts owns Docker PG16 + LiveKit v1.13.4, migrations, HTTPS issuer,
         # isolated build, runtime/source/results receipts and bounded cleanup.
         # No RP-only filter, list-only qualification or shared-stack fallback.
@@ -396,9 +416,11 @@ jobs:
           test -S "$audio/native"
           export PULSE_SERVER="unix:$audio/native" E2E_ACCOUNT_PULSE_DIR="$audio"
           pactl info
+          optional_projects=()
+          if [ "${E2E_INCLUDE_FIREFOX:-0}" = 1 ]; then optional_projects+=(--project=firefox-account); fi
           E2E_ACCOUNT_BACKEND=docker node --import tsx e2e/account-fixture/run.ts \
             --project=chromium-account --project=android-chrome-account \
-            --project=firefox-account --project=iphone-webkit-account \
+            --project=iphone-webkit-account "${optional_projects[@]}" \
             --retries=0 --workers=1
 
       - name: Retain private Account runtime and failure receipts
