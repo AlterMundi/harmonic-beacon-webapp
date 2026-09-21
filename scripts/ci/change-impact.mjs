@@ -227,16 +227,15 @@ function artifactList(services) {
 }
 
 function selectedMatrices(risk, domains) {
-  if (domains.length === 1 && domains[0] === 'observation-tooling') {
+  if (domains.includes('observation-tooling')
+      && domains.every(domain => domain === 'observation-tooling' || domain === 'documentation')) {
     return { ui: [], functional: [], critical: [], crossDomain: [] };
   }
   const ui = RISK_ORDER[risk] >= RISK_ORDER.ui ? [...COVERAGE_MATRICES.ui] : [];
   const functional = new Set();
   if (RISK_ORDER[risk] >= RISK_ORDER.functional) {
     for (const domain of domains) addAll(functional, COVERAGE_MATRICES.functional[domain] ?? []);
-    if (!functional.size && !domains.includes('observation-tooling')) {
-      addAll(functional, Object.values(COVERAGE_MATRICES.functional).flat());
-    }
+    if (!functional.size) addAll(functional, Object.values(COVERAGE_MATRICES.functional).flat());
   }
   const critical = new Set();
   if (risk === 'critical') {

@@ -220,6 +220,20 @@ test('observation classification is exact and shared or privileged scripts stay 
   }
 });
 
+test('adding an observation tool never removes coverage from a critical batch', () => {
+  const critical = classifyChanges(['scripts/ci/required-checks.mjs']);
+  const mixed = classifyChanges(['scripts/ci/required-checks.mjs', 'scripts/ops/delivery-status.mjs']);
+  assert.deepEqual(mixed.matrices, critical.matrices);
+  assert.deepEqual(mixed.requiredJobChecks, critical.requiredJobChecks);
+  assert.deepEqual(mixed.requiredContexts, critical.requiredContexts);
+});
+
+test('documentation accompanying an observation-only change does not select runtime matrices', () => {
+  const report = classifyChanges(['scripts/ops/delivery-status.mjs', 'docs/ops/OPERATOR_LOOP.md']);
+  assert.deepEqual(report.matrices, { ui: [], functional: [], critical: [], crossDomain: [] });
+  assert.equal(report.deployment.deploy, false);
+});
+
 test('shared dependencies affect every first-party artifact and service role', () => {
   const report = classifyChanges(['package-lock.json']);
   assert.deepEqual(report.deployment.artifactsToPull, ['app', 'playlist-bot', 'tapestry']);
