@@ -86,7 +86,12 @@ export async function startAccountFixture(options: { port: number; liveOrigin: s
             }
             if (req.method === 'GET' && url.pathname === '/userinfo') {
                 const grant = tokens.get((req.headers.authorization ?? '').replace(/^Bearer /, ''));
-                return grant && grant.expires > Date.now() && sessions.get(grant.sid)?.active ? json(res, { sub: grant.sub, name: grant.sub }) : json(res, { error: 'invalid_token' }, 401);
+                // These synthetic identities represent completed profiles. The
+                // real Account onboarding contract is tested separately.
+                return grant && grant.expires > Date.now() && sessions.get(grant.sid)?.active ? json(res, {
+                    sub: grant.sub, name: grant.sub, preferred_name: grant.sub,
+                    profile_complete: true,
+                }) : json(res, { error: 'invalid_token' }, 401);
             }
             if (['GET', 'POST'].includes(req.method ?? '') && url.pathname === '/account/logout') {
                 const q = req.method === 'POST' ? await body(req) : url.searchParams;
