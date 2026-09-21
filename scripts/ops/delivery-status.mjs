@@ -14,9 +14,10 @@ export async function github(args) {
   return JSON.parse(stdout);
 }
 
-function identity(pr) {
-  return [pr.number, pr.state, pr.draft, pr.head?.sha, pr.base?.sha,
-    pr.base?.ref, pr.merge_commit_sha];
+function identity(pr, includeMerge) {
+  const stable = [pr.number, pr.state, pr.draft, pr.head?.sha, pr.base?.sha, pr.base?.ref];
+  if (includeMerge) stable.push(pr.merge_commit_sha);
+  return stable;
 }
 
 function short(value) {
@@ -76,14 +77,11 @@ export async function inspectDelivery({ repo, pr }, read = github) {
   const results = await Promise.allSettled(specs.map(([, readSource]) => readSource()));
   const sources = {};
   const unknown = [];
-  if (initial.state === 'open' && merge === null) unknown.push('mergeIdentity');
   results.forEach((result, index) => {
     const name = specs[index][0];
     if (result.status === 'fulfilled') sources[name] = result.value;
     else unknown.push(name); // Never include raw errors: gh may echo server bodies.
   });
-  const final = await api(`pulls/${pr}`);
-  const stable = JSON.stringify(identity(initial)) === JSON.stringify(identity(final));
   const contexts = sources.protection?.required_status_checks?.checks?.map(item => ({
     context: short(item.context), appId: item.app_id,
   })) ?? null;
@@ -93,20 +91,42 @@ export async function inspectDelivery({ repo, pr }, read = github) {
     try { return fn(sources[name]); } catch { unknown.push(name); return null; }
   };
   const checks = observe('checks', value => selectChecks(value, repo));
+  const headContext = `delivery-gate-${initial.base.ref}`;
   const gate = {
-    head: observe('headStatuses', value => selectStatuses(value, 'delivery-gate', repo)),
+    head: observe('headStatuses', value => selectStatuses(value, headContext, repo)),
     merge: observe('mergeStatuses', value => value === null ? null : selectStatuses(value, 'delivery-gate', repo)),
   };
+  const protectedGates = (contexts ?? []).filter(item => [headContext, 'delivery-gate'].includes(item.context))
+    .map(item => ({
+      ...item,
+      target: item.context === headContext ? 'head' : 'merge',
+      status: item.context === headContext ? gate.head : gate.merge,
+    }));
+  gate.protected = protectedGates;
+  if (initial.state === 'open' && merge === null && protectedGates.some(item => item.target === 'merge')) {
+    unknown.push('mergeIdentity');
+  }
+  const final = await api(`pulls/${pr}`);
+  const includeMerge = protectedGates.some(item => item.target === 'merge');
+  const stable = JSON.stringify(identity(initial, includeMerge)) === JSON.stringify(identity(final, includeMerge));
+  const requiredApprovals = sources.protection?.required_pull_request_reviews?.required_approving_review_count;
+  const approvalCount = Number.isSafeInteger(requiredApprovals) && requiredApprovals >= 0
+    ? requiredApprovals : ('protection' in sources ? 0 : null);
   const next = [];
   if (!stable) next.push('PR changed during inspection: refresh before acting.');
   if (unknown.length) next.push('Some sources are unavailable: resolve the named unknowns before an admission decision.');
   if (initial.state !== 'open') next.push('PR is closed: inspect the actual integration/deployment separately.');
   else {
     if (initial.draft) next.push('Draft: finish the batch before requesting release qualification.');
-    if (gate.merge?.state === 'missing') next.push('Current merge has no delivery-gate: inspect the protected evaluator before rerunning product tests.');
-    if (['failure', 'error'].includes(gate.merge?.state)) next.push('Read the gate run reason; fix the failed check or evidence binding.');
-    if (gate.merge?.state === 'pending') next.push('Gate pending: inspect its run and outstanding checks.');
-    if (sources.review?.reviewDecision !== 'APPROVED') next.push('GitHub approval is absent, unavailable, or changes are requested.');
+    for (const required of protectedGates) {
+      const label = `${required.context} on ${required.target}`;
+      if (required.status?.state === 'missing') next.push(`Required ${label} is missing: inspect the protected evaluator before rerunning product tests.`);
+      if (['failure', 'error'].includes(required.status?.state)) next.push(`Required ${label} failed: read the gate run reason and evidence binding.`);
+      if (required.status?.state === 'pending') next.push(`Required ${label} is pending: inspect its run and outstanding checks.`);
+    }
+    if (approvalCount > 0 && sources.review?.reviewDecision !== 'APPROVED') {
+      next.push(`GitHub requires ${approvalCount} approval${approvalCount === 1 ? '' : 's'}, but approval is absent, unavailable, or changes are requested.`);
+    }
     if (checks?.some(check => ['failure', 'timed_out'].includes(check.conclusion))) next.push('Failed check observations exist: identify the current required attempt before diagnosing.');
   }
   return {
@@ -116,7 +136,8 @@ export async function inspectDelivery({ repo, pr }, read = github) {
     head: initial.head.sha, base: initial.base.sha, baseRef: initial.base.ref, merge,
     reviewDecision: short(sources.review?.reviewDecision),
     mergeStateStatus: short(sources.review?.mergeStateStatus),
-    requiredContexts: contexts, gate, checks, unknown: [...new Set(unknown)], next,
+    requiredContexts: contexts, requiredApprovals: approvalCount,
+    gate, checks, unknown: [...new Set(unknown)], next,
     production: 'not-inspected',
   };
 }
@@ -140,7 +161,7 @@ export async function main(args) {
     else {
       console.log(`${repo} #${pr}: ${report.state}; review=${report.reviewDecision ?? 'unknown'}; merge=${report.mergeStateStatus ?? 'unknown'}`);
       console.log(`head=${report.head}\nbase=${report.base}\nmerge=${report.merge ?? 'unknown'}`);
-      console.log(`delivery-gate head=${report.gate.head?.state ?? 'unknown'} merge=${report.gate.merge?.state ?? 'unknown'}`);
+      console.log(`delivery-gate-${report.baseRef} head=${report.gate.head?.state ?? 'unknown'}; legacy delivery-gate merge=${report.gate.merge?.state ?? 'unknown'}`);
       for (const step of report.next) console.log(step);
       if (report.unknown.length) console.log(`Unknown sources: ${report.unknown.join(', ')}`);
       console.log('Diagnostic only. Production was not inspected.');

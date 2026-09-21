@@ -5,7 +5,7 @@ import { inspectDelivery } from '../delivery-status.mjs';
 const repo = 'AlterMundi/harmonic-beacon-webapp';
 const head = 'a'.repeat(40), base = 'b'.repeat(40), merge = 'c'.repeat(40);
 const initial = { number: 554, state: 'open', draft: false, head: { sha: head }, base: { sha: base, ref: 'main' }, merge_commit_sha: merge };
-const status = (id, state, context = 'delivery-gate') => ({ id, state, context, target_url: `https://github.com/${repo}/actions/runs/10` });
+const status = (id, state, context = 'delivery-gate-main') => ({ id, state, context, target_url: `https://github.com/${repo}/actions/runs/10` });
 const check = (id, conclusion) => ({ id, name: 'e2e', status: 'completed', conclusion });
 
 function fixture(options = {}) {
@@ -21,7 +21,10 @@ function fixture(options = {}) {
     if (path.endsWith('pulls/554')) return structuredClone(++reads === 1 ? options.initial ?? initial : options.final ?? options.initial ?? initial);
     if (path.endsWith('/protection')) {
       if (options.unavailable) throw new Error('secret server response');
-      return { required_status_checks: { checks: [{ context: 'delivery-gate', app_id: 15368 }] } };
+      return {
+        required_status_checks: { checks: [{ context: options.protectedContext ?? 'delivery-gate-main', app_id: 15368 }] },
+        required_pull_request_reviews: { required_approving_review_count: options.approvals ?? 0 },
+      };
     }
     if (path.includes('/check-runs?')) return options.checks ?? [{ total_count: 0, check_runs: [] }];
     if (path.includes(`/commits/${head}/statuses?`)) return options.head ?? [[]];
@@ -31,20 +34,36 @@ function fixture(options = {}) {
   return { read, calls };
 }
 
-test('missing merge gate is visible even with successful head checks/status', async () => {
+test('branch-qualified protection reads its gate from the stable head', async () => {
   const { read } = fixture({ head: [[status(1, 'success')]], checks: [{ total_count: 1, check_runs: [check(1, 'success')] }] });
   const report = await inspectDelivery({ repo, pr: 554 }, read);
   assert.equal(report.gate.merge.state, 'missing');
-  assert.ok(report.next.some(value => value.includes('Current merge has no')));
+  assert.equal(report.gate.head.state, 'success');
+  assert.deepEqual(report.gate.protected.map(({ context, target, status: observed }) => ({ context, target, state: observed.state })), [
+    { context: 'delivery-gate-main', target: 'head', state: 'success' },
+  ]);
+  assert.ok(!report.next.some(value => value.includes('Required delivery-gate')));
+  assert.ok(!report.next.some(value => value.includes('approval')));
+  assert.equal(report.requiredApprovals, 0);
   assert.equal(report.production, 'not-inspected');
   assert.equal(report.reviewDecision, 'REVIEW_REQUIRED');
   assert.equal('safeToMerge' in report, false);
 });
 
-test('merge movement with unchanged head/base invalidates snapshot', async () => {
+test('synthetic merge movement does not invalidate a head-gate snapshot', async () => {
   const { read } = fixture({ final: { ...initial, merge_commit_sha: 'd'.repeat(40) } });
   const report = await inspectDelivery({ repo, pr: 554 }, read);
+  assert.equal(report.stable, true);
+});
+
+test('legacy protected merge gate remains visible and merge movement invalidates it', async () => {
+  const { read } = fixture({
+    protectedContext: 'delivery-gate',
+    final: { ...initial, merge_commit_sha: 'd'.repeat(40) },
+  });
+  const report = await inspectDelivery({ repo, pr: 554 }, read);
   assert.equal(report.stable, false);
+  assert.equal(report.gate.protected[0].target, 'merge');
 });
 
 test('head, base, state and draft changes invalidate snapshot', async () => {
@@ -62,8 +81,11 @@ test('unavailable protection stays unknown without leaking raw errors', async ()
   assert.ok(!JSON.stringify(report).includes('secret server response'));
 });
 
-test('latest status wins across pages; unrelated contexts do not authorize', async () => {
-  const { read } = fixture({ merge: [[status(2, 'pending'), status(100, 'success', 'delivery-gate-shadow')], [status(1, 'success')]] });
+test('latest legacy status wins across pages; unrelated contexts do not authorize', async () => {
+  const { read } = fixture({
+    protectedContext: 'delivery-gate',
+    merge: [[status(2, 'pending', 'delivery-gate'), status(100, 'success', 'delivery-gate-shadow')], [status(1, 'success', 'delivery-gate')]],
+  });
   assert.equal((await inspectDelivery({ repo, pr: 554 }, read)).gate.merge.state, 'pending');
 });
 
@@ -85,16 +107,46 @@ test('null merge and closed PR do not query a nonexistent or misleading merge re
     const { read, calls } = fixture({ initial: { ...initial, ...change } });
     const report = await inspectDelivery({ repo, pr: 554 }, read);
     assert.equal(report.gate.merge, null);
+    assert.ok(!report.unknown.includes('mergeIdentity'));
     assert.ok(!calls.some(args => args.at(-1).includes(`/commits/${merge}/statuses`)));
   }
 });
 
-test('raw descriptions and signed/external URLs are not exported', async () => {
-  const { read } = fixture({ merge: [[{ ...status(1, 'failure'), target_url: 'https://other.invalid/?token=secret', description: 'private contents' }]] });
+test('legacy protection still reports an unavailable merge identity during migration', async () => {
+  const { read } = fixture({
+    protectedContext: 'delivery-gate',
+    initial: { ...initial, merge_commit_sha: null },
+  });
+  const report = await inspectDelivery({ repo, pr: 554 }, read);
+  assert.ok(report.unknown.includes('mergeIdentity'));
+  assert.deepEqual(report.gate.protected.map(({ context, target }) => ({ context, target })), [
+    { context: 'delivery-gate', target: 'merge' },
+  ]);
+});
+
+test('temporary automatic bootstrap protection does not invent a delivery-gate error', async () => {
+  const { read } = fixture({ protectedContext: 'required-impact-checks' });
+  const report = await inspectDelivery({ repo, pr: 554 }, read);
+  assert.deepEqual(report.gate.protected, []);
+  assert.ok(!report.next.some(value => value.includes('Required delivery-gate')));
+});
+
+test('legacy missing merge and unsafe status details remain bounded during bootstrap', async () => {
+  const { read } = fixture({
+    protectedContext: 'delivery-gate',
+    merge: [[{ ...status(1, 'failure', 'delivery-gate'), target_url: 'https://other.invalid/?token=secret', description: 'private contents' }]],
+  });
   const report = await inspectDelivery({ repo, pr: 554 }, read);
   assert.equal(report.gate.merge.run, null);
   assert.ok(!JSON.stringify(report).includes('secret'));
   assert.ok(!JSON.stringify(report).includes('private contents'));
+});
+
+test('approval guidance follows the configured approval count', async () => {
+  const none = await inspectDelivery({ repo, pr: 554 }, fixture({ approvals: 0 }).read);
+  assert.ok(!none.next.some(value => value.includes('approval')));
+  const two = await inspectDelivery({ repo, pr: 554 }, fixture({ approvals: 2 }).read);
+  assert.ok(two.next.some(value => value.includes('requires 2 approvals')));
 });
 
 test('invalid target makes no request', async () => {
