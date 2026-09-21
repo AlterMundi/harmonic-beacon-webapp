@@ -165,7 +165,7 @@ async function recoveryScenario({failBarrier = ''} = {}) {
     fence_release() { log fence-release; }
     restore_prior() { log restore-prior; }
     atomic_state() { cp "$1" "$STATE"; }
-    migration_state() { printf '%s\n' '{"schemaVersion":"harmonic-beacon.migration-state.v1","databaseStateVerified":true,"failed":[],"unexpected":[],"unsafe":[],"checksumErrors":[],"duplicateRecords":[],"conflictingRecords":[],"pending":[]}' > "$3"; }
+    migration_state() { printf '%s\n' '{"schemaVersion":"harmonic-beacon.migration-state.v1","databaseStateVerified":true,"failed":[],"unexpected":[],"unsafe":[],"checksumErrors":[],"duplicateRecords":[],"conflictingRecords":[],"historicalChecksumMatches":[],"pending":[]}' > "$3"; }
     prod_compose() {
       case "$*" in
         *'stop app commerce-reconciler'*) log stop-writers;;

@@ -14,6 +14,33 @@ canonical production/rehearsal runtime profiles. It never
 accepts a path, image, SQL statement, migration name, or environment override
 from the unprivileged caller. It does not read or write OCI publication state.
 
+### Historical migration evidence
+
+Migration verification remains checksum-closed but does not pretend every
+production row was created from today's file bytes. Two applied checksums are
+accepted as explicit repository evidence only while each corresponding current
+file retains its separately bound checksum:
+
+- `20260728120000_weekend_mvp`: applied bytes `0ebfb48f…` from commit
+  `29b0f567…`; current bytes `e654db87…` selected at merge `e6b70f15…`.
+- `20260818030000_four_saturday_public_cycle`: applied bytes `eb2984af…`
+  from commit `82f0b246…`; current fresh-bootstrap bytes `3418053a…` selected
+  at merge `4d6d9095…`.
+
+The full hashes and commits live in `src/lib/migration-history.ts`. The second
+current file must remain intact because it creates `public_access` before the
+later ensure migration references that column on a fresh database. Any other
+checksum, migration name, or change to either current file rejects the alias.
+The state report records every accepted historical match.
+
+Prisma can retain an unsuccessful row after it is explicitly rolled back and
+create a new row for a successful retry. Such rolled-back rows remain checksum
+validated but are not effective applied, failed, duplicate, or conflicting
+records. More than one non-rolled-back row, an unfinished non-rolled-back row,
+or a row that is both finished and rolled back remains a hard failure. This
+does not authorize ledger edits or `migrate resolve`; it only classifies the
+records already present.
+
 ## Installation and authority
 
 Install the reviewed helper, fixed Compose files, existing archive validator
