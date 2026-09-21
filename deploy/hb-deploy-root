@@ -1074,7 +1074,8 @@ artifact_compose_from() {
     app="$(jq -er '.app.imageRef' "$root/../next-service-releases.json")"
     tapestry="$(jq -er '.tapestry.imageRef' "$root/../next-service-releases.json")"
     playlist="$(jq -er '."playlist-bot".imageRef' "$root/../next-service-releases.json")"
-    analytics="$(jq -er '.analytics.imageRef' "$root/../next-service-releases.json")"
+    # Analytics is a qualified interpolation input, not a Live service release.
+    analytics="$(manifest_ref "$manifest" artifacts analytics)"
   else
     manifest="$root/prior-manifest.json"
     app="$(manifest_ref "$manifest" artifacts app)"
@@ -1118,7 +1119,8 @@ artifact_compose_service_from() {
       if [ "$service" = commerce-reconciler ]; then app="$(jq -er '."commerce-reconciler".imageRef' "$releases")"; else app="$(jq -er '.app.imageRef' "$releases")"; fi
       tapestry="$(jq -er '.tapestry.imageRef' "$releases")"
       playlist="$(jq -er '."playlist-bot".imageRef' "$releases")"
-      analytics="$(jq -er '.analytics.imageRef' "$releases")"
+      # Reuse only Live images; interpolation still belongs to this candidate manifest.
+      analytics="$(manifest_ref "$manifest" artifacts analytics)"
     else
       app="$(manifest_ref "$manifest" artifacts app)"
       tapestry="$(manifest_ref "$manifest" artifacts tapestry)"
@@ -1131,7 +1133,8 @@ artifact_compose_service_from() {
     if [ "$service" = commerce-reconciler ]; then app="$(jq -er '."commerce-reconciler".imageRef' "$releases")"; else app="$(jq -er '.app.imageRef' "$releases")"; fi
     tapestry="$(jq -er '.tapestry.imageRef' "$releases")"
     playlist="$(jq -er '."playlist-bot".imageRef' "$releases")"
-    analytics="$(jq -er '.analytics.imageRef' "$releases")"
+    # Rollback/probes use the prior qualified manifest, not a fifth Live release.
+    analytics="$(manifest_ref "$manifest" artifacts analytics)"
   fi
   postgres="$(manifest_ref "$manifest" externalImages postgres)"
   livekit="$(manifest_ref "$manifest" externalImages livekit)"
@@ -1890,7 +1893,7 @@ beacon-playlist-bot playlist-bot
 EOF
   verify_container_image beacon-postgres "$(artifact_ref_from "$run_id" "$source" externalImages postgres)"
   verify_container_image beacon-livekit "$(artifact_ref_from "$run_id" "$source" externalImages livekit)"
-  verify_pulled_image "$(jq -er '.analytics.imageRef' "$releases")"
+  # Analytics is qualified with the artifact, but belongs to a separate runtime lane.
   for container in beacon-app beacon-commerce-reconciler beacon-tapestry beacon-playlist-bot beacon-postgres; do
     require_container_health "$container"
   done
