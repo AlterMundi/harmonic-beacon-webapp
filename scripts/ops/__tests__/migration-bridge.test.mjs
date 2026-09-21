@@ -185,3 +185,39 @@ test('legacy prior image identity falls back to the single baked git SHA', async
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout.trim(), expected);
 });
+
+test('LiveKit continuity enters its network namespace and does not use fenced host loopback', async () => {
+  const sandbox = await mkdtemp(join(tmpdir(), 'hb-migration-livekit-'));
+  const helper = join(root, 'deploy/hb-migration-bridge-root'); const logPath = join(sandbox, 'probe.log');
+  const shell = String.raw`
+    source "$HELPER"
+    docker() { case "$*" in *'.State.Running}} {{.State.Pid'*) printf 'true 4242\n';; *'.State.Running'*) printf 'true\n';; *'.State.Pid'*) printf '4242\n';; esac; }
+    nsenter() { printf '%s\n' "$*" > "$HB_LOG"; }
+    livekit_continuity
+  `;
+  const result = spawnSync('bash', ['-c', shell], {encoding:'utf8', env:{...process.env,
+    HELPER:helper, HB_LOG:logPath, HB_MIGRATION_BRIDGE_TEST_ROOT:sandbox, HB_MIGRATION_BRIDGE_SOURCE_ONLY:'1'}});
+  const invocation = await readFile(logPath, 'utf8'); await rm(sandbox, {recursive:true, force:true});
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(invocation, /^--target 4242 --net -- python3 /);
+  assert.doesNotMatch(invocation, /--mount|--pid|--root/);
+});
+
+test('runtime profile forwards supported false feature flags without jq truthiness failure', async () => {
+  const sandbox = await mkdtemp(join(tmpdir(), 'hb-migration-flags-'));
+  const helper = join(root, 'deploy/hb-migration-bridge-root'); const profile = join(sandbox, 'profile.json');
+  await writeFile(profile, JSON.stringify({schemaVersion:'harmonic-beacon.runtime-public-config.v1',
+    publicOrigin:'https://example.invalid',livekitPublicUrl:'wss://livekit.example.invalid',
+    featureFlags:{promoInvitations:false,tapestryPublic:false}}));
+  const shell = String.raw`
+    source "$HELPER"
+    permit() { printf 'sha256:%064d\n' 0; }
+    docker() { printf '%s %s\n' "$HB_PROMO_INVITATIONS_ENABLED" "$HB_TAPESTRY_PUBLIC_ENABLED"; }
+    profile_compose "$PROFILE" compose image worker rehearsal config
+  `;
+  const result = spawnSync('bash', ['-c', shell], {encoding:'utf8', env:{...process.env, PROFILE:profile,
+    HELPER:helper, HB_MIGRATION_BRIDGE_TEST_ROOT:sandbox, HB_MIGRATION_BRIDGE_SOURCE_ONLY:'1'}});
+  await rm(sandbox, {recursive:true, force:true});
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout.trim(), 'false false');
+});

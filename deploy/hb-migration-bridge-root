@@ -160,8 +160,8 @@ profile_compose() {
   HB_LIVEKIT_PUBLIC_URL="$(jq -er '.livekitPublicUrl' "$profile")" \
   HB_LIVEKIT_PUBLIC_URL_ALLOWLIST="$(jq -er '.livekitPublicUrl' "$profile")" \
   HB_CONFIG_PROFILE_SHA256="sha256:$(sha256 "$profile")" \
-  HB_PROMO_INVITATIONS_ENABLED="$(jq -er '.featureFlags.promoInvitations' "$profile")" \
-  HB_TAPESTRY_PUBLIC_ENABLED="$(jq -er '.featureFlags.tapestryPublic' "$profile")" \
+  HB_PROMO_INVITATIONS_ENABLED="$(jq -r '.featureFlags.promoInvitations' "$profile")" \
+  HB_TAPESTRY_PUBLIC_ENABLED="$(jq -r '.featureFlags.tapestryPublic' "$profile")" \
   HB_MIGRATION_BRIDGE_POSTGRES_IMAGE="$(permit '.productionPostgresImageId')" \
     docker compose --project-name "$project" --file "$compose" "${env_file[@]}" "$@"
 }
@@ -305,7 +305,22 @@ fence_ensure() {
   for port in 3000 7880; do entry_rule -C "$attempt" "$port" >/dev/null 2>&1 || die 'complete entry fence is not present'; done
 }
 fence_release() { local status; for port in 7880 3000; do while true; do if entry_rule -C "$1" "$port" >/dev/null 2>&1; then entry_rule -D "$1" "$port" || die 'could not remove entry fence'; else status=$?; [ "$status" -eq 1 ] || die 'cannot prove fence absence'; break; fi; done; done; }
-continuity() { prod_compose "$(candidate_image)" "$(candidate_image)" run --rm --no-deps preflight || return 1; python3 "$LIVEKIT_PROBE" >/dev/null || return 1; }
+livekit_continuity() {
+  local pid running after
+  command -v nsenter >/dev/null || die 'nsenter required for fenced LiveKit continuity'
+  running="$(docker inspect beacon-livekit --format '{{.State.Running}}')" || return 1
+  [ "$running" = true ] || return 1
+  pid="$(docker inspect beacon-livekit --format '{{.State.Pid}}')" || return 1
+  [[ "$pid" =~ ^[1-9][0-9]*$ ]] || return 1
+  # Enter only the trusted LiveKit container's network namespace. The probe
+  # keeps the host filesystem (and root-owned production.env) while its fixed
+  # 127.0.0.1:7880 endpoint resolves inside LiveKit, beyond the host OUTPUT
+  # fence without opening that fence.
+  nsenter --target "$pid" --net -- python3 "$LIVEKIT_PROBE" >/dev/null || return 1
+  after="$(docker inspect beacon-livekit --format '{{.State.Running}} {{.State.Pid}}')" || return 1
+  [ "$after" = "true $pid" ] || return 1
+}
+continuity() { prod_compose "$(candidate_image)" "$(candidate_image)" run --rm --no-deps preflight || return 1; livekit_continuity || return 1; }
 
 private_boundary() {
   local members
