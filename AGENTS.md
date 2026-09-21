@@ -10,6 +10,19 @@ handoff. Read it when taking operational ownership. Missing skill discovery
 does not prevent reading these repository instructions directly. Resolve the
 canonical repository before fetching: `origin` may be a personal fork.
 
+## Autonomous review policy (owner decision, 2026-09-21)
+
+The task owner reviews and delivers their own work. Do not request external
+approvals or block on another operator's review by default. Use an adversarial
+subagent only when a concrete risk or unresolved uncertainty warrants a second
+examination; not for every PR, commit or repair. Keep that review scoped to the
+risk and resolve substantive findings before delivery. No reviewer chains.
+
+This policy supersedes older mandatory independent-review/GitHub-approval
+instructions, including pending operator-loop and skill guidance. PRs remain
+the change record; relevant automated checks, exact-candidate verification,
+production authorization boundaries and recovery safeguards still apply.
+
 Use a dedicated clean worktree for repository changes and preserve unrelated
 user or operator work. Before editing, inspect the current branch, status,
 upstreams, concurrent worktrees, and relevant open pull requests. Do not treat

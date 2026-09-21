@@ -92,10 +92,12 @@ Codex and Hermes. The linked delivery invariants remain part of this contract.
 3. At the integrated boundary, run the profile selected by change impact plus
    contract-specific checks. Failed gates block promotion but do not end
    authorized diagnosis and repair.
-4. Review the integrated diff once. Security boundaries, payments,
-   permissions, migrations, privileged helpers, frozen audio paths, and
-   rollback compatibility receive independent review when their contract
-   requires it.
+4. The task owner reviews the integrated diff once and proceeds autonomously.
+   External/GitHub approval is not required. Use an adversarial subagent only
+   for a concrete risk or unresolved uncertainty that warrants it, especially
+   around permissions, payments, migrations or recovery. Do not automatically
+   request a reviewer for every change or create reviewer chains. Resolve
+   substantive findings before delivery; applicable automated checks remain.
 5. Promote the exact reviewed candidate through its configured workflow. Do
    not develop directly on a production lane or substitute a direct host
    command for an available reviewed path.
