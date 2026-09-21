@@ -957,6 +957,16 @@ test('catalog delivery policy requires review freshness and exact check App bind
     required_pull_request_reviews: { required_approving_review_count: 0, require_code_owner_reviews: false, require_last_push_approval: false },
     allow_force_pushes: { enabled: false }, allow_deletions: { enabled: false },
   }).ok, true);
+  const branchPolicy = { ...autonomous.services[0].deliveryPolicy, requiredContext: 'delivery-gate-{branch}' };
+  for (const branch of ['main', 'release']) {
+    const protection = {
+      required_status_checks: { strict: true, checks: [{ context: `delivery-gate-${branch}`, app_id: 15368 }] },
+      required_pull_request_reviews: { required_approving_review_count: 0 },
+      allow_force_pushes: { enabled: false }, allow_deletions: { enabled: false },
+    };
+    assert.equal(evaluateDeliveryProtection(branchPolicy, branch, protection).ok, true);
+    assert.equal(evaluateDeliveryProtection(branchPolicy, branch === 'main' ? 'release' : 'main', protection).ok, false);
+  }
   for (const field of ['requiredAppId', 'requiredApprovingReviewCount', 'dismissStaleReviews', 'requireLastPushApproval']) {
     const invalid = structuredClone(value);
     delete invalid.services[0].deliveryPolicy[field];

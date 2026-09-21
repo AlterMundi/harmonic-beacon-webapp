@@ -67,8 +67,9 @@ or production readiness. Exit 2 means incomplete or changing observations.
 
 Read the failed run before changing code. Distinguish product defect, fixture
 defect, runner failure, missing evidence and stale gate target. Two runs of one
-test can fail for different reasons. When the gate is missing on a regenerated
-merge, investigate the authority workflow before recompiling the application.
+test can fail for different reasons. The gate belongs on the head under the
+target branch's context, not on GitHub's regenerated synthetic merge. Investigate
+missing or wrong-context evidence before recompiling the application.
 The protected evaluator remains the authority for trusted required evidence.
 
 Evidence can carry forward only for what it proves. A diagnostic reproduction

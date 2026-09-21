@@ -72,7 +72,9 @@ claimed by this repository change.
 
 ## Delivery authority and OCI transition
 
-Live delivery has one stable aggregate context, `delivery-gate`. The
+Live delivery has one branch-qualified aggregate on the PR head:
+`delivery-gate-main` or `delivery-gate-release`, derived by the trusted authority
+from the live target branch, not chosen by the caller. The
 lifecycle wrapper at
 [`.github/workflows/delivery-gate-dispatch.yml`](../../.github/workflows/delivery-gate-dispatch.yml)
 is intentionally unable to write commit statuses: it has only the permissions
@@ -106,8 +108,11 @@ refetched again immediately before success.
 Changed-file classification includes both sides of renames and rejects
 incomplete GitHub file listings or multiple protected PRs sharing one head SHA.
 The PR and retarget timeline are also reread immediately before success, which
-is published on the current synthetic merge commit rather than the reusable
-head commit. Neither authority nor dispatcher checks out or executes candidate
+is published on the exact current head under the target-specific context.
+GitHub can regenerate a synthetic merge without changing source or base; that
+regeneration does not invalidate a qualified head. Strict up-to-date protection
+and exact-base evaluation remain required; a context for main never qualifies
+release. Neither authority nor dispatcher checks out or executes candidate
 bytes. Constituent CI/E2E/audio lifecycle events can request reevaluation, but
 their default-branch `workflow_run` wrapper has no status-writing permission.
 Per-context, PR, and exact-base concurrency coalesces duplicate evaluators;
@@ -119,7 +124,7 @@ apply.
 
 `main` and `release` require pull requests, zero external approving reviews,
 no mandatory CODEOWNER or last-push approval, an up-to-date head, and
-`delivery-gate` bound to GitHub Actions
+the respective `delivery-gate-main` or `delivery-gate-release` bound to GitHub Actions
 App ID `15368`, with force pushes and deletion disabled. `release`
 remains the promotion branch and [`.github/workflows/deploy.yml`](../../.github/workflows/deploy.yml)
 plus [`deploy/hb-deploy-root`](../../deploy/hb-deploy-root) remain the reviewed
