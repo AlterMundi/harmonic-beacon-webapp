@@ -172,6 +172,15 @@ export function activeAccountStaticClients(environment: Environment = process.en
         (selected === 'staging') === client.clientId.endsWith('-staging'));
 }
 
+/** Phase-one provisioning preserves the prior image's scope contract. */
+export const ACCOUNT_PROVISIONED_SCOPES = ['openid', 'profile'];
+
+/** Only the exact pre/post rollout inventories are valid, never a superset. */
+export function accountClientScopesCompatible(scopes: string[]): boolean {
+    return scopes[0] === 'openid' && scopes[1] === 'profile' &&
+        (scopes.length === 2 || (scopes.length === 3 && scopes[2] === 'email'));
+}
+
 export function accountClientRequiresCompleteProfile(
     clientId: string | null,
     environment: Environment = process.env,

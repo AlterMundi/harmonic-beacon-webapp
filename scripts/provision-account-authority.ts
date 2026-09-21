@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { prisma } from '../src/lib/db';
 import {
+    ACCOUNT_PROVISIONED_SCOPES,
     accountOrigin,
     accountStaticClientSecrets,
     activeAccountStaticClients,
@@ -42,7 +43,7 @@ async function main() {
                     skipConsent: true,
                     enableEndSession: true,
                     subjectType: 'public',
-                    scopes: ['openid', 'profile', 'email'],
+                    scopes: ACCOUNT_PROVISIONED_SCOPES,
                     name: client.clientId,
                     redirectUris: [client.redirectUri],
                     postLogoutRedirectUris: [client.postLogoutRedirectUri],
@@ -60,7 +61,7 @@ async function main() {
                     skipConsent: true,
                     enableEndSession: true,
                     subjectType: 'public',
-                    scopes: ['openid', 'profile', 'email'],
+                    scopes: ACCOUNT_PROVISIONED_SCOPES,
                     redirectUris: [client.redirectUri],
                     postLogoutRedirectUris: [client.postLogoutRedirectUri],
                     tokenEndpointAuthMethod: 'client_secret_basic',

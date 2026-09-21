@@ -13,23 +13,6 @@ AFTER INSERT ON "early_bird_users"
 DEFERRABLE INITIALLY DEFERRED
 FOR EACH ROW EXECUTE FUNCTION "beacon_profile_after_account_insert"();
 
--- Standard email claims are opt-in and never include the private real name.
-ALTER TABLE "beacon_oauth_clients"
-  DROP CONSTRAINT "beacon_oauth_clients_static_confidential_check";
-UPDATE "beacon_oauth_clients"
-SET "scopes" = ARRAY['openid', 'profile', 'email']::TEXT[]
-WHERE "scopes" = ARRAY['openid', 'profile']::TEXT[];
-ALTER TABLE "beacon_oauth_clients"
-  ADD CONSTRAINT "beacon_oauth_clients_static_confidential_check" CHECK (
-    "disabled" = true OR (
-      "public" = false
-      AND "require_pkce" = true
-      AND "skip_consent" = true
-      AND "enable_end_session" = true
-      AND "subject_type" = 'public'
-      AND "type" = 'web'
-      AND "grant_types" = ARRAY['authorization_code']::TEXT[]
-      AND "response_types" = ARRAY['code']::TEXT[]
-      AND "scopes" = ARRAY['openid', 'profile', 'email']::TEXT[]
-    )
-  );
+-- Scope expansion is a separate subsequent migration, after this image has
+-- become the proven rollback target. The current production image requires
+-- exactly openid/profile scopes in readiness; preserve that recovery boundary.

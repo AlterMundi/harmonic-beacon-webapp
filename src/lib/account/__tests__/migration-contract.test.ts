@@ -74,11 +74,10 @@ describe('Account authority forward-only migration contract', () => {
         expect(outbox.match(/CURRENT_TIMESTAMP \+ INTERVAL '5 seconds'/g)).toHaveLength(2);
     });
 
-    it('atomically permits explicit signup profiles and upgrades standard scopes', () => {
+    it('permits explicit signup profiles without changing the prior rollback scope contract', () => {
         expect(privateProfileSql).toContain('DEFERRABLE INITIALLY DEFERRED');
-        expect(privateProfileSql).toContain(
-            '"scopes" = ARRAY[\'openid\', \'profile\', \'email\']::TEXT[]',
-        );
+        expect(privateProfileSql).not.toContain('UPDATE "beacon_oauth_clients"');
+        expect(privateProfileSql).not.toContain('DROP CONSTRAINT');
         expect(privateProfileSql).not.toMatch(/SET\s+"real_name"\s*=\s*"display_name"/);
     });
 });
