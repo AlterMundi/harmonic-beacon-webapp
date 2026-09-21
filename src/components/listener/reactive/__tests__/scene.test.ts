@@ -324,7 +324,7 @@ describe('reactive campfire scene', () => {
         expect(allCenter.veils.every((veil) => veil.opacity === 0)).toBe(true);
     });
 
-    it('glows on activation, then dims and disappears according to TTL', () => {
+    it('keeps the older radial ribbons activation-gated according to TTL', () => {
         const activeFrame = frameWith(
             Array.from({ length: 64 }, (_, index) => index === 50 ? -20 : -82),
             Array.from({ length: 64 }, () => 0),
@@ -337,18 +337,30 @@ describe('reactive campfire scene', () => {
         );
         const active = buildReactiveCampfireScene(
             activeFrame,
-            { centerCutPercent: 4, activationTtlSeconds: 8 },
+            {
+                centerCutPercent: 4,
+                activationTtlSeconds: 8,
+                visualizationMode: 'radial-ribbons',
+            },
         );
         const recentlyActive = buildReactiveCampfireScene(
             frame,
-            { centerCutPercent: 4, activationTtlSeconds: 8 },
+            {
+                centerCutPercent: 4,
+                activationTtlSeconds: 8,
+                visualizationMode: 'radial-ribbons',
+            },
             new Map(),
             1,
             new Map([[50, 6_000]]),
         );
         const expired = buildReactiveCampfireScene(
             frame,
-            { centerCutPercent: 4, activationTtlSeconds: 8 },
+            {
+                centerCutPercent: 4,
+                activationTtlSeconds: 8,
+                visualizationMode: 'radial-ribbons',
+            },
             new Map(),
             1,
             new Map([[50, 1_000]]),
@@ -362,5 +374,41 @@ describe('reactive campfire scene', () => {
         expect(recentRibbon?.activation).toBeLessThan(HARMONIC_ACTIVATION_THRESHOLD);
         expect(recentRibbon?.visibility).toBeCloseTo(0.5);
         expect(expiredRibbon?.visibility).toBe(0);
+    });
+
+    it('keeps every selected kelp ribbon visible before and after activation', () => {
+        const quietFrame = frameWith(
+            Array.from({ length: 64 }, () => -120),
+            Array.from({ length: 64 }, () => 0),
+            { capturedAtMs: 20_000 },
+        );
+        const neverActivated = buildReactiveCampfireScene(
+            quietFrame,
+            {
+                centerCutPercent: 4,
+                activationTtlSeconds: 0,
+                visualizationMode: 'inner-anchor-kelp',
+            },
+        );
+        const longAfterActivation = buildReactiveCampfireScene(
+            quietFrame,
+            {
+                centerCutPercent: 4,
+                activationTtlSeconds: 1,
+                visualizationMode: 'inner-anchor-kelp',
+            },
+            new Map(),
+            1,
+            new Map([[50, 1_000]]),
+            new Map([[50, 1_000]]),
+            20_000,
+        );
+
+        expect(neverActivated.filaments.length).toBeGreaterThan(0);
+        expect(neverActivated.filaments.every(({ visibility }) => visibility === 1)).toBe(true);
+        expect(neverActivated.rings.every(({ visibility }) => visibility === 1)).toBe(true);
+        expect(longAfterActivation.filaments.every(({ visibility }) => visibility === 1)).toBe(true);
+        expect(longAfterActivation.filaments.find(({ harmonicIndex }) => harmonicIndex === 50))
+            .toMatchObject({ activation: 0, visibility: 1, impulseAgeSeconds: 19 });
     });
 });

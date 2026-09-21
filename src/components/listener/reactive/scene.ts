@@ -298,13 +298,15 @@ export function buildReactiveCampfireScene(
             opacity: absolute * 0.78,
             weight: 0.6 + absolute * 2.4,
             activation,
-            visibility: harmonicVisibility(
-                index,
-                activation,
-                capturedAtMs,
-                settings.activationTtlSeconds,
-                lastActivatedAtMs,
-            ),
+            visibility: innerDrivenMode
+                ? 1
+                : harmonicVisibility(
+                    index,
+                    activation,
+                    capturedAtMs,
+                    settings.activationTtlSeconds,
+                    lastActivatedAtMs,
+                ),
             tier: progress < 0.16 ? 'low' : progress < 0.58 ? 'mid' : 'high',
         };
     });
@@ -332,13 +334,18 @@ export function buildReactiveCampfireScene(
             deltas[index] ?? 0,
             settings.absoluteFloorDb,
         ) * confidence;
-        const visibility = harmonicVisibility(
-            index,
-            activation,
-            capturedAtMs,
-            settings.activationTtlSeconds,
-            lastActivatedAtMs,
-        );
+        // Kelp is a persistent representation of the selected harmonic bank.
+        // Measured activation drives its impulse and glow, never its existence.
+        // The older radial modes retain TTL visibility for comparison in the lab.
+        const visibility = innerDrivenMode
+            ? 1
+            : harmonicVisibility(
+                index,
+                activation,
+                capturedAtMs,
+                settings.activationTtlSeconds,
+                lastActivatedAtMs,
+            );
         const activationStartedAt = activationStartedAtMs.get(index);
         const impulseAgeSeconds = activationStartedAt === undefined
             ? null
