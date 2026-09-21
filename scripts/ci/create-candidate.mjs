@@ -6,7 +6,7 @@ import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { canonicalize, publicConfigSha256 } from './release-manifest.mjs';
+import { canonicalize, publicConfigSha256, validateCandidateManifest } from './release-manifest.mjs';
 
 const EXACT_REF = /^([a-z0-9./-]+)@(sha256:[0-9a-f]{64})$/u;
 const IDS = ['app', 'tapestry', 'playlist-bot', 'analytics'];
@@ -22,6 +22,14 @@ function exactRef(value, label) {
 }
 
 export function createCandidate(options) {
+  const mode = options.mode === undefined ? 'successor' : options.mode;
+  if (!['successor', 'genesis'].includes(mode)) fail('unsupported producer mode');
+  if (mode === 'genesis') {
+    if (options.baseManifestSha256 !== undefined && options.baseManifestSha256 !== '') fail('genesis must not supply a base manifest');
+  } else if (typeof options.baseManifestSha256 !== 'string' || !/^[0-9a-f]{64}$/u.test(options.baseManifestSha256)) {
+    fail('successor requires a valid base manifest SHA-256');
+  }
+  const baseManifestSha256 = mode === 'genesis' ? null : options.baseManifestSha256;
   const artifacts = options.evidence.map((entry) => {
     if (!IDS.includes(entry.artifactId)) fail(`unexpected artifact evidence: ${entry.artifactId}`);
     const context = '.';
@@ -56,8 +64,8 @@ export function createCandidate(options) {
   }
   const postgres = exactRef(options.externalRefs.postgres, 'postgres');
   const livekit = exactRef(options.externalRefs.livekit, 'livekit');
-  return {
-    schemaVersion: 'harmonic-beacon.release.v1',
+  return validateCandidateManifest({
+    schemaVersion: mode === 'genesis' ? 'harmonic-beacon.release.genesis.v1' : 'harmonic-beacon.release.v1',
     source: { repository: 'AlterMundi/harmonic-beacon-webapp', gitSha: options.sourceSha, gitTree: options.sourceTree },
     build: {
       workflowRunId: options.runId,
@@ -84,9 +92,9 @@ export function createCandidate(options) {
       composeSha256: options.hashes.compose,
       overlaySha256: options.hashes.overlay,
     },
-    promotion: { baseManifestSha256: options.baseManifestSha256 },
-    rollback: { manifestSha256: options.baseManifestSha256 },
-  };
+    promotion: { baseManifestSha256 },
+    rollback: { manifestSha256: baseManifestSha256 },
+  });
 }
 
 function hashFiles(paths) {
@@ -123,10 +131,12 @@ export function main(argv = process.argv.slice(2), env = process.env) {
   const sourceSha = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
   const sourceTree = execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim();
   const createdAt = new Date(execFileSync('git', ['show', '-s', '--format=%cI', 'HEAD'], { encoding: 'utf8' }).trim()).toISOString();
-  const migrationDirectories = readdirSync('prisma/migrations').sort();
+  const migrationDirectories = readdirSync('prisma/migrations', { withFileTypes: true })
+    .filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort();
   const migrationHead = migrationDirectories.at(-1);
   const candidate = createCandidate({
     sourceSha, sourceTree, createdAt,
+    mode: env.HB_RELEASE_MODE,
     runId: env.GITHUB_RUN_ID,
     runAttempt: Number(env.GITHUB_RUN_ATTEMPT),
     evidence,

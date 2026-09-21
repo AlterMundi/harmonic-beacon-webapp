@@ -23,7 +23,8 @@ function assertHelperBrowserInstallOrder(steps: Step[]) {
     expect(firefoxInstall?.run).toBe('npx playwright install --with-deps firefox');
     expect(firefoxHelper?.run).toContain("--test-name-pattern='^Firefox automation reload'");
     expect(firefoxHelper?.run).not.toMatch(/--list|--grep/);
-    expect(firefoxHelper?.if).toBeUndefined();
+    expect(firefoxHelper?.if).toBe('inputs.include_firefox == true');
+    expect(firefoxInstall?.if).toBe('inputs.include_firefox == true');
     expect(steps.indexOf(chromiumInstall!)).toBeLessThan(steps.indexOf(chromium!));
     expect(steps.indexOf(chromium!)).toBeLessThan(steps.indexOf(firefoxInstall!));
     expect(steps.indexOf(firefoxInstall!)).toBeLessThan(steps.indexOf(firefoxHelper!));
@@ -182,6 +183,17 @@ assert stat.S_ISSOCK(os.stat(os.environ['PULSE_SERVER'].removeprefix('unix:')).s
 }
 
 describe('Isolated Account CI gate', () => {
+    it('requires explicit opt-in for Firefox in manual and reusable runs, never routine PRs', () => {
+        const config = parse(readFileSync('.github/workflows/e2e.yml', 'utf8'));
+        for (const event of ['workflow_call', 'workflow_dispatch']) {
+            expect(config.on[event].inputs.include_firefox).toMatchObject({ type: 'boolean', default: false });
+        }
+        expect(config.env.E2E_INCLUDE_FIREFOX).toBe("${{ inputs.include_firefox && '1' || '0' }}");
+        for (const step of config.jobs.e2e.steps.filter((step: Step) => step.name?.includes('Firefox'))) {
+            expect(step.if).toBe('inputs.include_firefox == true');
+        }
+        expect(readFileSync('e2e/helpers/continuity-stack.test.ts', 'utf8')).toContain("skip: process.env.E2E_INCLUDE_FIREFOX !== '1'");
+    });
     it('runs the Node protocol/runtime contracts explicitly before the real isolated four-project runner', () => {
         const job = workflow().jobs.account;
         expect(job, 'Account must have its own Docker-capable job').toBeDefined();
@@ -189,7 +201,8 @@ describe('Isolated Account CI gate', () => {
         expect(job.services).toBeUndefined(); // runner creates and verifies its own PG/LiveKit
         const commands = job.steps.map((step) => step.run ?? '').join('\n');
         expect(commands).toContain('node --import tsx --test e2e/account-fixture/protocol.test.ts e2e/account-fixture/runtime-backend.test.ts');
-        expect(commands).toContain('playwright install --with-deps chromium firefox webkit');
+        expect(commands).toContain('playwright install --with-deps chromium webkit');
+        expect(job.steps.find(step => step.name === 'Install optional Account Firefox engine')?.if).toBe('inputs.include_firefox == true');
         const gate = job.steps.find((step) => step.run?.includes('node --import tsx e2e/account-fixture/run.ts'));
         expect(gate?.if).toBeUndefined();
         expect(gate?.run).toContain('E2E_ACCOUNT_BACKEND=docker');
@@ -197,6 +210,7 @@ describe('Isolated Account CI gate', () => {
             expect(gate?.run).toContain(`--project=${project}`);
         }
         expect(gate?.run).toContain('--retries=0 --workers=1');
+        expect(gate?.run).toContain('if [ "${E2E_INCLUDE_FIREFOX:-0}" = 1 ]; then optional_projects+=(--project=firefox-account); fi');
         expect(gate?.run).not.toMatch(/--list|--grep|continue-on-error|\|\| true/);
         expect(commands.indexOf('node --import tsx --test')).toBeLessThan(commands.indexOf('node --import tsx e2e/account-fixture/run.ts'));
     });

@@ -9,6 +9,11 @@ this separate configuration. A presentation flag alone cannot qualify sign-out.
 
 ## Why this fixture is different
 
+Routine testing uses Chromium, Android Chrome and iPhone WebKit (52 memberships).
+Firefox is opt-in via `E2E_INCLUDE_FIREFOX=1` (70 memberships with all four projects).
+Examples below mentioning Firefox require this explicit flag and its installed
+browser binary; they do not describe the default release matrix.
+
 - Browser follows `/api/account/login` → loopback HTTPS issuer → real callback. The RP
   creates its own one-use state/PKCE/nonce attempt, validates a fresh signed ID token
   against actual JWKS, issuer/audience/time/nonce, introspection and UserInfo, then

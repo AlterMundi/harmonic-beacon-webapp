@@ -18,9 +18,25 @@
     "rollback",
     "qualification"
   ],
+  "oneOf": [
+    {
+      "properties": {
+        "schemaVersion": { "const": "harmonic-beacon.release.v1" },
+        "promotion": { "properties": { "baseManifestSha256": { "$ref": "#/$defs/sha256" } } },
+        "rollback": { "properties": { "manifestSha256": { "$ref": "#/$defs/sha256" } } }
+      }
+    },
+    {
+      "properties": {
+        "schemaVersion": { "const": "harmonic-beacon.release.genesis.v1" },
+        "promotion": { "properties": { "baseManifestSha256": { "type": "null" } } },
+        "rollback": { "properties": { "manifestSha256": { "type": "null" } } }
+      }
+    }
+  ],
   "properties": {
     "schemaVersion": {
-      "const": "harmonic-beacon.release.v1"
+      "enum": ["harmonic-beacon.release.v1", "harmonic-beacon.release.genesis.v1"]
     },
     "source": {
       "$ref": "#/$defs/source"
@@ -361,9 +377,7 @@
         "baseManifestSha256"
       ],
       "properties": {
-        "baseManifestSha256": {
-          "$ref": "#/$defs/sha256"
-        }
+        "baseManifestSha256": {}
       }
     },
     "rollback": {
@@ -373,9 +387,7 @@
         "manifestSha256"
       ],
       "properties": {
-        "manifestSha256": {
-          "$ref": "#/$defs/sha256"
-        }
+        "manifestSha256": {}
       }
     },
     "qualification": {

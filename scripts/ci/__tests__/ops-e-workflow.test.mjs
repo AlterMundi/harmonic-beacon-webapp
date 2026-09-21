@@ -4,6 +4,8 @@ import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { createRequire } from 'node:module';
+const { parse } = createRequire(import.meta.url)('yaml');
 
 const ci = readFileSync('.github/workflows/ci.yml', 'utf8');
 const promote = readFileSync('.github/workflows/oci-promote.yml', 'utf8');
@@ -19,6 +21,140 @@ function functionSource(source, name) {
   assert.notEqual(end, -1, `unterminated ${name}`);
   return source.slice(start, end + 3);
 }
+
+test('candidate preflight executes fail-closed inputs before protected genesis approval and any builds', () => {
+  const workflow = parse(candidate);
+  assert.ok(workflow.on.workflow_dispatch?.inputs?.mode, "missing typed mode input");
+  assert.deepEqual(workflow.on.workflow_dispatch.inputs.mode.options, ['successor', 'genesis']);
+  assert.equal(workflow.on.workflow_dispatch.inputs.mode.default, 'successor');
+  assert.equal(workflow.on.workflow_dispatch.inputs.mode.type, 'choice');
+  assert.equal(workflow.on.workflow_dispatch.inputs.mode.required, true);
+  const preflight = workflow.jobs.preflight;
+  assert.deepEqual(preflight.permissions, { contents: 'read' });
+  const step = preflight.steps.find(s => s.id === 'inputs');
+  assert.ok(step?.run, 'missing executable preflight');
+  assert.equal(step.env.REQUESTED_MODE, '${{ inputs.mode }}');
+  for (const name of ['HB_POSTGRES_IMAGE_REF', 'HB_LIVEKIT_IMAGE_REF', 'HB_RELEASE_BASE_MANIFEST_SHA256']) {
+    assert.equal(step.env[name], '${{ vars.' + name + ' }}');
+  }
+  for (const name of ['mode', 'base', 'postgres', 'livekit']) {
+    assert.equal(preflight.outputs[name], '${{ steps.inputs.outputs.' + name + ' }}');
+  }
+  assert.doesNotMatch(step.run, /\$\{\{/u, 'input expressions must travel through env');
+  const root = mkdtempSync(join(tmpdir(), 'genesis-preflight-'));
+  try {
+    const gh = join(root, 'gh');
+    writeFileSync(gh, '#!/bin/bash\nset -euo pipefail\n[[ "$*" == "api repos/AlterMundi/harmonic-beacon-webapp/git/ref/heads/main --jq .object.sha" ]]\nprintf "%s\\n" "$MAIN_SHA"\n[[ "$GH_FAIL" == false ]]\n');
+    chmodSync(gh, 0o755);
+    const env = {
+      PATH: `${root}:${process.env.PATH}`, GH_FAIL: 'false', MAIN_SHA: 'a'.repeat(40),
+      GITHUB_SHA: 'a'.repeat(40), GITHUB_REF: 'refs/heads/main', GITHUB_REF_PROTECTED: 'true',
+      GITHUB_REPOSITORY: 'AlterMundi/harmonic-beacon-webapp', GITHUB_EVENT_NAME: 'workflow_dispatch',
+      REQUESTED_MODE: 'genesis', HB_RELEASE_BASE_MANIFEST_SHA256: '',
+      HB_POSTGRES_IMAGE_REF: `docker.io/library/postgres@sha256:${'b'.repeat(64)}`,
+      HB_LIVEKIT_IMAGE_REF: `docker.io/livekit/livekit-server@sha256:${'c'.repeat(64)}`,
+    };
+    let index = 0;
+    const run = (changes = {}) => {
+      const output = join(root, `outputs-${++index}`); writeFileSync(output, '');
+      const result = spawnSync('/bin/bash', ['-c', step.run], { env: { ...env, ...changes, GITHUB_OUTPUT: output }, encoding: 'utf8' });
+      return { ...result, output: readFileSync(output, 'utf8') };
+    };
+    const genesis = run();
+    assert.equal(genesis.status, 0, genesis.stderr);
+    assert.match(genesis.output, /^mode=genesis$/mu);
+    for (const changes of [
+      { GITHUB_EVENT_NAME: 'push' }, { GITHUB_EVENT_NAME: 'pull_request' },
+      { GITHUB_REF: 'refs/heads/feature' }, { GITHUB_REF_PROTECTED: 'false' },
+      { GITHUB_REPOSITORY: 'other/repository' }, { MAIN_SHA: 'd'.repeat(40) }, { GH_FAIL: 'true' },
+      { REQUESTED_MODE: '' }, { REQUESTED_MODE: 'wrong' }, { REQUESTED_MODE: '$(exit 0)' },
+      { HB_RELEASE_BASE_MANIFEST_SHA256: 'd'.repeat(64) },
+      { HB_POSTGRES_IMAGE_REF: '' }, { HB_LIVEKIT_IMAGE_REF: '' },
+      { HB_POSTGRES_IMAGE_REF: 'postgres:16' }, { HB_LIVEKIT_IMAGE_REF: 'livekit/livekit-server:latest' },
+      { HB_POSTGRES_IMAGE_REF: `evil/postgres@sha256:${'b'.repeat(64)}` },
+      { HB_LIVEKIT_IMAGE_REF: `docker.io/livekit/livekit-server@sha256:${'C'.repeat(64)}` },
+    ]) {
+      const result = run(changes);
+      assert.notEqual(result.status, 0, JSON.stringify(changes));
+      assert.equal(result.output, '', 'invalid input emitted downstream authority');
+    }
+    for (const event of ['push', 'workflow_dispatch']) {
+      const changes = { GITHUB_EVENT_NAME: event, REQUESTED_MODE: event === 'push' ? '' : 'successor', HB_RELEASE_BASE_MANIFEST_SHA256: 'd'.repeat(64) };
+      assert.match(run(changes).output, /^mode=successor$/mu);
+      assert.equal(run(changes).status, 0);
+      for (const base of ['', 'bad', `sha256:${'d'.repeat(64)}`]) {
+        const invalid = run({ ...changes, HB_RELEASE_BASE_MANIFEST_SHA256: base });
+        assert.notEqual(invalid.status, 0); assert.equal(invalid.output, '');
+      }
+    }
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('genesis approval and successful full reusable CI are mandatory ancestors of signing', () => {
+  const { jobs } = parse(candidate);
+  assert.ok(jobs['genesis-approval'], 'missing protected genesis approval');
+  assert.equal(jobs['genesis-approval'].environment, 'production');
+  assert.equal(jobs['genesis-approval'].needs, 'preflight');
+  assert.equal(jobs['genesis-approval'].if, "needs.preflight.outputs.mode == 'genesis'");
+  assert.deepEqual(jobs['genesis-approval'].permissions, {});
+  const checks = jobs['required-checks'];
+  assert.deepEqual(checks.needs, ['preflight', 'genesis-approval']);
+  // Evaluate the actual bounded Actions predicate with boundary results, including skipped needs.
+  const evaluate = (expression, needs, cancelled = false) => {
+    const code = expression.replace(/needs\.([a-z-]+)/gu, (_, job) => `needs[${JSON.stringify(job)}]`).replace(/cancelled\(\)/gu, 'cancelled');
+    return Function('needs', 'cancelled', `"use strict"; return (${code});`)(needs, cancelled);
+  };
+  for (const mode of ['genesis', 'successor']) for (const preflight of ['success', 'failure', 'skipped', 'cancelled']) for (const approval of ['success', 'failure', 'skipped', 'cancelled']) {
+    const needs = { preflight: { result: preflight, outputs: { mode } }, 'genesis-approval': { result: approval } };
+    assert.equal(evaluate(checks.if, needs), preflight === 'success' && (mode === 'genesis' ? approval === 'success' : approval === 'skipped'));
+    assert.equal(evaluate(checks.if, needs, true), false);
+  }
+  assert.equal(checks.uses, './.github/workflows/ci.yml');
+  assert.match(checks.with.force_all, /needs\.preflight\.outputs\.mode == 'genesis'/u);
+  const forceAll = Function('needs', 'github', `"use strict"; return (${checks.with.force_all.slice(3, -2)});`);
+  for (const [mode, event, before, expected] of [
+    ['genesis', 'workflow_dispatch', 'a'.repeat(40), true],
+    ['successor', 'workflow_dispatch', 'a'.repeat(40), true],
+    ['successor', 'push', 'a'.repeat(40), false],
+    ['successor', 'push', '0'.repeat(40), true],
+  ]) {
+    assert.equal(forceAll({ preflight: { outputs: { mode } } }, { event_name: event, event: { before } }), expected);
+  }
+  assert.equal(jobs.build.needs, 'required-checks');
+  assert.match(jobs.build.if, /needs\.required-checks\.result == 'success'/u);
+  assert.deepEqual(jobs.qualify.needs, ['preflight', 'build']);
+  assert.ok(jobs.qualify.if, 'qualify explicitly handles skipped genesis-approval ancestry');
+  for (const result of ['success', 'failure', 'skipped', 'cancelled']) {
+    assert.equal(evaluate(jobs.build.if, { 'required-checks': { result } }), result === 'success');
+    assert.equal(evaluate(jobs.build.if, { 'required-checks': { result } }, true), false);
+    for (const preflight of ['success', 'failure', 'skipped', 'cancelled']) {
+      const needs = { preflight: { result: preflight }, build: { result } };
+      assert.equal(evaluate(jobs.qualify.if, needs), preflight === 'success' && result === 'success');
+      assert.equal(evaluate(jobs.qualify.if, needs, true), false);
+    }
+  }
+  assert.deepEqual(jobs.build.strategy.matrix.include.map(m => m.artifact), ['app', 'tapestry', 'playlist-bot', 'analytics']);
+  const assemble = jobs.qualify.steps.find(s => s.name === 'Assemble candidate inputs');
+  assert.equal(assemble.env.HB_RELEASE_MODE, '${{ needs.preflight.outputs.mode }}');
+  for (const name of ['HB_POSTGRES_IMAGE_REF', 'HB_LIVEKIT_IMAGE_REF', 'HB_RELEASE_BASE_MANIFEST_SHA256']) {
+    assert.match(assemble.env[name], /needs\.preflight\.outputs\./u);
+  }
+  assert.match(candidate, /--no-build/u);
+  assert.match(candidate, /cosign sign-blob --yes --bundle release-manifest.signature.bundle.json release-manifest.json/u);
+  assert.match(candidate, /cosign sign-blob --yes --bundle qualification-receipt.signature.bundle.json qualification-receipt.json/u);
+  const finalStep = jobs.qualify.steps.at(-1);
+  assert.match(finalStep.uses, /^actions\/upload-artifact@/u);
+  assert.equal(finalStep.if, undefined);
+});
+
+test('isolated workflow review installs locked dependencies before parser-dependent tests', () => {
+  const steps = parse(ci).jobs['workflow-review'].steps;
+  const install = steps.findIndex(step => step.run === 'npm ci --ignore-scripts');
+  const tests = steps.findIndex(step => step.run?.includes('scripts/ci/__tests__/ops-e-workflow.test.mjs'));
+  assert.ok(install >= 0 && tests > install, 'workflow-review must install its own locked dependencies before running tests');
+  assert.equal(steps[install].if, undefined);
+  assert.equal(steps[install]['continue-on-error'], undefined);
+});
 
 test('CI derives its service test jobs from the executable impact classifier', () => {
   assert.match(ci, /^  impact:\n/mu);

@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
-import { classifyChanges } from '../change-impact.mjs';
+import { classifyChanges, verifyRequiredCheckResults } from '../change-impact.mjs';
 
 import {
   assertCurrentHighWater,
@@ -81,6 +81,20 @@ test('impact plan rejects omission of any hosted matrix or logical-check job', (
     matrices: { ...critical.matrices, critical: [] },
     requiredJobChecks: critical.requiredJobChecks.filter((job) => job !== 'auth-contract'),
   }), /derived impact selection/u);
+});
+
+test('governance ownership runs through classifier, plan validator and exact evaluator without deployment', () => {
+  const plan = classifyChanges(['.github/CODEOWNERS', 'docs/ops/ownership-note.md']);
+  assert.equal(validateImpactPlan(plan), plan);
+  assert.deepEqual(plan.requiredJobChecks, ['impact']);
+  assert.deepEqual(verifyRequiredCheckResults(plan.requiredJobChecks, [
+    { check: 'impact', conclusion: 'success' },
+  ]), ['impact']);
+  assert.equal(plan.deployment.deploy, false);
+  assert.deepEqual(plan.deployment.artifactsToPull, []);
+  assert.throws(() => verifyRequiredCheckResults(plan.requiredJobChecks, [
+    { check: 'impact', conclusion: 'skipped' },
+  ]), /did not succeed/u);
 });
 
 test('verified database state skips migration without quiescing when none are pending', () => {

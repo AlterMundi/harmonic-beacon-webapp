@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import type { PlaywrightTestConfig } from '@playwright/test';
 import { describe, expect, it } from 'vitest';
 import config, { managedServerCommand } from '../../../playwright.config';
@@ -99,6 +100,18 @@ describe('Browser selection contract negative controls', () => {
 });
 
 describe('Live continuity batch browser qualification', () => {
+    for (const include of ['0', '1']) {
+        it(`collects Firefox only on explicit opt-in (${include})`, () => {
+            const report = JSON.parse(execFileSync(process.execPath, [
+                'node_modules/@playwright/test/cli.js', 'test', '--list', '--reporter=json',
+            ], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024,
+                env: { ...process.env, E2E_INCLUDE_FIREFOX: include } }));
+            expect(report.errors).toEqual([]);
+            const names = report.config.projects.map((p: { name: string }) => p.name);
+            expect(names.includes('firefox')).toBe(include === '1');
+            expect(names).toEqual(expect.arrayContaining(['chromium', 'android-chrome', 'iphone-webkit', 'w320', 'w1440']));
+        });
+    }
     it('builds by default and skips only the build when an earlier CI invocation owns it', () => {
         expect(managedServerCommand(3100, false)).toBe('npm run build && npx next start --port 3100');
         expect(managedServerCommand(3100, true)).toBe('npx next start --port 3100');
@@ -109,7 +122,7 @@ describe('Live continuity batch browser qualification', () => {
         { file: 'e2e/tests/navigation-media-probe.spec.ts', title: 'navigation capture probe retains interception after browser garbage collection' },
     ];
     for (const { file, title } of desktopCases) {
-        for (const name of ['chromium', 'firefox']) {
+        for (const name of ['chromium']) {
             it(`selects the actual desktop lifecycle/probe title in ${file} on ${name}`, () => {
                 const project = config.projects?.find((entry) => entry.name === name);
                 expect(project).toBeDefined();
@@ -127,7 +140,7 @@ describe('Live continuity batch browser qualification', () => {
         }
     }
 
-    for (const name of ['chromium', 'android-chrome', 'firefox', 'iphone-webkit']) {
+    for (const name of ['chromium', 'android-chrome', 'iphone-webkit']) {
         for (const file of regressionFiles) {
             it(`selects ${file} on ${name}`, () => {
                 const project = config.projects?.find((entry) => entry.name === name);
@@ -148,8 +161,6 @@ describe('Live continuity batch browser qualification', () => {
     });
 
     for (const name of [
-        'Install Firefox after Chromium screenshot gates',
-        'Run Firefox functional and accessibility gates',
         'Install WebKit after Chromium screenshot gates',
     ]) {
         it(`does not skip ${name} on release`, () => {

@@ -135,6 +135,67 @@ test('documentation-only changes select no deployment or recovery ceremony', () 
   });
 });
 
+test('CODEOWNERS-only governance stays critical without selecting runtime or release work', () => {
+  for (const files of [
+    ['.github/CODEOWNERS'],
+    ['.github/CODEOWNERS', 'docs/ops/ownership-note.md'],
+  ]) {
+    const report = classifyChanges(files);
+    assert.equal(report.risk, 'critical');
+    assert.ok(report.domains.includes('governance'));
+    assert.deepEqual(report.matrices, {
+      ui: [], functional: [],
+      critical: ['governance:ownership-workflow-contract'],
+      crossDomain: ['required-check-completeness'],
+    });
+    assert.deepEqual(checkNames(report), ['diff-check', 'ownership-contract', 'governance-tooling']);
+    assert.deepEqual(report.requiredJobChecks, ['impact']);
+    assert.deepEqual(report.requiredContexts, ['diff-check', 'impact']);
+    assert.deepEqual(report.deployment, {
+      deploy: false,
+      artifactsToPull: [],
+      servicesToReplace: [],
+      reusePriorImages: [],
+      migration: 'never',
+      recovery: 'none',
+    });
+  }
+});
+
+test('CODEOWNERS never narrows mixed runtime, audio, auth, workflow or unknown coverage', () => {
+  for (const path of [
+    'src/lib/runtime.ts',
+    'src/context/AudioContext.tsx',
+    'src/lib/auth.ts',
+    '.github/workflows/ci.yml',
+    'unclassified/critical.surface',
+  ]) {
+    const baseline = classifyChanges([path]);
+    const mixed = classifyChanges(['.github/CODEOWNERS', path]);
+    for (const job of baseline.requiredJobChecks) {
+      assert.ok(mixed.requiredJobChecks.includes(job), `${path} lost ${job}`);
+    }
+    for (const [kind, matrices] of Object.entries(baseline.matrices)) {
+      for (const matrix of matrices) assert.ok(mixed.matrices[kind].includes(matrix), `${path} lost ${matrix}`);
+    }
+    assert.deepEqual(mixed.deployment, baseline.deployment, path);
+  }
+});
+
+test('CODEOWNERS keeps specialized documentation checks in the governance profile', () => {
+  const skills = classifyChanges(['.github/CODEOWNERS', '.agents/skills/harmonic-beacon-operations/SKILL.md']);
+  assert.deepEqual(checkNames(skills), [
+    'diff-check', 'agent-skill-distributions', 'ownership-contract', 'governance-tooling',
+  ]);
+  assert.deepEqual(skills.requiredJobChecks, ['impact']);
+  assert.equal(skills.deployment.deploy, false);
+
+  const commerce = classifyChanges(['.github/CODEOWNERS', 'contracts/commerce-entitlement/README.md']);
+  assert.ok(checkNames(commerce).includes('commerce-contract'));
+  assert.deepEqual(commerce.requiredJobChecks, ['impact', 'commerce-contract']);
+  assert.equal(commerce.deployment.deploy, false);
+});
+
 test('bounded CSS selects the explicit UI matrix and only replaces app', () => {
   const report = classifyChanges(['src/app/landing.css']);
   assert.equal(report.risk, 'ui');
@@ -181,6 +242,70 @@ test('audio auth grants payments and data retain explicit critical matrices', ()
   assert.equal(data.deployment.migration, 'verify-pending');
   assert.equal(data.deployment.recovery, 'backup-restore-if-pending');
   assert.ok(data.deployment.servicesToReplace.includes('commerce-reconciler'));
+});
+
+test('the exact GET-only delivery diagnostic selects observation tooling without runtime qualification', () => {
+  for (const path of [
+    'scripts/ops/delivery-status.mjs',
+    'scripts/ops/__tests__/delivery-status.test.mjs',
+  ]) {
+    const report = classifyChanges([path]);
+    assert.equal(report.risk, 'functional', path);
+    assert.deepEqual(report.domains, ['observation-tooling'], path);
+    assert.deepEqual(report.requiredJobChecks, ['impact'], path);
+    assert.deepEqual(report.requiredContexts, ['diff-check', 'impact'], path);
+    assert.deepEqual(report.deployment, {
+      deploy: false,
+      artifactsToPull: [],
+      servicesToReplace: [],
+      reusePriorImages: [],
+      migration: 'never',
+      recovery: 'none',
+    }, path);
+    assert.deepEqual(report.matrices, { ui: [], functional: [], critical: [], crossDomain: [] }, path);
+  }
+});
+
+test('observation classification is exact and shared or privileged scripts stay critical', () => {
+  for (const path of [
+    'scripts/hb.mjs',
+    'scripts/ops/hb-doctor.mjs',
+    'scripts/ops/delivery-status-helper.mjs',
+    'scripts/ci/required-checks.mjs',
+  ]) {
+    const report = classifyChanges([path]);
+    assert.equal(report.risk, 'critical', path);
+    assert.ok(report.domains.includes('infrastructure'), path);
+    assert.ok(report.requiredJobChecks.includes('workflow-review'), path);
+    assert.ok(report.requiredJobChecks.includes('release-qualification'), path);
+  }
+});
+
+test('adding an observation tool never removes coverage from a critical batch', () => {
+  const critical = classifyChanges(['scripts/ci/required-checks.mjs']);
+  const mixed = classifyChanges(['scripts/ci/required-checks.mjs', 'scripts/ops/delivery-status.mjs']);
+  assert.deepEqual(mixed.matrices, critical.matrices);
+  assert.deepEqual(mixed.requiredJobChecks, critical.requiredJobChecks);
+  assert.deepEqual(mixed.requiredContexts, critical.requiredContexts);
+});
+
+test('adding an app contract test never narrows conservative infrastructure coverage', () => {
+  const infrastructure = classifyChanges(['scripts/ci/required-checks.mjs']);
+  const mixed = classifyChanges([
+    'scripts/ci/required-checks.mjs',
+    'src/lib/__tests__/live-production-account-deploy-contract.test.ts',
+  ]);
+  assert.deepEqual(mixed.matrices.functional, infrastructure.matrices.functional);
+  for (const job of infrastructure.requiredJobChecks) {
+    assert.ok(mixed.requiredJobChecks.includes(job), `mixed batch removed required job: ${job}`);
+  }
+  assert.deepEqual(mixed.requiredContexts, infrastructure.requiredContexts);
+});
+
+test('documentation accompanying an observation-only change does not select runtime matrices', () => {
+  const report = classifyChanges(['scripts/ops/delivery-status.mjs', 'docs/ops/OPERATOR_LOOP.md']);
+  assert.deepEqual(report.matrices, { ui: [], functional: [], critical: [], crossDomain: [] });
+  assert.equal(report.deployment.deploy, false);
 });
 
 test('shared dependencies affect every first-party artifact and service role', () => {
@@ -377,7 +502,7 @@ test('protected delivery contexts stay bound to the selected impact matrix', () 
 
 test('delivery-control changes conservatively require every protected context', () => {
   assert.deepEqual(classifyChanges(['.github/workflows/oci-promote.yml']).requiredContexts, [
-    'diff-check', 'lint-and-build', 'test', 'tapestry', 'playlist', 'analytics',
+    'diff-check', 'impact', 'lint-and-build', 'test', 'tapestry', 'playlist', 'analytics',
     'e2e', 'account', 'frozen-audio-paths',
   ]);
 });
@@ -389,10 +514,10 @@ test('hashed commerce contract markdown keeps contract validation without app ex
   assert.deepEqual(report.requiredContexts, ['diff-check', 'test']);
 });
 
-test('agent skill distributions execute inside the always-run impact job while delivery keeps stable contexts', () => {
+test('agent skill distributions execute inside the impact job and that evidence is required', () => {
   const report = classifyChanges(['.agents/skills/github-workflows/SKILL.md']);
   assert.deepEqual(checkNames(report), ['diff-check', 'agent-skill-distributions']);
-  assert.deepEqual(report.requiredContexts, ['diff-check']);
+  assert.deepEqual(report.requiredContexts, ['diff-check', 'impact']);
 });
 
 test('rename detection remains disabled so both paths are classified', () => {
