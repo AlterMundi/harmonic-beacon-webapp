@@ -284,10 +284,22 @@ create_stage_restore() {
   docker exec hb-migration-rehearsal-postgres rm -f -- "$container_dump"
 }
 
+remove_rehearsal_container() {
+  local name="$1" image="$2" found project actual_image
+  found="$(docker container ls -a --filter "name=^/${name}$" --format '{{.Names}}')" || die 'cannot inspect rehearsal containers'
+  [ -n "$found" ] || return 0
+  [ "$found" = "$name" ] || die "ambiguous rehearsal container identity: $name"
+  project="$(docker container inspect "$name" --format '{{index .Config.Labels "com.docker.compose.project"}}')" || die "cannot inspect rehearsal project: $name"
+  actual_image="$(container_image "$name")" || die "cannot inspect rehearsal image: $name"
+  [ "$project" = hb-migration-rehearsal ] && [ "$actual_image" = "$image" ] || die "refusing unrelated rehearsal container: $name"
+  docker rm -f -- "$name" >/dev/null || die "cannot remove prior rehearsal container: $name"
+}
+
 run_stage_rehearsal() {
   local image database state_path="$ROOT/staging-migration-state.json"
   image="$(candidate_image)"; database="hb_restore_stage_$(permit '.permitId' | cut -c1-16)"
-  docker rm -f hb-migration-rehearsal-app hb-migration-rehearsal-worker >/dev/null 2>&1 || true
+  remove_rehearsal_container hb-migration-rehearsal-app "$image"
+  remove_rehearsal_container hb-migration-rehearsal-worker "$image"
   create_stage_restore "$database"
   rehearsal_compose "$image" "$image" "$database" run --rm --no-deps migrate npx tsx scripts/release-migration-state.ts > "$state_path"
   assert_expected_migrations "$state_path" pending
@@ -299,7 +311,7 @@ run_stage_rehearsal() {
   wait_worker hb-migration-rehearsal-worker || die 'candidate rehearsal worker failed'
   jq --arg database "$database" '.rehearsalDatabase=$database|.phase="staged"' "$STATE" > "$ROOT/state.stage.json"; atomic_state "$ROOT/state.stage.json"
 }
-stage_candidate() { validate_permit; build_candidate; run_stage_rehearsal; }
+stage_candidate() { validate_permit; [ ! -e "$STATE" ] || die 'v2 transaction state already exists'; build_candidate; run_stage_rehearsal; }
 stage_resume() {
   validate_permit
   phase_is staging

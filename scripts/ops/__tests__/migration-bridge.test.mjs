@@ -307,3 +307,42 @@ test('stage resume rejects every non-staging phase before candidate reuse', asyn
   assert.notEqual(result.status, 0, result.stderr);
   assert.deepEqual(operations, []);
 });
+
+test('initial stage cannot overwrite any existing v2 transaction state', async () => {
+  const sandbox = await mkdtemp(join(tmpdir(), 'hb-migration-stage-existing-'));
+  const stateDir = join(sandbox, 'var/lib/harmonic-beacon/migration-bridge-v2'); await mkdir(stateDir, {recursive:true});
+  await writeFile(join(stateDir, 'state.json'), '{}', {mode:0o600});
+  const helper = join(root, 'deploy/hb-migration-bridge-root');
+  const shell = String.raw`
+    source "$HELPER"
+    validate_permit() { :; }
+    build_candidate() { printf 'build\n'; }
+    run_stage_rehearsal() { printf 'rehearse\n'; }
+    stage_candidate
+  `;
+  const result = spawnSync('bash', ['-c', shell], {encoding:'utf8', env:{...process.env,
+    HELPER:helper, HB_MIGRATION_BRIDGE_TEST_ROOT:sandbox, HB_MIGRATION_BRIDGE_SOURCE_ONLY:'1'}});
+  await rm(sandbox, {recursive:true, force:true});
+  assert.notEqual(result.status, 0, result.stderr);
+  assert.equal(result.stdout, '');
+});
+
+test('rehearsal cleanup refuses a fixed-name container outside the bound project', async () => {
+  const sandbox = await mkdtemp(join(tmpdir(), 'hb-migration-stage-container-'));
+  const helper = join(root, 'deploy/hb-migration-bridge-root');
+  const shell = String.raw`
+    source "$HELPER"
+    docker() { case "$*" in
+      *'container ls'*) printf 'hb-migration-rehearsal-app\n';;
+      *'container inspect'*) printf 'other-project\n';;
+      *'rm -f'*) printf 'removed\n';;
+    esac; }
+    container_image() { printf 'sha256:%064d\n' 0; }
+    remove_rehearsal_container hb-migration-rehearsal-app sha256:${'0'.repeat(64)}
+  `;
+  const result = spawnSync('bash', ['-c', shell], {encoding:'utf8', env:{...process.env,
+    HELPER:helper, HB_MIGRATION_BRIDGE_TEST_ROOT:sandbox, HB_MIGRATION_BRIDGE_SOURCE_ONLY:'1'}});
+  await rm(sandbox, {recursive:true, force:true});
+  assert.notEqual(result.status, 0, result.stderr);
+  assert.doesNotMatch(result.stdout, /removed/);
+});
