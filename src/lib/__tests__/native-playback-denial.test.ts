@@ -48,4 +48,20 @@ describe('native playback denial controls autoplay, not only explicit play promi
         audio.autoplay = true;
         expect(audio.autoplay).toBe(true);
     });
+    it('can retain denial until the retry click reaches its capture phase', async () => {
+        const nativePlay = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+        vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+        denyNativePlayback();
+        const audio = document.createElement('audio');
+        audio.autoplay = true;
+        window.allowFixturePlaybackOnNextClick();
+
+        await expect(audio.play()).rejects.toMatchObject({ name: 'NotAllowedError' });
+        expect(nativePlay).not.toHaveBeenCalled();
+
+        document.body.append(document.createElement('button'));
+        document.querySelector('button')!.click();
+        await expect(audio.play()).resolves.toBeUndefined();
+        expect(nativePlay).toHaveBeenCalledOnce();
+    });
 });

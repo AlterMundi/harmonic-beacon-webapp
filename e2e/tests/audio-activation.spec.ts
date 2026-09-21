@@ -186,10 +186,19 @@ test.describe('live continuity without capture', () => {
         expect(await expectDeniedThumbnailCapture(page, 1)).toEqual(captureBefore);
         const failed = await receipt(page, testInfo, 'native-failure');
         const rejected = await nativeOutput();
-        expect(rejected).toEqual(blocked);
-        await page.evaluate(() => window.allowFixturePlayback());
-        // Merely releasing fixture policy must not fabricate native success.
-        expect(await nativeOutput()).toEqual(blocked);
+        // WebKit may advance currentTime briefly before pause takes effect. The
+        // rejection contract is the same two live sources, still paused and
+        // without autoplay; an exact clock equality would be fixture timing.
+        const withoutClock = (outputs: Awaited<ReturnType<typeof nativeOutput>>) => outputs.map(
+            ({ paused, autoplay, tracks }) => ({ paused, autoplay, tracks }),
+        );
+        const blockedShape = withoutClock(blocked);
+        expect(withoutClock(rejected)).toEqual(blockedShape);
+        // Release in the retry click's capture phase. Releasing before locator
+        // actionability allows a late LiveKit play() to recover legitimately,
+        // remove the CTA, and turn this assertion into a race against success.
+        await page.evaluate(() => window.allowFixturePlaybackOnNextClick());
+        expect(withoutClock(await nativeOutput())).toEqual(blockedShape);
         await page.getByRole('button', { name: START_AUDIO }).click();
         await expectNativeAudioAdvancing(page, 2);
         await expectEffectiveAudioReady(page);
