@@ -57,6 +57,14 @@ describe('Account OAuth confidential-client request boundary', () => {
             ['/api/account/auth/callback/apple', 'POST'],
         ]) await expect(accountRequestAllowed(request(path, method))).resolves.toBe(true);
 
+        await expect(accountRequestAllowed(new Request(
+            `${origin}/api/account/auth/oauth2/continue`, {
+                method: 'POST',
+                headers: { host: 'account.harmonicbeacon.com', 'content-type': 'application/json' },
+                body: JSON.stringify({ oauth_query: 'client_id=hb-live&exp=1&sig=signed' }),
+            },
+        ))).resolves.toBe(true);
+
         for (const [path, method] of [
             ['/api/account/auth/sign-out', 'POST'],
             ['/api/account/auth/update-user', 'POST'],

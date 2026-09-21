@@ -145,13 +145,17 @@ describe('Account cross-product logout completion', () => {
         }));
         const createLabel = locale === 'es' ? 'Crear cuenta' : 'Create account';
         fireEvent.click(screen.getAllByRole('button', { name: createLabel })[0]);
-        fireEvent.change(screen.getByLabelText(locale === 'es' ? 'Nombre visible' : 'Display name'), { target: { value: 'Test Listener' } });
+        fireEvent.change(screen.getByLabelText(locale === 'es' ? 'Nombre real (privado)' : 'Real name (private)'), { target: { value: 'Test Person' } });
+        fireEvent.change(screen.getByLabelText(locale === 'es' ? 'Nombre preferido' : 'Preferred name'), { target: { value: 'Test Listener' } });
         fireEvent.change(screen.getByLabelText(locale === 'es' ? 'Correo' : 'Email'), { target: { value: 'listener@example.invalid' } });
         const password = screen.getByLabelText(locale === 'es' ? 'Contraseña' : 'Password');
         fireEvent.change(password, { target: { value: '12345678' } });
         fireEvent.change(screen.getByLabelText(locale === 'es' ? 'Repetir contraseña' : 'Repeat password'), { target: { value: '12345678' } });
         fireEvent.submit(password.closest('form')!);
         await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+        expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
+            name: 'Test Listener', realName: 'Test Person', password: '12345678',
+        });
         const feedback = screen.getByRole('status');
         expect(feedback).toHaveTextContent(heading);
         expect(feedback).toHaveTextContent(copy);
@@ -181,7 +185,8 @@ describe('Account cross-product logout completion', () => {
             returnTo: null,
         }));
         fireEvent.click(screen.getAllByRole('button', { name: 'Create account' })[0]);
-        fireEvent.change(screen.getByLabelText('Display name'), { target: { value: 'Test Listener' } });
+        fireEvent.change(screen.getByLabelText('Real name (private)'), { target: { value: 'Test Person' } });
+        fireEvent.change(screen.getByLabelText('Preferred name'), { target: { value: 'Test Listener' } });
         fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'listener@example.invalid' } });
         const password = screen.getByLabelText('Password');
         fireEvent.change(password, { target: { value: '12345678' } });
@@ -211,7 +216,8 @@ describe('Account cross-product logout completion', () => {
             returnTo: null,
         }));
         fireEvent.click(screen.getAllByRole('button', { name: 'Create account' })[0]);
-        fireEvent.change(screen.getByLabelText('Display name'), { target: { value: 'Test Listener' } });
+        fireEvent.change(screen.getByLabelText('Real name (private)'), { target: { value: 'Test Person' } });
+        fireEvent.change(screen.getByLabelText('Preferred name'), { target: { value: 'Test Listener' } });
         fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'listener@example.invalid' } });
         fireEvent.change(screen.getByLabelText('Password'), { target: { value: '12345678' } });
         fireEvent.change(screen.getByLabelText('Repeat password'), { target: { value: '12345678' } });
@@ -234,7 +240,8 @@ describe('Account cross-product logout completion', () => {
             returnTo: null,
         }));
         fireEvent.click(screen.getAllByRole('button', { name: 'Create account' })[0]);
-        fireEvent.change(screen.getByLabelText('Display name'), { target: { value: 'Test Listener' } });
+        fireEvent.change(screen.getByLabelText('Real name (private)'), { target: { value: 'Test Person' } });
+        fireEvent.change(screen.getByLabelText('Preferred name'), { target: { value: 'Test Listener' } });
         fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'listener@example.invalid' } });
         const password = screen.getByLabelText('Password');
         fireEvent.change(password, { target: { value: '12345678' } });
@@ -278,5 +285,34 @@ describe('Account cross-product logout completion', () => {
         fireEvent.submit(password.closest('form')!);
         expect(fetchMock).not.toHaveBeenCalled();
         expect(screen.getByRole('status')).toHaveTextContent('Passwords do not match.');
+    });
+
+    it('continues the signed OAuth request after completing both profile names', async () => {
+        window.history.replaceState({}, '', '/account?client_id=hb-live&exp=9999999999&sig=signed');
+        const fetchMock = vi.fn()
+            .mockResolvedValueOnce(Response.json({
+                accountId: 'account-1', displayName: 'Nico', realName: 'Nicolás', revision: 2,
+            }))
+            .mockResolvedValueOnce(Response.json({ status: 'unavailable' }, { status: 400 }));
+        vi.stubGlobal('fetch', fetchMock);
+        render(createElement(AccountClient, {
+            initialSession: {
+                user: { email: 'nico@example.test', emailVerified: true, accessMethod: 'google' },
+                profile: { displayName: 'Nico', realName: null, revision: 1 },
+            },
+            providers: { google: true, apple: false }, locale: 'en', returnTo: null,
+        }));
+        fireEvent.change(screen.getByLabelText('Real name (private)'), {
+            target: { value: 'Nicolás' },
+        });
+        fireEvent.submit(screen.getByLabelText('Preferred name').closest('form')!);
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+        expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/account/profile');
+        expect(fetchMock.mock.calls[1]?.[0]).toBe('/api/account/auth/oauth2/continue');
+        expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({
+            postLogin: true,
+            oauth_query: 'client_id=hb-live&exp=9999999999&sig=signed',
+        });
+        expect(await screen.findByRole('status')).toHaveTextContent('Profile updated. Try continuing again.');
     });
 });

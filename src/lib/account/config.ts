@@ -134,24 +134,28 @@ export const ACCOUNT_STATIC_CLIENTS = [
         secretVariable: 'BEACON_ACCOUNT_CLIENT_SECRET_HB_LISTENER',
         redirectUri: 'https://listen.harmonicbeacon.com/api/account/callback',
         postLogoutRedirectUri: 'https://listen.harmonicbeacon.com/api/account/frontchannel-logout',
+        requiresCompleteProfile: false,
     },
     {
         clientId: 'hb-listener-staging',
         secretVariable: 'BEACON_ACCOUNT_CLIENT_SECRET_HB_LISTENER_STAGING',
         redirectUri: 'https://earlybirds-staging.harmonicbeacon.com/api/account/callback',
         postLogoutRedirectUri: 'https://earlybirds-staging.harmonicbeacon.com/api/account/frontchannel-logout',
+        requiresCompleteProfile: false,
     },
     {
         clientId: 'hb-live',
         secretVariable: 'BEACON_ACCOUNT_CLIENT_SECRET_HB_LIVE',
         redirectUri: 'https://live.harmonicbeacon.com/api/account/callback',
         postLogoutRedirectUri: 'https://live.harmonicbeacon.com/api/account/frontchannel-logout',
+        requiresCompleteProfile: true,
     },
     {
         clientId: 'hb-live-staging',
         secretVariable: 'BEACON_ACCOUNT_CLIENT_SECRET_HB_LIVE_STAGING',
         redirectUri: 'https://live-staging.harmonicbeacon.com/api/account/callback',
         postLogoutRedirectUri: 'https://live-staging.harmonicbeacon.com/api/account/frontchannel-logout',
+        requiresCompleteProfile: true,
     },
 ] as const;
 
@@ -166,6 +170,14 @@ export function activeAccountStaticClients(environment: Environment = process.en
     const selected = accountEnvironment(environment);
     return ACCOUNT_STATIC_CLIENTS.filter((client) => selected === 'local' ||
         (selected === 'staging') === client.clientId.endsWith('-staging'));
+}
+
+export function accountClientRequiresCompleteProfile(
+    clientId: string | null,
+    environment: Environment = process.env,
+): boolean {
+    return activeAccountStaticClients(environment).some((client) =>
+        client.clientId === clientId && client.requiresCompleteProfile);
 }
 
 export const ACCOUNT_NAV_RETURN_TO = new Set([

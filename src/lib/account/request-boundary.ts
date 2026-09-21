@@ -38,6 +38,12 @@ async function requestClientId(request: Request): Promise<string | null> {
         const hint = body.get('id_token_hint');
         return typeof hint === 'string' ? idTokenAudience(hint) : null;
     }
+    if (request.method === 'POST' && request.headers.get('content-type')
+        ?.toLowerCase().startsWith('application/json')) {
+        const body = await request.clone().json().catch(() => null) as { oauth_query?: unknown } | null;
+        if (typeof body?.oauth_query !== 'string' || body.oauth_query.length > 8192) return null;
+        return new URLSearchParams(body.oauth_query).get('client_id');
+    }
     return null;
 }
 
@@ -90,6 +96,7 @@ export async function accountRequestAllowed(request: Request): Promise<boolean> 
         // Apple uses form_post when name/email scopes are requested.
         ['/api/account/auth/callback/apple', new Set(['GET', 'POST'])],
         ['/api/account/auth/oauth2/authorize', new Set(['GET'])],
+        ['/api/account/auth/oauth2/continue', new Set(['POST'])],
         ['/api/account/auth/oauth2/token', new Set(['POST'])],
         ['/api/account/auth/oauth2/introspect', new Set(['POST'])],
         ['/api/account/auth/oauth2/revoke', new Set(['POST'])],

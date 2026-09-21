@@ -10,6 +10,7 @@ const clientId = 'hb-listener';
 const clientSecret = 'full-client-secret-value-with-more-than-32-characters';
 const accountId = `oauth-handler-${randomUUID()}`;
 const email = `${accountId}@example.invalid`;
+const signupEmail = `signup-${accountId}@example.invalid`;
 const password = 'correct horse beacon battery staple';
 let prisma: PrismaClient;
 let handler: (request: Request) => Promise<Response>;
@@ -55,20 +56,47 @@ postgres('pinned OAuth Provider 1.6.30 confidential-client lifecycle', () => {
             create: {
                 id: randomUUID(), clientId, clientSecret: hashAccountClientSecret(clientSecret),
                 disabled: false, skipConsent: true, enableEndSession: true,
-                subjectType: 'public', scopes: ['openid', 'profile'], contacts: [],
+                subjectType: 'public', scopes: ['openid', 'profile', 'email'], contacts: [],
                 redirectUris: ['https://listen.harmonicbeacon.com/api/account/callback'],
                 postLogoutRedirectUris: ['https://listen.harmonicbeacon.com/api/account/frontchannel-logout'],
                 tokenEndpointAuthMethod: 'client_secret_basic', grantTypes: ['authorization_code'],
                 responseTypes: ['code'], public: false, type: 'web', requirePKCE: true,
             },
-            update: { clientSecret: hashAccountClientSecret(clientSecret), disabled: false },
+            update: {
+                clientSecret: hashAccountClientSecret(clientSecret), disabled: false,
+                scopes: ['openid', 'profile', 'email'],
+            },
         });
     });
 
     afterAll(async () => {
-        await prisma.earlyBirdUser.deleteMany({ where: { id: accountId } });
+        await prisma.earlyBirdUser.deleteMany({
+            where: { OR: [{ id: accountId }, { email: signupEmail }] },
+        });
         await prisma.beaconOAuthClient.deleteMany({ where: { clientId } });
         await prisma.$disconnect();
+    });
+
+    it('persists required signup names with the generated account in real PostgreSQL', async () => {
+        const { withAccountEmailSignupProfile } = await import('../signup-profile');
+        const response = await withAccountEmailSignupProfile({
+            displayName: '李', realName: '李',
+        }, () => handler(jsonRequest('/api/account/auth/sign-up/email', {
+            name: '李', email: signupEmail, password: '12345678', callbackURL: '/account',
+        })));
+        expect(response.status).toBe(200);
+        const created = await prisma.earlyBirdUser.findUniqueOrThrow({
+            where: { email: signupEmail },
+            select: {
+                id: true,
+                identities: { select: { providerId: true, userId: true } },
+                beaconProfile: { select: { accountId: true, displayName: true, realName: true } },
+            },
+        });
+        expect(created.identities).toEqual([{ providerId: 'credential', userId: created.id }]);
+        expect(created.beaconProfile).toEqual({
+            accountId: created.id, displayName: '李', realName: '李',
+        });
     });
 
     it('exchanges an auth code and introspects using the provisioned full secret', async () => {
@@ -78,7 +106,7 @@ postgres('pinned OAuth Provider 1.6.30 confidential-client lifecycle', () => {
         authorizeURL.search = new URLSearchParams({
             client_id: clientId,
             redirect_uri: 'https://listen.harmonicbeacon.com/api/account/callback',
-            response_type: 'code', scope: 'openid profile',
+            response_type: 'code', scope: 'openid profile email',
             state: 'state-for-handler-regression', nonce: 'nonce-for-handler-regression',
             code_challenge: challenge, code_challenge_method: 'S256',
         }).toString();
@@ -144,5 +172,73 @@ postgres('pinned OAuth Provider 1.6.30 confidential-client lifecycle', () => {
         }));
         expect(introspection.status).toBe(200);
         expect(await introspection.json()).toMatchObject({ active: true, client_id: clientId, sub: accountId });
+
+        const userInfo = await handler(new Request(`${issuer}/api/account/auth/oauth2/userinfo`, {
+            headers: { authorization: `Bearer ${tokens.access_token}` },
+        }));
+        expect(userInfo.status).toBe(200);
+        const claims = await userInfo.json();
+        expect(claims).toMatchObject({
+            sub: accountId, name: 'OAuth Handler', preferred_name: 'OAuth Handler',
+            email, email_verified: true, profile_complete: false,
+        });
+        expect(claims).not.toHaveProperty('realName');
+        expect(claims).not.toHaveProperty('real_name');
+    });
+
+    it('completes an existing profile before Live and retains the authenticated session', async () => {
+        const listener = await prisma.beaconOAuthClient.findUniqueOrThrow({ where: { clientId } });
+        await prisma.beaconOAuthClient.create({ data: {
+            ...listener, id: randomUUID(), clientId: 'hb-live',
+            metadata: undefined,
+            redirectUris: ['https://live.harmonicbeacon.com/api/account/callback'],
+        } });
+        try {
+            const signIn = await accountRoutePOST(jsonRequest('/api/account/auth/sign-in/email', {
+                email, password, callbackURL: '/account',
+            }));
+            expect(signIn.status).toBe(200);
+            const cookie = signIn.headers.getSetCookie().map((entry) => entry.split(';', 1)[0]).join('; ');
+            const before = await currentAccountSession(new Headers({ cookie }));
+            expect(before?.user.id).toBe(accountId);
+            const authorize = new URL('/api/account/auth/oauth2/authorize', issuer);
+            authorize.search = new URLSearchParams({
+                client_id: 'hb-live', redirect_uri: 'https://live.harmonicbeacon.com/api/account/callback',
+                response_type: 'code', scope: 'openid profile email', state: 'live-profile-return',
+                code_challenge: createHash('sha256').update(randomBytes(48)).digest('base64url'),
+                code_challenge_method: 'S256',
+            }).toString();
+            const { GET } = await import('@/app/api/account/auth/[...all]/route');
+            const response = await GET(new Request(authorize, {
+                headers: { host: 'account.harmonicbeacon.com', cookie },
+            }));
+            expect(response.status).toBe(302);
+            const completion = new URL(response.headers.get('location')!, issuer);
+            expect(completion.pathname).toBe('/account');
+            expect(completion.searchParams.get('sig')).toBeTruthy();
+            const { POST: saveProfile } = await import('@/app/api/account/profile/route');
+            const saveRequest = jsonRequest('/api/account/profile', {
+                displayName: '李', realName: 'Private Real Name', revision: before!.profile.revision,
+            });
+            saveRequest.headers.set('cookie', cookie);
+            expect((await saveProfile(saveRequest)).status).toBe(200);
+            const resume = jsonRequest('/api/account/auth/oauth2/continue', {
+                postLogin: true, oauth_query: completion.searchParams.toString(),
+            });
+            resume.headers.set('cookie', cookie);
+            const resumed = await accountRoutePOST(resume);
+            expect(resumed.status).toBe(200);
+            const result = await resumed.json();
+            expect(result.status).toBe('continued');
+            const callback = new URL(result.redirect);
+            expect(callback.origin).toBe('https://live.harmonicbeacon.com');
+            expect(callback.searchParams.get('state')).toBe('live-profile-return');
+            expect(callback.searchParams.get('code')).toBeTruthy();
+            expect(await currentAccountSession(new Headers({ cookie }))).toMatchObject({
+                user: { id: accountId }, profile: { displayName: '李', realName: 'Private Real Name' },
+            });
+        } finally {
+            await prisma.beaconOAuthClient.deleteMany({ where: { clientId: 'hb-live' } });
+        }
     });
 });

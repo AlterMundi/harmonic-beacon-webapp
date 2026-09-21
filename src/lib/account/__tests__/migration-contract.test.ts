@@ -6,6 +6,10 @@ const sql = readFileSync(resolve(
     process.cwd(),
     'prisma/migrations/20260818010000_beacon_account_authority/migration.sql',
 ), 'utf8');
+const privateProfileSql = readFileSync(resolve(
+    process.cwd(),
+    'prisma/migrations/20260921170000_account_private_real_name/migration.sql',
+), 'utf8');
 
 describe('Account authority forward-only migration contract', () => {
     it('revokes legacy sessions/artifacts without replacing canonical accounts', () => {
@@ -68,5 +72,13 @@ describe('Account authority forward-only migration contract', () => {
         expect(outbox).toContain('"beacon_account_mail_outbox_account_id_purpose_generation_key"');
         expect(outbox).toContain('"beacon_account_mail_outbox_next_attempt_at_locked_at_idx"');
         expect(outbox.match(/CURRENT_TIMESTAMP \+ INTERVAL '5 seconds'/g)).toHaveLength(2);
+    });
+
+    it('atomically permits explicit signup profiles and upgrades standard scopes', () => {
+        expect(privateProfileSql).toContain('DEFERRABLE INITIALLY DEFERRED');
+        expect(privateProfileSql).toContain(
+            '"scopes" = ARRAY[\'openid\', \'profile\', \'email\']::TEXT[]',
+        );
+        expect(privateProfileSql).not.toMatch(/SET\s+"real_name"\s*=\s*"display_name"/);
     });
 });

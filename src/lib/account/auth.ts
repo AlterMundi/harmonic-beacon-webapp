@@ -27,6 +27,12 @@ import {
 } from '@/lib/account/password-policy';
 import { hashAccountPassword, verifyAccountPassword } from '@/lib/session-auth';
 import { normalizeBeaconDisplayName } from '@/lib/account/profile';
+import { accountPrismaClient } from '@/lib/account/signup-profile';
+import { currentAccountOAuthClient } from '@/lib/account/oauth-context';
+import {
+    accountOAuthProfileCompletionRequired,
+    accountUserInfoClaims,
+} from '@/lib/account/profile-claims';
 
 function normalizedDisplayName(value: unknown): string {
     return normalizeBeaconDisplayName(value) ?? 'Beacon Listener';
@@ -91,7 +97,7 @@ function buildAccountAuth() {
         basePath: ACCOUNT_AUTH_BASE_PATH,
         secret: accountSecret(),
         trustedOrigins: accountTrustedOrigins(),
-        database: prismaAdapter(prisma, { provider: 'postgresql', transaction: true }),
+        database: prismaAdapter(accountPrismaClient(), { provider: 'postgresql', transaction: true }),
         socialProviders: socialProviders(),
         emailAndPassword: {
             enabled: true,
@@ -200,7 +206,7 @@ function buildAccountAuth() {
             oauthProvider({
                 loginPage: '/account',
                 consentPage: '/account/consent',
-                scopes: ['openid', 'profile'],
+                scopes: ['openid', 'profile', 'email'],
                 grantTypes: ['authorization_code'],
                 codeExpiresIn: 5 * 60,
                 accessTokenExpiresIn: 15 * 60,
@@ -210,28 +216,31 @@ function buildAccountAuth() {
                 cachedTrustedClients: new Set(activeAccountStaticClients().map(({ clientId }) => clientId)),
                 prefix: accountTokenPrefixes(),
                 advertisedMetadata: {
-                    scopes_supported: ['openid', 'profile'],
-                    claims_supported: ['iss', 'sub', 'aud', 'exp', 'iat', 'nonce', 'sid'],
+                    scopes_supported: ['openid', 'profile', 'email'],
+                    claims_supported: [
+                        'iss', 'sub', 'aud', 'exp', 'iat', 'nonce', 'sid',
+                        'name', 'preferred_name', 'email', 'email_verified', 'profile_complete',
+                    ],
                 },
                 customIdTokenClaims: async () => ({
                     name: undefined,
                     picture: undefined,
                     given_name: undefined,
                     family_name: undefined,
+                    preferred_name: undefined,
+                    profile_complete: undefined,
                     auth_time: undefined,
                     acr: undefined,
                 }),
-                customUserInfoClaims: async ({ user }) => {
-                    const profile = await prisma.beaconProfile.findUnique({
-                        where: { accountId: user.id }, select: { displayName: true, revision: true },
-                    });
-                    return {
-                        name: profile?.displayName ?? 'Beacon Listener',
-                        profile_revision: profile?.revision ?? 1,
-                        picture: undefined,
-                        given_name: undefined,
-                        family_name: undefined,
-                    };
+                customUserInfoClaims: async ({ user, scopes }) => accountUserInfoClaims({
+                    user, scopes,
+                }),
+                postLogin: {
+                    page: '/account',
+                    consentReferenceId: async () => undefined,
+                    shouldRedirect: async ({ user }) => accountOAuthProfileCompletionRequired(
+                        user.id, currentAccountOAuthClient(),
+                    ),
                 },
                 schema: {
                     oauthClient: { modelName: 'beaconOAuthClient' },
@@ -286,7 +295,7 @@ export type CurrentAccountSession = {
         accessMethod: 'email' | 'google' | 'apple';
     };
     session: { id: string; expiresAt: Date };
-    profile: { accountId: string; displayName: string; revision: number };
+    profile: { accountId: string; displayName: string; realName: string | null; revision: number };
 };
 
 function accountSessionToken(headers: Headers): string | null {
@@ -351,7 +360,7 @@ export async function currentAccountSession(headers?: Headers): Promise<CurrentA
             user: {
                 select: {
                     securityRevision: true,
-                    beaconProfile: { select: { displayName: true, revision: true } },
+                    beaconProfile: { select: { displayName: true, realName: true, revision: true } },
                     identities: { select: { providerId: true }, take: 2 },
                 },
             },
@@ -374,6 +383,7 @@ export async function currentAccountSession(headers?: Headers): Promise<CurrentA
         profile: {
             accountId: result.user.id,
             displayName: authority.user.beaconProfile?.displayName ?? 'Beacon Listener',
+            realName: authority.user.beaconProfile?.realName ?? null,
             revision: authority.user.beaconProfile?.revision ?? 1,
         },
     };
