@@ -19,7 +19,7 @@ test('every promotion helper verb has explicit sudo admission', () => {
 });
 
 test('runner sudo policy grants only individually named restricted helper verbs', () => {
-  const allowed = new Set(['health', 'boundary', 'artifact-impact-state', 'artifact-prepare',
+  const allowed = new Set(['health', 'boundary', 'host-readback', 'artifact-impact-state', 'artifact-prepare',
     'artifact-impact', 'artifact-preflight', 'artifact-migrate', 'artifact-replace',
     'artifact-status', 'artifact-rollback', 'artifact-authorize-rollback']);
   assert.ok(entries.length > 0);
@@ -29,4 +29,11 @@ test('runner sudo policy grants only individually named restricted helper verbs'
   }
   assert.match(policy, /NOPASSWD:NOSETENV: HARMONIC_BEACON_DEPLOY/);
   assert.match(policy, /Defaults:beacon-runner !setenv/);
+});
+
+test('host readback has an explicit verb and no wildcard command surface', () => {
+  const workflow = readFileSync('.github/workflows/live-host-readback.yml', 'utf8');
+  assert.match(workflow, /sudo \/usr\/local\/sbin\/hb-deploy host-readback/);
+  assert.ok(entries.includes('/usr/local/sbin/hb-deploy host-readback'));
+  assert.ok(!entries.includes('/usr/local/sbin/hb-deploy host-readback *'));
 });
