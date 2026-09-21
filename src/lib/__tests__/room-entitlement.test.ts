@@ -9,6 +9,9 @@ const findScheduledSession = vi.fn();
 const findParticipant = vi.fn();
 const updateParticipant = vi.fn();
 const upsertParticipant = vi.fn();
+const countParticipants = vi.fn();
+const queryRaw = vi.fn();
+const transaction = vi.fn();
 const stableRoomIdentity = vi.fn(
     (eventId: string, kind: string, principalId: string) =>
         `opaque:${eventId}:${kind}:${principalId}`,
@@ -16,12 +19,14 @@ const stableRoomIdentity = vi.fn(
 
 vi.mock('@/lib/db', () => ({
     prisma: {
+        $transaction: transaction,
         webSession: { findUnique: findWebSession },
         scheduledSession: { findUnique: findScheduledSession },
         sessionParticipant: {
             findFirst: findParticipant,
             update: updateParticipant,
             upsert: upsertParticipant,
+            count: countParticipants,
         },
     },
 }));
@@ -36,6 +41,7 @@ const activeEvent = {
     status: 'LIVE',
     startedAt: new Date('2026-08-01T15:00:00Z'),
     facilitatorId: 'facilitator-1',
+    maxPublishers: 12,
 };
 const activeTicketSession = {
     displayName: 'Ana',
@@ -73,6 +79,16 @@ describe('resolveRoomPrincipal', () => {
         findWebSession.mockResolvedValue(activeTicketSession);
         findScheduledSession.mockResolvedValue(activeEvent);
         findParticipant.mockResolvedValue(null);
+        queryRaw.mockResolvedValue([{ id: 'event-1' }]);
+        countParticipants.mockResolvedValue(0);
+        transaction.mockImplementation(async (callback) => callback({
+            $queryRaw: queryRaw,
+            scheduledSession: { findUnique: findScheduledSession },
+            sessionParticipant: {
+                upsert: upsertParticipant,
+                count: countParticipants,
+            },
+        }));
         updateParticipant.mockResolvedValue({
             publishGrantedAt: null,
             publishRevokedAt: null,
@@ -202,6 +218,18 @@ describe('resolveRoomPrincipal', () => {
         },
     );
 
+    it('fails closed when persisted scene capacity is outside the supported contract', async () => {
+        findScheduledSession.mockResolvedValue({ ...activeEvent, maxPublishers: 10 });
+        const { resolveRoomPrincipal } = await import('../room-entitlement');
+
+        await expect(resolveRoomPrincipal(request(), 'event-1', now)).resolves.toEqual({
+            ok: false,
+            status: 403,
+            error: 'Not authorized',
+        });
+        expect(upsertParticipant).not.toHaveBeenCalled();
+    });
+
     it('reuses the event identity and current durable grant on refresh', async () => {
         upsertParticipant.mockResolvedValue({
             publishGrantedAt: new Date('2026-08-01T15:30:00Z'),
@@ -221,6 +249,7 @@ describe('resolveRoomPrincipal', () => {
                 displayName: 'Ana',
                 role: 'ATTENDEE',
                 isAssignedFacilitator: false,
+                session: { maxPublishers: 12 },
             },
         });
         expect(upsertParticipant).toHaveBeenCalledWith(expect.objectContaining({
@@ -479,6 +508,55 @@ describe('resolveRoomPrincipal', () => {
             create: expect.objectContaining({
                 publishGrantedAt: now,
                 staffUserId: 'facilitator-1',
+            }),
+        }));
+        expect(queryRaw).toHaveBeenCalledBefore(countParticipants);
+        expect(countParticipants).toHaveBeenCalledBefore(upsertParticipant);
+        expect(countParticipants).toHaveBeenCalledWith({
+            where: {
+                scheduledSessionId: 'event-1',
+                publishGrantedAt: { not: null },
+                publishRevokedAt: null,
+            },
+        });
+    });
+
+    it('does not create a seventh facilitator grant when six active grants fill capacity', async () => {
+        findWebSession.mockResolvedValue({
+            expiresAt: new Date('2026-08-03T00:00:00Z'),
+            revokedAt: null,
+            ticketEntitlement: null,
+            staffUser: {
+                id: 'facilitator-1',
+                name: 'Julián',
+                role: 'FACILITATOR',
+                disabledAt: null,
+            },
+        });
+        findScheduledSession.mockResolvedValue({
+            ...activeEvent,
+            status: 'SCHEDULED',
+            maxPublishers: 6,
+        });
+        countParticipants.mockResolvedValue(6);
+        upsertParticipant.mockResolvedValue({
+            publishGrantedAt: null,
+            publishRevokedAt: null,
+            grantReconcileNeeded: false,
+        });
+
+        const { resolveRoomPrincipal } = await import('../room-entitlement');
+        const result = await resolveRoomPrincipal(request(), 'event-1', now);
+
+        expect(result).toMatchObject({
+            ok: true,
+            principal: { isAssignedFacilitator: true, canPublish: false },
+        });
+        expect(upsertParticipant).toHaveBeenCalledWith(expect.objectContaining({
+            create: expect.objectContaining({
+                publishGrantedAt: null,
+                grantVersion: 0,
+                grantReason: null,
             }),
         }));
     });

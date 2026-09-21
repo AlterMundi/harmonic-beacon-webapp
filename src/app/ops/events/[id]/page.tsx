@@ -68,6 +68,7 @@ export default async function EventPage({
             <EventHeading title={scheduledSession.title} language={scheduledSession.language}
                 status={scheduledSession.status} scheduledAt={scheduledSession.scheduledAt.toISOString()} />
             <ConductorCockpit
+                key={scheduledSession.id}
                 session={{
                     id: scheduledSession.id,
                     title: scheduledSession.title,

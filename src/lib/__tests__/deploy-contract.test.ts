@@ -79,6 +79,14 @@ describe('production deploy contract', () => {
     expect(rootHelper).toContain('verify_release_runtime_state "$run_id" prior');
   });
 
+  it('requires read-only scene-capacity rollback evidence for every app rollback', () => {
+    expect(rootHelper).toContain('npx tsx scripts/scene-capacity-rollback-preflight.ts');
+    expect(rootHelper).toContain('.schemaVersion == "harmonic-beacon.scene-capacity-rollback-preflight.v2"');
+    expect(rootHelper).toContain('.procedure == "scene-capacity-rollback-read-only-v2"');
+    expect(rootHelper).toContain('.verifiedUnsafeSessions == 0');
+    expect(rootHelper).toContain('.legacyMaxPublishersVerified == true');
+  });
+
   it('admits fixed files without privileged repository inspection or workspace execution', () => {
     expect(rootHelper).toContain('[ "${EUID}" -eq 0 ]');
     expect(rootHelper).toContain('admit_file');

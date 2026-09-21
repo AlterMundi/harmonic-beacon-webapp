@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const callbacks = vi.hoisted(() => ({
     lifecycle: null as null | ((status: 'SCHEDULED' | 'LIVE' | 'ENDED' | 'CANCELLED') => void),
+    observedStatus: null as null | 'SCHEDULED' | 'LIVE' | 'ENDED' | 'CANCELLED',
     summary: null as null | ((summary: {
         activePublishers: number;
         maxPublishers: number;
@@ -18,7 +19,14 @@ const callbacks = vi.hoisted(() => ({
 }));
 
 vi.mock('../SessionLifecycleControl', () => ({
-    default: ({ onStatusChange }: { onStatusChange?: typeof callbacks.lifecycle }) => {
+    default: ({
+        observedStatus,
+        onStatusChange,
+    }: {
+        observedStatus?: typeof callbacks.observedStatus;
+        onStatusChange?: typeof callbacks.lifecycle;
+    }) => {
+        callbacks.observedStatus = observedStatus ?? null;
         callbacks.lifecycle = onStatusChange ?? null;
         return <div data-testid="lifecycle-panel">Lifecycle</div>;
     },
@@ -84,6 +92,7 @@ afterEach(() => {
     window.localStorage.clear();
     document.cookie = 'hb_locale=; Path=/; Max-Age=0';
     callbacks.lifecycle = null;
+    callbacks.observedStatus = null;
     callbacks.summary = null;
     callbacks.health = null;
     callbacks.healthVisualActive = null;
@@ -149,6 +158,42 @@ describe('ConductorCockpit', () => {
             expect(screen.getByRole('button', { name: /Door.*Open/i })).toBeInTheDocument();
             expect(screen.getByRole('button', { name: /Health.*red/i })).toBeInTheDocument();
             expect(screen.getByTestId('stage-occupancy').children).toHaveLength(6);
+        });
+    });
+
+    it('keeps shared lifecycle state monotonic across stale Spotlight snapshots', async () => {
+        render(<LocaleProvider initialLocale="en"><ConductorCockpit {...props} /></LocaleProvider>);
+        const summary = {
+            activePublishers: 0,
+            maxPublishers: 6,
+            handCount: 0,
+            nextName: null,
+            reconcileCount: 0,
+            liveStateAvailable: true,
+        };
+
+        callbacks.lifecycle?.('LIVE');
+        await waitFor(() => {
+            expect(callbacks.observedStatus).toBe('LIVE');
+            expect(screen.getByRole('button', { name: /Door.*Open/i })).toBeInTheDocument();
+        });
+
+        callbacks.summary?.({ ...summary, sessionStatus: 'SCHEDULED' });
+        await waitFor(() => {
+            expect(callbacks.observedStatus).toBe('LIVE');
+            expect(screen.getByRole('button', { name: /Door.*Open/i })).toBeInTheDocument();
+        });
+
+        callbacks.lifecycle?.('ENDED');
+        await waitFor(() => {
+            expect(callbacks.observedStatus).toBe('ENDED');
+            expect(screen.getByRole('button', { name: /Door.*Closed/i })).toBeInTheDocument();
+        });
+
+        callbacks.summary?.({ ...summary, sessionStatus: 'LIVE' });
+        await waitFor(() => {
+            expect(callbacks.observedStatus).toBe('ENDED');
+            expect(screen.getByRole('button', { name: /Door.*Closed/i })).toBeInTheDocument();
         });
     });
 

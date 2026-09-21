@@ -4,6 +4,7 @@ import { config } from 'dotenv';
 
 import { prisma } from '../src/lib/db';
 import {
+    assessStageGrantForwardDrain,
     processNextStageGrantEffect,
     repairNextUncoveredGrantEffect,
 } from '../src/lib/stage-grant-effects';
@@ -20,15 +21,13 @@ async function main(): Promise<void> {
         for (let step = 1; step <= MAX_STEPS; step += 1) {
             const repaired = await repairNextUncoveredGrantEffect();
             const processed = await processNextStageGrantEffect();
-            const pendingMarkers = await prisma.sessionParticipant.count({
-                where: { grantReconcileNeeded: true },
-            });
-            if (pendingMarkers === 0) {
-                console.log(JSON.stringify({ safe: true, steps: step }));
+            const assessment = await assessStageGrantForwardDrain();
+            if (assessment.safe) {
+                console.log(JSON.stringify({ ...assessment, steps: step }));
                 return;
             }
             if (!repaired && !processed) {
-                throw new Error(`stage grant drain stalled with ${pendingMarkers} markers`);
+                throw new Error(`stage grant drain stalled: ${JSON.stringify(assessment)}`);
             }
         }
         throw new Error(`stage grant drain exceeded ${MAX_STEPS} steps`);

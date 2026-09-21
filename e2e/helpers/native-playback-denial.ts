@@ -1,6 +1,7 @@
 declare global {
     interface Window {
         allowFixturePlayback: () => void;
+        allowFixturePlaybackOnNextClick: () => void;
         nativePlaybackDenialAttempts: number;
     }
 }
@@ -39,4 +40,14 @@ export function denyNativePlayback(): void {
         return play.call(this);
     };
     window.allowFixturePlayback = () => { blocked = false; };
+    // Keep the denial active through Playwright's actionability checks. A
+    // late/replaced LiveKit track may call play() while the locator is being
+    // resolved; releasing earlier lets that valid recovery remove the CTA
+    // before the intended retry click can be dispatched.
+    window.allowFixturePlaybackOnNextClick = () => {
+        document.addEventListener('click', () => { blocked = false; }, {
+            capture: true,
+            once: true,
+        });
+    };
 }

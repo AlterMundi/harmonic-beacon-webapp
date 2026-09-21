@@ -16,7 +16,7 @@ import { denyNativePlayback } from '../helpers/native-playback-denial';
 // separately fixes stackTest's automatic CI gate). Real DB,
 // entitlement/token routes, signaling, WebRTC and browser playback are required.
 const test = base.extend<{ liveAudio: void }>({
-    liveAudio: [async ({ request, browser }, runFixture) => {
+    liveAudio: [async ({ request }, runFixture) => {
         const db = process.env.E2E_DATABASE_URL;
         assertSafeFixtureDatabaseUrl(db ?? '');
         expect(await probeStack(request), 'required fixture database/app not ready').toBe('ok');
@@ -24,8 +24,13 @@ const test = base.extend<{ liveAudio: void }>({
         const response = await fetch(livekit.replace(/^ws/, 'http'), { signal: AbortSignal.timeout(3000) });
         expect(response.ok, 'required isolated LiveKit server not ready').toBe(true);
         await withSessionStatus(db!, SESSION_ES.id, 'LIVE', async () => {
-            const closePublishers = await startAudioPublishers(browser);
-            try { await runFixture(); } finally { await closePublishers(); }
+            const closePublishers = await startAudioPublishers();
+            try {
+                expect(closePublishers.engine).toBe('chromium');
+                await runFixture();
+            } finally {
+                await closePublishers();
+            }
         });
     }, { auto: true }],
 });
@@ -181,10 +186,25 @@ test.describe('live continuity without capture', () => {
         expect(await expectDeniedThumbnailCapture(page, 1)).toEqual(captureBefore);
         const failed = await receipt(page, testInfo, 'native-failure');
         const rejected = await nativeOutput();
-        expect(rejected).toEqual(blocked);
-        await page.evaluate(() => window.allowFixturePlayback());
-        // Merely releasing fixture policy must not fabricate native success.
-        expect(await nativeOutput()).toEqual(blocked);
+        // WebKit may dispatch another native play event between two reads and
+        // pause it asynchronously. Compare durable source identity separately
+        // from the instantaneous paused flag, then poll the real native state.
+        const sourceShape = (outputs: Awaited<ReturnType<typeof nativeOutput>>) => outputs.map(
+            ({ autoplay, tracks }) => ({ autoplay, tracks }),
+        );
+        const blockedShape = sourceShape(blocked);
+        expect(sourceShape(rejected)).toEqual(blockedShape);
+        await expect.poll(async () => (await nativeOutput()).every(output => output.paused), {
+            message: 'failed activation must leave both native outputs paused',
+        }).toBe(true);
+        // Release in the retry click's capture phase. Releasing before locator
+        // actionability allows a late LiveKit play() to recover legitimately,
+        // remove the CTA, and turn this assertion into a race against success.
+        await page.evaluate(() => window.allowFixturePlaybackOnNextClick());
+        expect(sourceShape(await nativeOutput())).toEqual(blockedShape);
+        await expect.poll(async () => (await nativeOutput()).every(output => output.paused), {
+            message: 'arming the retry click must not release native playback early',
+        }).toBe(true);
         await page.getByRole('button', { name: START_AUDIO }).click();
         await expectNativeAudioAdvancing(page, 2);
         await expectEffectiveAudioReady(page);

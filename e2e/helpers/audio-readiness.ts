@@ -89,11 +89,18 @@ export async function activateAudioAtMostOnce(surface: Page | Frame): Promise<0 
     await expect(state).toHaveAttribute('data-state', 'connected', { timeout: 20_000 });
     const button = surface.getByRole('button', { name: START_AUDIO });
     if (!await button.isVisible()) {
-        await expectEffectiveAudioReady(surface);
-        return 0;
+        try {
+            await expectEffectiveAudioReady(surface);
+            return 0;
+        } catch (automaticReadinessError) {
+            // Readiness may regress after the zero-click sample when a late
+            // source or SDK status makes an activation gesture necessary.
+            // Continue only when the still-unused CTA actually appeared.
+            if (!await button.isVisible()) throw automaticReadinessError;
+        }
     }
     try {
-        await button.click({ timeout: 5_000 });
+        await button.click({ timeout: 20_000 });
     } catch (clickError) {
         // Autoplay can become effective between isVisible() and click(). That
         // race is success only when native and app readiness both prove it;

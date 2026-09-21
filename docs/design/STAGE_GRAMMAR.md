@@ -15,7 +15,7 @@ Composition communicates the current social shape before labels do:
 - **solo** — one person holds the room;
 - **dyad** — facilitator and protagonist meet with equal visual weight;
 - **circle** — a protagonist is held by two or three other people;
-- **chorus** — five or six people form one legible ensemble.
+- **chorus** — five to twelve people form one legible ensemble.
 
 The tapestry is the collective ground under that scene. It signals that the
 people on camera are held by a larger room without turning the audience into a
@@ -88,8 +88,9 @@ interface SceneComposition<T> {
 
 1. Collapse duplicate identities. The first canonical record wins, matching
    the current leak-prevention rule.
-2. Reject publishers beyond the six-person server cap into `overflow`; never
-   decode a seventh stream.
+2. Reject publishers beyond the session's persisted 6, 9, or 12-person cap
+   into `overflow`; never decode a stream beyond that explicit limit. Six
+   remains the default for existing and newly created sessions.
 3. Sort the canonical scene roster once by durable `grantOrder`, breaking an
    exact tie with opaque `identity`. LiveKit arrival order is never an input.
 4. Select the protagonist in this order:
@@ -102,7 +103,7 @@ interface SceneComposition<T> {
 6. Keep the protagonist first in semantic/DOM order. Put the facilitator next
    when distinct, then holders in stable grant order.
 7. Choose the scene solely from canonical member count: 0 `empty`, 1 `solo`,
-   2 `dyad`, 3–4 `circle`, 5–6 `chorus`.
+   2 `dyad`, 3–4 `circle`, 5–12 `chorus`.
 8. Give 720p quality priority to the connected active speaker when valid;
    otherwise the connected protagonist; otherwise the first connected member.
    Every other connected camera remains at the intended 360p layer. Equal
@@ -206,19 +207,21 @@ as a held center rather than a lead video plus thumbnails.
 The facilitator is simply one holder if present. Their tile does not claim a
 permanent corner or larger size.
 
-### 4.4 Chorus — five or six people form an ensemble
+### 4.4 Chorus — five to twelve people form an ensemble
 
-- **1440:** a two-row, three-column equal grid; each tile about 384 × 216.
-- **1024:** a two-row, three-column equal grid; each tile about 300 × 169.
+- **1440:** up to six people use a three-column grid; nine to twelve use four
+  columns without changing semantic order.
+- **1024:** up to six people use three columns; nine to twelve use three columns
+  with additional rows.
 - **390:** protagonist spans 366 × 206; the other members use two 179 × 101
   columns below.
 - **320:** protagonist spans 296 × 167; the other members use two 144 × 81
   columns below.
 
-On desktop, all six tiles are equal in size: protagonist is indicated by
-placement order and a restrained outline, not broadcast-scale dominance. On a
-phone the full-width protagonist gives the scene an anchor while the supporting
-tiles retain the minimum legible width. No horizontally scrolling strip is
+On desktop, chorus tiles are equal in size: protagonist is indicated by placement
+order and a restrained outline, not broadcast-scale dominance. On a phone the
+full-width protagonist gives the scene an anchor while supporting tiles retain
+the minimum legible width in two columns. No horizontally scrolling strip is
 introduced.
 
 ### 4.5 Empty and audio-only states

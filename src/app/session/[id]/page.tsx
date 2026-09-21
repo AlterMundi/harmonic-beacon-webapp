@@ -34,6 +34,7 @@ import type { StageConnectionQuality } from "@/lib/stage-layout";
 import { redactErrorDetail } from "@/lib/redact";
 import { isLocalizedStaffRole, localeForEventLanguage, staffRolePresentation } from "@/lib/i18n";
 import { parseLiveKitTokenResponse } from "@/lib/livekit-token-response";
+import { isSceneCapacity } from "@/lib/scene-capacity";
 
 function stageRoomOptions(isAssignedFacilitator: boolean): RoomOptions {
     return {
@@ -142,6 +143,7 @@ interface SessionInfo {
     title: string;
     status: string;
     startedAt: string | null;
+    maxPublishers: 6 | 9 | 12;
 }
 
 interface ViewerInfo {
@@ -317,6 +319,15 @@ function SessionRoom() {
     const stageExitCancelRef = useRef<HTMLButtonElement>(null);
     const stageExitTriggerRef = useRef<HTMLButtonElement>(null);
     const participantFallbackRef = useRef(copy.session.participantFallback);
+    const beaconConnectionHistoryRef = useRef({ sessionId: id, established: false });
+    if (beaconConnectionHistoryRef.current.sessionId !== id) {
+        beaconConnectionHistoryRef.current = { sessionId: id, established: false };
+    }
+    if (beaconConnected) beaconConnectionHistoryRef.current.established = true;
+    // Preserve the initial gesture until both rooms can consume it, but a
+    // terminal disconnect after that point must leave the reconnect action usable.
+    const awaitingInitialBeaconConnection = !beaconConnected && !beaconAudioError &&
+        !beaconConnectionHistoryRef.current.established;
     participantFallbackRef.current = copy.session.participantFallback;
     stageInvitationAcceptedRef.current = stageInvitationAccepted;
     principalKindRef.current = principalKind;
@@ -681,6 +692,14 @@ function SessionRoom() {
             )) return;
             void fetch(`/api/scheduled-sessions/${id}/presence`, {
                 method: 'POST', headers: { 'content-type': 'application/json' }, body, keepalive: true,
+            }).then(async (response) => {
+                if (!response.ok || cancelled || state !== 'connected') return;
+                const result = await response.json() as { maxPublishers?: unknown };
+                const maxPublishers = result.maxPublishers;
+                if (!isSceneCapacity(maxPublishers) || cancelled) return;
+                setSessionInfo((current) => current
+                    ? { ...current, maxPublishers }
+                    : current);
             }).catch(() => {});
         };
 
@@ -1280,6 +1299,7 @@ function SessionRoom() {
                         publishers={stagePublishers}
                         activeSpeakerIdentity={activeSpeakerIdentity}
                         audioOnly={audioOnly}
+                        maxPublishers={sessionInfo?.maxPublishers ?? 6}
                     />
 
                     {(!isBeaconPlaying || !isStageAudioPlaying) && (
@@ -1287,7 +1307,11 @@ function SessionRoom() {
                             <p className="mb-3 text-sm text-[var(--text-secondary)]">
                                 {copy.session.audioPrompt}
                             </p>
-                            <button onClick={startListening} className="event-button event-button--primary w-full">
+                            <button
+                                onClick={startListening}
+                                disabled={awaitingInitialBeaconConnection}
+                                className="event-button event-button--primary w-full"
+                            >
                                 {copy.session.startAudio}
                             </button>
                             {(audioActivationError || beaconAudioError) && (

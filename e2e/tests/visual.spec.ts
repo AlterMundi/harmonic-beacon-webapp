@@ -64,13 +64,13 @@ stackTest.describe('visual baselines', () => {
         await expect(page).toHaveScreenshot('staff-login.png');
     });
 
-    stackTest('attendee audio prompt', async ({ page, browser }, testInfo) => {
+    stackTest('attendee audio prompt', async ({ page }, testInfo) => {
         const db = requireDirectDb(testInfo);
         // This baseline is specifically the blocked-autoplay surface. Publish
         // one real audio-only Beacon source, then deny its native playback;
         // runner autoplay policy can no longer make the CTA disappear.
         await page.addInitScript(denyNativePlayback);
-        const stopPublisher = await startAudioPublishers(browser, { beaconOnly: true });
+        const stopPublisher = await startAudioPublishers({ beaconOnly: true });
         try {
             await withSessionStatus(db, SESSION_ES.id, 'LIVE', async () => {
                 // Earlier media/load scenarios can leave a LiveKit participant
