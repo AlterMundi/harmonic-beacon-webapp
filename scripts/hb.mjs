@@ -7,6 +7,7 @@ function help() {
 
 Commands:
   doctor         inspect repository, access, service health and operational routing
+  delivery-status inspect PR identities, gate observations and missing review (read-only)
   change-impact  select a conservative verification profile for changed paths`);
 }
 
@@ -19,6 +20,9 @@ if (!command || command === '--help' || command === '-h') {
 } else if (command === 'change-impact') {
   const impact = await import('./ci/change-impact.mjs');
   code = impact.main(args);
+} else if (command === 'delivery-status') {
+  const delivery = await import('./ops/delivery-status.mjs');
+  code = await delivery.main(args);
 } else {
   console.error(`hb: unknown command: ${command}`);
   help();

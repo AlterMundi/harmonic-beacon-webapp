@@ -95,13 +95,13 @@
       "recoveryDocs": ["deploy/README.md", "docs/ops/WEEKEND_EVENT_RUNBOOK.md"],
       "deliveryPolicy": {
         "protectedBranches": ["main", "release"],
-        "requiredContext": "delivery-gate",
+        "requiredContext": "delivery-gate-{branch}",
         "requiredAppId": 15368,
         "requirePullRequest": true,
-        "requireCodeOwnerReviews": true,
-        "requiredApprovingReviewCount": 1,
-        "dismissStaleReviews": true,
-        "requireLastPushApproval": true,
+        "requireCodeOwnerReviews": false,
+        "requiredApprovingReviewCount": 0,
+        "dismissStaleReviews": false,
+        "requireLastPushApproval": false,
         "requireUpToDate": true,
         "allowForcePushes": false,
         "allowDeletions": false

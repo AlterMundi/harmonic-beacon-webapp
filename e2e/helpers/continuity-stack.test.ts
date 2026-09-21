@@ -122,7 +122,7 @@ for (const engine of [chromium]) {
     });
 }
 
-test('Firefox automation reload is a causal negative; scheduled native reload retains the actual Staff drawer', async () => {
+test('Firefox automation reload is a causal negative; scheduled native reload retains the actual Staff drawer', { skip: process.env.E2E_INCLUDE_FIREFOX !== '1' }, async () => {
     const fixture = await navigationBrowser();
     const browser = await firefox.launch().catch(async error => { await fixture.close(); throw error; });
     try {

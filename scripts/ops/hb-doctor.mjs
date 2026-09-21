@@ -93,11 +93,12 @@ export async function inspectBranchSource(service, source, pathExists) {
 
 export function evaluateDeliveryProtection(policy, branch, protection) {
   if (!protection) return { ok: false, detail: `${branch}: branch protection unavailable` };
+  const requiredContext = policy.requiredContext.replace('{branch}', branch);
   const exactCheck = (protection.required_status_checks?.checks ?? []).find(
-    ({ context, app_id: appId }) => context === policy.requiredContext && appId === policy.requiredAppId,
+    ({ context, app_id: appId }) => context === requiredContext && appId === policy.requiredAppId,
   );
   if (!exactCheck) {
-    return { ok: false, detail: `${branch}: ${policy.requiredContext} is not bound to exact Actions App ${policy.requiredAppId}` };
+    return { ok: false, detail: `${branch}: ${requiredContext} is not bound to exact Actions App ${policy.requiredAppId}` };
   }
   const reviews = protection.required_pull_request_reviews;
   if (policy.requirePullRequest && !reviews) {
@@ -126,7 +127,7 @@ export function evaluateDeliveryProtection(policy, branch, protection) {
   }
   return {
     ok: true,
-    detail: `${branch}: protected with ${policy.requiredApprovingReviewCount} current-push/code-owner approval, stale dismissal, strict base, no force pushes/deletion and ${policy.requiredContext} from Actions App ${policy.requiredAppId}`,
+    detail: `${branch}: protected with ${policy.requiredApprovingReviewCount} required review(s), strict base, no force pushes/deletion and ${requiredContext} from Actions App ${policy.requiredAppId}`,
   };
 }
 
@@ -430,11 +431,11 @@ export function validateCatalog(catalog) {
           || !Number.isSafeInteger(policy.requiredAppId)
           || policy.requiredAppId <= 0
           || policy.requirePullRequest !== true
-          || policy.requireCodeOwnerReviews !== true
+          || typeof policy.requireCodeOwnerReviews !== 'boolean'
           || !Number.isSafeInteger(policy.requiredApprovingReviewCount)
-          || policy.requiredApprovingReviewCount <= 0
-          || policy.dismissStaleReviews !== true
-          || policy.requireLastPushApproval !== true
+          || policy.requiredApprovingReviewCount < 0
+          || typeof policy.dismissStaleReviews !== 'boolean'
+          || typeof policy.requireLastPushApproval !== 'boolean'
           || policy.requireUpToDate !== true
           || policy.allowForcePushes !== false
           || policy.allowDeletions !== false) {

@@ -4,26 +4,96 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      mode:
+        description: Successor release or first OCI genesis candidate
+        type: choice
+        required: true
+        default: successor
+        options: [successor, genesis]
 
 concurrency:
   group: oci-candidate-${{ github.sha }}
   cancel-in-progress: false
 
 jobs:
+  preflight:
+    if: vars.HB_OCI_CANDIDATES_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      mode: ${{ steps.inputs.outputs.mode }}
+      base: ${{ steps.inputs.outputs.base }}
+      postgres: ${{ steps.inputs.outputs.postgres }}
+      livekit: ${{ steps.inputs.outputs.livekit }}
+    steps:
+      - name: Validate candidate mode and immutable inputs before builds
+        id: inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_MODE: ${{ inputs.mode }}
+          HB_RELEASE_BASE_MANIFEST_SHA256: ${{ vars.HB_RELEASE_BASE_MANIFEST_SHA256 }}
+          HB_POSTGRES_IMAGE_REF: ${{ vars.HB_POSTGRES_IMAGE_REF }}
+          HB_LIVEKIT_IMAGE_REF: ${{ vars.HB_LIVEKIT_IMAGE_REF }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = AlterMundi/harmonic-beacon-webapp
+          test "$GITHUB_REF" = refs/heads/main
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          case "$GITHUB_EVENT_NAME" in
+            push)
+              [[ "$REQUESTED_MODE" = '' || "$REQUESTED_MODE" = successor ]]
+              mode=successor
+              ;;
+            workflow_dispatch) mode="$REQUESTED_MODE" ;;
+            *) exit 1 ;;
+          esac
+          case "$mode" in
+            genesis)
+              test "$GITHUB_EVENT_NAME" = workflow_dispatch
+              test "$GITHUB_REF_PROTECTED" = true
+              test -z "$HB_RELEASE_BASE_MANIFEST_SHA256"
+              main_sha="$(gh api repos/AlterMundi/harmonic-beacon-webapp/git/ref/heads/main --jq .object.sha)"
+              test "$main_sha" = "$GITHUB_SHA"
+              ;;
+            successor) [[ "$HB_RELEASE_BASE_MANIFEST_SHA256" =~ ^[0-9a-f]{64}$ ]] ;;
+            *) exit 1 ;;
+          esac
+          [[ "$HB_POSTGRES_IMAGE_REF" =~ ^docker\.io/library/postgres@sha256:[0-9a-f]{64}$ ]]
+          [[ "$HB_LIVEKIT_IMAGE_REF" =~ ^docker\.io/livekit/livekit-server@sha256:[0-9a-f]{64}$ ]]
+          printf 'mode=%s\nbase=%s\npostgres=%s\nlivekit=%s\n' \
+            "$mode" "$HB_RELEASE_BASE_MANIFEST_SHA256" "$HB_POSTGRES_IMAGE_REF" "$HB_LIVEKIT_IMAGE_REF" >> "$GITHUB_OUTPUT"
+
+  genesis-approval:
+    needs: preflight
+    if: needs.preflight.outputs.mode == 'genesis'
+    runs-on: ubuntu-24.04
+    environment: production
+    permissions: {}
+    steps:
+      - name: Protected approval for candidate creation only, not deployment
+        run: 'true'
+
   required-checks:
     name: required-checks
-    if: github.ref == 'refs/heads/main' && vars.HB_OCI_CANDIDATES_ENABLED == 'true'
+    needs: [preflight, genesis-approval]
+    if: >-
+      !cancelled() && needs.preflight.result == 'success' &&
+      ((needs.preflight.outputs.mode == 'genesis' && needs.genesis-approval.result == 'success') ||
+       (needs.preflight.outputs.mode == 'successor' && needs.genesis-approval.result == 'skipped'))
     permissions:
       contents: read
     uses: ./.github/workflows/ci.yml
     with:
       base_sha: ${{ github.event_name == 'push' && github.event.before || github.sha }}
       head_sha: ${{ github.sha }}
-      force_all: ${{ github.event_name == 'workflow_dispatch' || github.event.before == '0000000000000000000000000000000000000000' }}
+      force_all: ${{ needs.preflight.outputs.mode == 'genesis' || github.event_name == 'workflow_dispatch' || github.event.before == '0000000000000000000000000000000000000000' }}
 
   build:
     needs: required-checks
-    if: github.ref == 'refs/heads/main' && vars.HB_OCI_CANDIDATES_ENABLED == 'true'
+    if: >-
+      !cancelled() && needs.required-checks.result == 'success'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -155,7 +225,9 @@ jobs:
           retention-days: 14
 
   qualify:
-    needs: build
+    needs: [preflight, build]
+    if: >-
+      !cancelled() && needs.preflight.result == 'success' && needs.build.result == 'success'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -185,9 +257,10 @@ jobs:
           password: ${{ github.token }}
       - name: Assemble candidate inputs
         env:
-          HB_POSTGRES_IMAGE_REF: ${{ vars.HB_POSTGRES_IMAGE_REF }}
-          HB_LIVEKIT_IMAGE_REF: ${{ vars.HB_LIVEKIT_IMAGE_REF }}
-          HB_RELEASE_BASE_MANIFEST_SHA256: ${{ vars.HB_RELEASE_BASE_MANIFEST_SHA256 }}
+          HB_RELEASE_MODE: ${{ needs.preflight.outputs.mode }}
+          HB_POSTGRES_IMAGE_REF: ${{ needs.preflight.outputs.postgres }}
+          HB_LIVEKIT_IMAGE_REF: ${{ needs.preflight.outputs.livekit }}
+          HB_RELEASE_BASE_MANIFEST_SHA256: ${{ needs.preflight.outputs.base }}
         run: |
           set -euo pipefail
           node scripts/ci/create-candidate.mjs --evidence evidence --output candidate.json

@@ -370,5 +370,28 @@ container-log commands printed in older copies of this section are superseded;
 if an approved closed diagnostic is absent, contain and escalate rather than
 broadening sudo.
 
+The protected-main `Live host readback` workflow is the bounded private-state
+diagnostic. It checks the dedicated Mona runner and invokes only
+`sudo /usr/local/sbin/hb-deploy host-readback`, with no caller-selected paths or
+arguments. The helper emits sanitized identifiers and explicit
+`verified`/`unavailable`/`invalid` states; workflow success means the readback
+completed, not that the host is release-ready. It performs no Docker access,
+directory creation, lock acquisition, state write, or configuration change.
+Its scope is configuration evidence only: it does not prove runtime health,
+artifact qualification, delivery admission, staging, recovery, or permission
+to promote. The helper brackets the read with bounded file identities and
+reports moving evidence as unavailable instead of combining snapshots.
+
+After this workflow is merged and independently reviewed, host installation is
+still a separate administrator action: install the reviewed helper and updated
+implementation digest manifest, permit exactly the zero-argument
+`/usr/local/sbin/hb-deploy host-readback` sudo command, and add
+`.github/workflows/live-host-readback.yml@refs/heads/main` to the production
+runner group's selected-workflow allowlist. Do not enable a wildcard helper
+command or run the workflow before those exact controls are installed. That
+exact protected-main runner-group registration is what prevents a workflow
+loaded from a candidate or untrusted ref from reaching Mona; the workflow's
+job-level protected-main condition is defense in depth, not a replacement.
+
 Never print production env files, authorization headers, ticket codes, email
 addresses or raw request bodies while troubleshooting.

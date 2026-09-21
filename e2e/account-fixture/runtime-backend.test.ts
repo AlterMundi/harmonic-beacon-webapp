@@ -17,6 +17,9 @@ test('clean runtime env carries CI and capped heap, rejects secrets and validate
         const source = { PATH: '/usr/bin', HOME: dir, CI: 'true', NEXT_PUBLIC_E2E_CONTINUITY_OBSERVER: '1', NODE_OPTIONS: '--require /secret.js --max-old-space-size=9000', DATABASE_URL: 'production', AWS_SECRET_ACCESS_KEY: 'secret', UNRELATED_INHERITED_VARIABLE: 'strip-me', PULSE_SERVER: `unix:${socket}`, E2E_ACCOUNT_PULSE_DIR: dir };
         const env = await backend.runtimeEnv(source, dir);
         assert.equal(env.CI, '1');
+        assert.equal(env.E2E_INCLUDE_FIREFOX, undefined);
+        assert.equal((await backend.runtimeEnv({ ...source, E2E_INCLUDE_FIREFOX: '1' }, dir)).E2E_INCLUDE_FIREFOX, '1');
+        assert.equal((await backend.runtimeEnv({ ...source, E2E_INCLUDE_FIREFOX: 'true' }, dir)).E2E_INCLUDE_FIREFOX, undefined);
         assert.equal(env.NEXT_PUBLIC_E2E_CONTINUITY_OBSERVER, '1');
         assert.equal(env.NODE_OPTIONS, '--max-old-space-size=2048');
         assert.equal(env.PULSE_SERVER, `unix:${socket}`);
@@ -142,6 +145,7 @@ test('Docker backend remains real Docker, pins LiveKit v1.13.4 and cleans only C
 
 test('Account matrix covers all four browser projects, CI forbids only and Chromium flags do not bleed into other engines', async () => {
     const old = { ...process.env };
+    process.env.E2E_INCLUDE_FIREFOX = '1';
     Object.assign(process.env, { CI: '1', E2E_ACCOUNT_FIXTURE: '1', E2E_ACCOUNT_ISSUER: 'https://127.0.0.1:3411', E2E_BASE_URL: 'https://127.0.0.1:3410', E2E_DATABASE_URL: 'postgresql://postgres:test@127.0.0.1:35432/beacon_test' });
     try {
         const config = (await import('./playwright.config')).default;
@@ -174,10 +178,10 @@ test('owned listener readiness never accepts an unrelated pre-existing app on a 
     } finally { await io.stopAll(); await new Promise<void>(r => unrelated.close(() => r())); await rm(dir, { recursive: true, force: true }); }
 });
 
-test('Account collection has exactly 70 applicable memberships; only two desktop-native Staff entries are excluded', async () => {
+for (const includeFirefox of ['0', '1']) test(`Account collection preserves exact memberships (Firefox opt-in=${includeFirefox})`, async () => {
     const run = spawnSync(process.execPath, ['node_modules/@playwright/test/cli.js', 'test', '-c', 'e2e/account-fixture/playwright.config.ts', '--list', '--reporter=json'], {
         encoding: 'utf8', timeout: 60_000, maxBuffer: 8 * 1024 * 1024,
-        env: { ...process.env, TSX_DISABLE_CACHE: '1', E2E_ACCOUNT_FIXTURE: '1', E2E_ACCOUNT_ISSUER: 'https://127.0.0.1:3411', E2E_BASE_URL: 'https://127.0.0.1:3410', E2E_DATABASE_URL: 'postgresql://postgres:unused@127.0.0.1:35432/beacon_test' },
+        env: { ...process.env, E2E_INCLUDE_FIREFOX: includeFirefox, TSX_DISABLE_CACHE: '1', E2E_ACCOUNT_FIXTURE: '1', E2E_ACCOUNT_ISSUER: 'https://127.0.0.1:3411', E2E_BASE_URL: 'https://127.0.0.1:3410', E2E_DATABASE_URL: 'postgresql://postgres:unused@127.0.0.1:35432/beacon_test' },
     });
     assert.equal(run.status, 0, run.stderr);
     const report = JSON.parse(run.stdout);
@@ -202,12 +206,12 @@ test('Account collection has exactly 70 applicable memberships; only two desktop
         ].map(suffix => `live continuity without capture: full-stack ${role} ${suffix}`)),
         'live continuity without capture: full-stack ended Staff event releases parent and room guards',
     ];
-    const expected = ['chromium-account', 'android-chrome-account', 'firefox-account', 'iphone-webkit-account'].flatMap(project => {
+    const expected = ['chromium-account', 'android-chrome-account', 'firefox-account', 'iphone-webkit-account'].filter(project => project !== 'firefox-account' || includeFirefox === '1').flatMap(project => {
         const titles = [...common];
         if (['chromium-account', 'firefox-account'].includes(project)) titles.push('live continuity without capture: Staff open drawer survives a cancelled browser reload @desktop-native-staff');
         return titles.map(title => `${project}: ${title}`);
     });
-    assert.equal(expected.length, 70);
+    assert.equal(expected.length, includeFirefox === '1' ? 70 : 52);
     assert.deepEqual(actual.sort(), expected.sort());
 });
 

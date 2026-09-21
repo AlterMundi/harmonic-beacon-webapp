@@ -272,6 +272,224 @@ require_current_state() {
     die 'invalid OCI current state; separately reviewed root-owned reconciliation is required'
 }
 
+readback_file_identity() {
+  local path="$1" maximum="$2" before after size digest
+  if [ ! -e "$path" ] && [ ! -L "$path" ]; then
+    printf '%s\n' absent
+    return 0
+  fi
+  if ! (require_secure_root_file "$path" 600) >/dev/null 2>&1; then
+    printf '%s\n' invalid
+    return 0
+  fi
+  if ! size="$(stat -c '%s' "$path" 2>/dev/null)"; then
+    printf '%s\n' unstable
+    return 0
+  fi
+  if ! [[ "$size" =~ ^[0-9]+$ ]] || [ "$size" -gt "$maximum" ]; then
+    printf '%s\n' invalid
+    return 0
+  fi
+  if ! before="$(stat -c '%d:%i:%s:%Y:%Z' "$path" 2>/dev/null)" ||
+    ! digest="$(sha256sum "$path" 2>/dev/null | cut -d' ' -f1)" ||
+    ! after="$(stat -c '%d:%i:%s:%Y:%Z' "$path" 2>/dev/null)"; then
+    printf '%s\n' unstable
+    return 0
+  fi
+  if [ "$before" != "$after" ]; then
+    printf '%s\n' unstable
+  else
+    printf 'verified:%s:%s\n' "$before" "$digest"
+  fi
+}
+
+host_readback() {
+  local observed_at host=unknown overall=verified
+  local implementation_status=invalid implementation_manifest_sha=null helper_sha=null
+  local lane_status=unavailable lane_value=unknown
+  local state_status=unavailable state_summary=null impact_state
+  local active_status=none active_id=null value
+  local implementation_before implementation_after lane_before lane_after
+  local state_before state_after active_before active_after unstable=false
+  local implementation_before_valid=false implementation_after_valid=false
+
+  observed_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+  [ "$(hostname -s)" = mona ] && host=mona
+
+  # Bracket every read with bounded identities. A report is never assembled
+  # from files that moved during inspection, and this diagnostic takes no lock.
+  implementation_before="$(readback_file_identity "$TRUSTED_IMPLEMENTATION" 4096)"
+  lane_before="$(readback_file_identity "$RELEASE_LANE_STATE" 32)"
+  state_before="$(readback_file_identity "$CURRENT_STATE" 1048576)"
+  active_before="$(readback_file_identity "$ACTIVE_TRANSACTION" 21)"
+
+  if (verify_installed_implementation) >/dev/null 2>&1; then
+    implementation_before_valid=true
+    if implementation_manifest_sha="$(sha256sum "$TRUSTED_IMPLEMENTATION" 2>/dev/null | cut -d' ' -f1)" &&
+      value="$(awk '$2 == "/usr/local/sbin/hb-deploy" { print $1 }' "$TRUSTED_IMPLEMENTATION" 2>/dev/null)"; then
+      implementation_manifest_sha="\"sha256:$implementation_manifest_sha\""
+      implementation_status=verified
+    else
+      implementation_status=unavailable
+      implementation_manifest_sha=null
+      value=
+      unstable=true
+    fi
+    if [ "$implementation_status" = verified ] && [[ "$value" =~ ^[0-9a-f]{64}$ ]]; then
+      helper_sha="\"sha256:$value\""
+    elif [ "$implementation_status" = verified ]; then
+      implementation_status=invalid
+      implementation_manifest_sha=null
+    fi
+  fi
+
+  if [ -e "$RELEASE_LANE_STATE" ] || [ -L "$RELEASE_LANE_STATE" ]; then
+    if (require_secure_root_file "$RELEASE_LANE_STATE" 600) >/dev/null 2>&1; then
+      if ! value="$(stat -c '%s' "$RELEASE_LANE_STATE" 2>/dev/null)"; then
+        lane_status=unavailable
+        unstable=true
+      elif [ "$value" -gt 32 ]; then
+        lane_status=invalid
+      elif ! value="$(head -c 33 -- "$RELEASE_LANE_STATE" 2>/dev/null)"; then
+        lane_status=unavailable
+        unstable=true
+      else
+        case "$value" in
+          legacy-shadow | oci-production) lane_status=verified; lane_value="$value" ;;
+          *) lane_status=invalid ;;
+        esac
+      fi
+    else
+      lane_status=invalid
+    fi
+  fi
+
+  if [ -e "$CURRENT_STATE" ] || [ -L "$CURRENT_STATE" ]; then
+    if [ "$implementation_status" != verified ]; then
+      state_status=unavailable
+    elif ! (require_secure_root_file "$CURRENT_STATE" 600) >/dev/null 2>&1; then
+      state_status=invalid
+    elif ! value="$(stat -c '%s' "$CURRENT_STATE" 2>/dev/null)"; then
+      state_status=unavailable
+      unstable=true
+    elif [ "$value" -gt 1048576 ]; then
+      state_status=invalid
+    elif ! (node "$RELEASE_MANIFEST" validate-current-state --state "$CURRENT_STATE") >/dev/null 2>&1; then
+      state_status=invalid
+    elif ! impact_state="$(node "$RELEASE_MANIFEST" export-impact-state --state "$CURRENT_STATE" 2>/dev/null)"; then
+        state_status=unavailable
+        state_summary=null
+        unstable=true
+    elif ! state_summary="$(jq -ce '
+        {
+          schemaVersion: "harmonic-beacon.current-state.v4",
+          manifestSha256: .publication.manifestSha256,
+          publication: .publication,
+          serviceReleases: (
+            .serviceReleases | to_entries | sort_by(.key) | map({
+              service: .key,
+              sourceSha: .value.sourceSha,
+              imageDigest: (.value.imageRef | split("@") | .[1])
+            })
+          )
+        }
+      ' <<<"$impact_state")"; then
+      state_status=unavailable
+      state_summary=null
+      unstable=true
+    else
+      state_status=verified
+    fi
+  fi
+
+  if [ -e "$ACTIVE_TRANSACTION" ] || [ -L "$ACTIVE_TRANSACTION" ]; then
+    if (require_secure_root_file "$ACTIVE_TRANSACTION" 600) >/dev/null 2>&1; then
+      if ! value="$(stat -c '%s' "$ACTIVE_TRANSACTION" 2>/dev/null)"; then
+        active_status=unavailable
+        unstable=true
+      elif [ "$value" -gt 21 ]; then
+        active_status=invalid
+      elif ! value="$(head -c 22 -- "$ACTIVE_TRANSACTION" 2>/dev/null)"; then
+        active_status=unavailable
+        unstable=true
+      elif [[ "$value" =~ ^[1-9][0-9]{0,19}$ ]]; then
+        active_status=verified
+        active_id="\"$value\""
+      else
+        active_status=invalid
+      fi
+    else
+      active_status=invalid
+    fi
+  fi
+
+  implementation_after="$(readback_file_identity "$TRUSTED_IMPLEMENTATION" 4096)"
+  lane_after="$(readback_file_identity "$RELEASE_LANE_STATE" 32)"
+  state_after="$(readback_file_identity "$CURRENT_STATE" 1048576)"
+  active_after="$(readback_file_identity "$ACTIVE_TRANSACTION" 21)"
+  if (verify_installed_implementation) >/dev/null 2>&1; then
+    implementation_after_valid=true
+  fi
+  if [ "$implementation_before" != "$implementation_after" ] ||
+    [ "$implementation_before_valid" != "$implementation_after_valid" ]; then
+    implementation_status=unavailable
+    implementation_manifest_sha=null
+    helper_sha=null
+    state_status=unavailable
+    state_summary=null
+    unstable=true
+  fi
+  if [ "$lane_before" != "$lane_after" ]; then
+    lane_status=unavailable
+    lane_value=unknown
+    unstable=true
+  fi
+  if [ "$state_before" != "$state_after" ]; then
+    state_status=unavailable
+    state_summary=null
+    unstable=true
+  fi
+  if [ "$active_before" != "$active_after" ]; then
+    active_status=unavailable
+    active_id=null
+    unstable=true
+  fi
+
+  if [ "$unstable" = true ]; then
+    overall=unavailable
+  elif [ "$implementation_status" = invalid ] || [ "$lane_status" = invalid ] ||
+    [ "$state_status" = invalid ] || [ "$active_status" = invalid ]; then
+    overall=invalid
+  elif [ "$implementation_status" != verified ] || [ "$lane_status" != verified ] ||
+    [ "$state_status" != verified ]; then
+    overall=unavailable
+  fi
+
+  jq -cn \
+    --arg observedAt "$observed_at" --arg host "$host" --arg result "$overall" \
+    --arg implementationStatus "$implementation_status" \
+    --argjson implementationManifestSha256 "$implementation_manifest_sha" \
+    --argjson helperSha256 "$helper_sha" \
+    --arg laneStatus "$lane_status" --arg laneState "$lane_value" \
+    --arg stateStatus "$state_status" --argjson currentState "$state_summary" \
+    --arg activeStatus "$active_status" --argjson activeTransactionId "$active_id" \
+    '{
+      schemaVersion: "harmonic-beacon.host-readback.v1",
+      scope: "configuration-only",
+      observedAt: $observedAt,
+      host: $host,
+      result: $result,
+      implementation: {
+        status: $implementationStatus,
+        manifestSha256: $implementationManifestSha256,
+        helperSha256: $helperSha256
+      },
+      lane: {status: $laneStatus, state: $laneState},
+      currentState: {status: $stateStatus, evidence: $currentState},
+      activeTransaction: {status: $activeStatus, id: $activeTransactionId}
+    }'
+}
+
 state_unpack() {
   local state="$1" destination="$2"
   require_secure_root_file "$state" 600
@@ -856,7 +1074,8 @@ artifact_compose_from() {
     app="$(jq -er '.app.imageRef' "$root/../next-service-releases.json")"
     tapestry="$(jq -er '.tapestry.imageRef' "$root/../next-service-releases.json")"
     playlist="$(jq -er '."playlist-bot".imageRef' "$root/../next-service-releases.json")"
-    analytics="$(jq -er '.analytics.imageRef' "$root/../next-service-releases.json")"
+    # Analytics is a qualified interpolation input, not a Live service release.
+    analytics="$(manifest_ref "$manifest" artifacts analytics)"
   else
     manifest="$root/prior-manifest.json"
     app="$(manifest_ref "$manifest" artifacts app)"
@@ -900,7 +1119,8 @@ artifact_compose_service_from() {
       if [ "$service" = commerce-reconciler ]; then app="$(jq -er '."commerce-reconciler".imageRef' "$releases")"; else app="$(jq -er '.app.imageRef' "$releases")"; fi
       tapestry="$(jq -er '.tapestry.imageRef' "$releases")"
       playlist="$(jq -er '."playlist-bot".imageRef' "$releases")"
-      analytics="$(jq -er '.analytics.imageRef' "$releases")"
+      # Reuse only Live images; interpolation still belongs to this candidate manifest.
+      analytics="$(manifest_ref "$manifest" artifacts analytics)"
     else
       app="$(manifest_ref "$manifest" artifacts app)"
       tapestry="$(manifest_ref "$manifest" artifacts tapestry)"
@@ -913,7 +1133,8 @@ artifact_compose_service_from() {
     if [ "$service" = commerce-reconciler ]; then app="$(jq -er '."commerce-reconciler".imageRef' "$releases")"; else app="$(jq -er '.app.imageRef' "$releases")"; fi
     tapestry="$(jq -er '.tapestry.imageRef' "$releases")"
     playlist="$(jq -er '."playlist-bot".imageRef' "$releases")"
-    analytics="$(jq -er '.analytics.imageRef' "$releases")"
+    # Rollback/probes use the prior qualified manifest, not a fifth Live release.
+    analytics="$(manifest_ref "$manifest" artifacts analytics)"
   fi
   postgres="$(manifest_ref "$manifest" externalImages postgres)"
   livekit="$(manifest_ref "$manifest" externalImages livekit)"
@@ -1672,7 +1893,7 @@ beacon-playlist-bot playlist-bot
 EOF
   verify_container_image beacon-postgres "$(artifact_ref_from "$run_id" "$source" externalImages postgres)"
   verify_container_image beacon-livekit "$(artifact_ref_from "$run_id" "$source" externalImages livekit)"
-  verify_pulled_image "$(jq -er '.analytics.imageRef' "$releases")"
+  # Analytics is qualified with the artifact, but belongs to a separate runtime lane.
   for container in beacon-app beacon-commerce-reconciler beacon-tapestry beacon-playlist-bot beacon-postgres; do
     require_container_health "$container"
   done
@@ -1863,7 +2084,7 @@ schedule_apply() {
 }
 
 usage() {
-  printf '%s\n' 'usage: hb-deploy artifact-impact-state; hb-deploy artifact-{prepare|impact|preflight|migrate|replace|status|authorize-rollback|rollback} DELIVERY_RUN_ID DELIVERY_ATTEMPT ...; hb-deploy schedule-apply REQUEST_ID; hb-deploy {health|boundary} ...' >&2
+  printf '%s\n' 'usage: hb-deploy host-readback; hb-deploy artifact-impact-state; hb-deploy artifact-{prepare|impact|preflight|migrate|replace|status|authorize-rollback|rollback} DELIVERY_RUN_ID DELIVERY_ATTEMPT ...; hb-deploy schedule-apply REQUEST_ID; hb-deploy {health|boundary} ...' >&2
   exit 2
 }
 
@@ -1873,6 +2094,18 @@ cd /
 [ "$#" -gt 0 ] || usage
 command="$1"
 shift
+
+# This diagnostic must remain ahead of transaction directory creation and the
+# global lock. It accepts no target, path, environment, or command argument.
+if [ "$command" = host-readback ]; then
+  unset NODE_OPTIONS NODE_PATH GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM GIT_CONFIG_COUNT GIT_DIR GIT_WORK_TREE \
+    DOCKER_HOST DOCKER_CONTEXT DOCKER_CONFIG COMPOSE_FILE COMPOSE_PROFILES COMPOSE_PROJECT_NAME \
+    SSL_CERT_FILE SSL_CERT_DIR GITHUB_TOKEN GH_TOKEN
+  export HOME=/root
+  [ "$#" -eq 0 ] || usage
+  host_readback
+  exit 0
+fi
 
 case "$command" in
   artifact-impact-state)

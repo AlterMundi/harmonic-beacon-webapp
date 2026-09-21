@@ -6,7 +6,15 @@ import { dirname, join, resolve } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { evaluateRequiredChecks } from '../../ci/required-checks.mjs';
+import {
+  ACTIVE_EVIDENCE_FORM,
+  evaluateRequiredChecks as evaluateActiveRequiredChecks,
+  evaluateRequiredChecksForEvidenceForm,
+} from '../../ci/required-checks.mjs';
+
+// Preserve the legacy regression corpus while C2 adds an explicit active-form
+// assertion below. Both complete forms remain independently testable.
+const evaluateRequiredChecks = (input) => evaluateRequiredChecksForEvidenceForm(input, 'legacy-v1');
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const HEAD = '1111111111111111111111111111111111111111';
@@ -100,9 +108,63 @@ function input(overrides = {}) {
 }
 
 function appRuns(overrides = {}) {
-  return ['diff-check', 'lint-and-build', 'test', 'e2e', 'account'].map((name, index) =>
-    checkRun(name, { id: index + 1, ...(overrides[name] ?? {}) }),
-  );
+  return ['diff-check', 'lint-and-build', 'test', 'e2e', 'account'].map((name, index) => {
+    const id = index + 1;
+    const e2e = ['e2e', 'account'].includes(name);
+    const runId = e2e ? 20_002 : 20_001;
+    const suiteId = e2e ? 10_002 : 10_001;
+    return checkRun(name, {
+      id,
+      check_suite: { id: suiteId, head_sha: HEAD, app: { id: ACTIONS_APP_ID, slug: 'github-actions' } },
+      workflow_run: workflowIdentity(name, id, { id: runId, check_suite_id: suiteId }),
+      ...(overrides[name] ?? {}),
+    });
+  });
+}
+
+function integratedAppRuns(overrides = {}, run = {}) {
+  const runId = run.id ?? 21_001;
+  const runAttempt = run.run_attempt ?? 1;
+  const runStartedAt = run.run_started_at ?? '2026-09-10T00:01:00.000Z';
+  const suiteId = run.check_suite_id ?? 11_001;
+  return (run.names ?? [
+    'diff-check', 'impact', 'lint-and-build', 'test',
+    'e2e / e2e', 'e2e / account', 'required-impact-checks',
+  ]).map((name, index) => {
+    const id = (run.check_id_base ?? 100) + index;
+    return checkRun(name, {
+      id,
+      created_at: runStartedAt,
+      started_at: runStartedAt,
+      check_suite: { id: suiteId, head_sha: HEAD, app: { id: ACTIONS_APP_ID, slug: 'github-actions' } },
+      workflow_run: workflowIdentity(name, id, {
+        id: runId,
+        check_suite_id: suiteId,
+        run_attempt: runAttempt,
+        run_started_at: runStartedAt,
+        name: 'CI',
+        path: '.github/workflows/ci.yml',
+      }),
+      ...(overrides[name] ?? {}),
+    });
+  });
+}
+
+const integratedAudioNames = [
+  'diff-check', 'impact', 'lint-and-build', 'test', 'tapestry', 'playlist', 'analytics',
+  'e2e / e2e', 'e2e / account', 'frozen-audio-paths', 'data-recovery',
+  'release-qualification', 'required-impact-checks',
+];
+
+function audioLabelRun(overrides = {}) {
+  const id = overrides.id ?? 900;
+  const suiteId = 11_900;
+  return checkRun('frozen-audio-paths', {
+    id,
+    check_suite: { id: suiteId, head_sha: HEAD, app: { id: ACTIONS_APP_ID, slug: 'github-actions' } },
+    workflow_run: workflowIdentity('frozen-audio-paths', id, { id: 21_900, check_suite_id: suiteId }),
+    ...overrides,
+  });
 }
 
 function assertState(actual, state, reason) {
@@ -260,6 +322,184 @@ test('succeeds when every selected application context passed on the exact head'
   }));
   assert.equal(result.state, 'success');
   assert.deepEqual(result.requiredContexts, ['diff-check', 'lint-and-build', 'test', 'e2e', 'account']);
+});
+
+test('C2 selects the complete integrated form only after C1 compatibility exists', () => {
+  assert.equal(ACTIVE_EVIDENCE_FORM, 'integrated-v2');
+  const evidence = input({
+    changedFiles: ['src/app/page.tsx'],
+    checkRuns: integratedAppRuns(),
+  });
+  const result = evaluateActiveRequiredChecks(evidence);
+  assert.equal(result.state, 'success');
+  assert.deepEqual(result.requiredContexts, [
+    'diff-check', 'impact', 'lint-and-build', 'test',
+    'e2e / e2e', 'e2e / account', 'required-impact-checks',
+  ]);
+
+});
+
+test('integrated evidence never mixes direct legacy E2E success with missing or red CI E2E', () => {
+  const direct = [checkRun('e2e', { id: 201 }), checkRun('account', { id: 202 })];
+  const missing = integratedAppRuns().filter(({ name }) => name !== 'e2e / account');
+  assertState(evaluateRequiredChecksForEvidenceForm(input({
+    changedFiles: ['src/app/page.tsx'],
+    checkRuns: [...missing, ...direct],
+  }), 'integrated-v2'), 'pending', 'missing:e2e / account');
+
+  const red = integratedAppRuns({ 'e2e / e2e': { conclusion: 'failure' } });
+  assertState(evaluateRequiredChecksForEvidenceForm(input({
+    changedFiles: ['src/app/page.tsx'],
+    checkRuns: [...red, ...direct],
+  }), 'integrated-v2'), 'failure', 'conclusion:e2e / e2e:failure');
+});
+
+test('legacy policy never mixes integrated success with a red direct legacy form', () => {
+  const checks = [
+    ...appRuns({ account: { conclusion: 'failure' } }),
+    ...integratedAppRuns(),
+  ];
+  assertState(evaluateRequiredChecksForEvidenceForm(input({
+    changedFiles: ['src/app/page.tsx'],
+    checkRuns: checks,
+  }), 'legacy-v1'), 'failure', 'conclusion:account:failure');
+});
+
+test('integrated form requires its exact aggregate in addition to every selected job', () => {
+  const missing = integratedAppRuns().filter(({ name }) => name !== 'required-impact-checks');
+  assertState(evaluateRequiredChecksForEvidenceForm(input({
+    changedFiles: ['src/app/page.tsx'],
+    checkRuns: missing,
+    deadlineExpired: true,
+  }), 'integrated-v2'), 'failure', 'missing:required-impact-checks');
+  assertState(evaluateRequiredChecksForEvidenceForm(input({
+    changedFiles: ['src/app/page.tsx'],
+    checkRuns: integratedAppRuns({ 'required-impact-checks': { conclusion: 'skipped' } }),
+  }), 'integrated-v2'), 'failure', 'conclusion:required-impact-checks:skipped');
+});
+
+test('integrated audio requires both CI regressions and standalone label policy proof', () => {
+  const ci = integratedAppRuns({}, { names: integratedAudioNames });
+  const label = audioLabelRun();
+  const accepted = evaluateRequiredChecksForEvidenceForm(input({
+    changedFiles: ['src/context/AudioContext.tsx'],
+    checkRuns: [...ci, label],
+  }), 'integrated-v2');
+  assert.equal(accepted.state, 'success', JSON.stringify(accepted));
+  assert.ok(accepted.requiredContexts.includes('frozen-audio-paths'));
+  assert.ok(accepted.requiredContexts.includes('audio-label-policy'));
+
+  assertState(evaluateRequiredChecksForEvidenceForm(input({
+    changedFiles: ['src/context/AudioContext.tsx'],
+    checkRuns: ci,
+  }), 'integrated-v2'), 'pending', 'missing:audio-label-policy');
+
+  assertState(evaluateRequiredChecksForEvidenceForm(input({
+    changedFiles: ['src/context/AudioContext.tsx'],
+    checkRuns: [...ci, audioLabelRun({ conclusion: 'failure' })],
+  }), 'integrated-v2'), 'failure', 'conclusion:audio-label-policy:failure');
+
+  assertState(evaluateRequiredChecksForEvidenceForm(input({
+    changedFiles: ['src/context/AudioContext.tsx'],
+    checkRuns: [...ci.filter(({ name }) => name !== 'frozen-audio-paths'), label],
+  }), 'integrated-v2'), 'pending', 'missing:frozen-audio-paths');
+});
+
+test('integrated audio ignores an unmapped old Audio attempt without trusting suite lineage', () => {
+  const audioSuiteId = 11_900;
+  const ci = integratedAppRuns({}, {
+    names: integratedAudioNames,
+    run_started_at: '2026-09-10T00:01:00.000Z',
+  });
+  const currentLabel = audioLabelRun({
+    id: 902,
+    created_at: null,
+    started_at: '2026-09-10T12:00:03.000Z',
+    check_suite: {
+      id: audioSuiteId,
+      head_sha: HEAD,
+      app: { id: ACTIONS_APP_ID, slug: 'github-actions' },
+    },
+    workflow_run: workflowIdentity('frozen-audio-paths', 902, {
+      id: 21_900,
+      check_suite_id: audioSuiteId,
+      run_attempt: 2,
+      run_started_at: '2026-09-10T12:00:00.000Z',
+    }),
+  });
+  // Exact production shape after a rerun: check-runs contains both attempts,
+  // but Actions runs/jobs only maps the current attempt. Its timestamp is
+  // later than the CI workflow start, so it previously displaced CI evidence.
+  const oldUnmappedLabel = checkRun('frozen-audio-paths', {
+    id: 901,
+    started_at: '2026-09-10T00:01:04.000Z',
+    check_suite: currentLabel.check_suite,
+    workflow_run: null,
+    workflow_job: null,
+  });
+  const evidence = input({
+    changedFiles: ['src/context/AudioContext.tsx'],
+    checkRuns: [...ci, oldUnmappedLabel, currentLabel],
+  });
+  assert.equal(
+    evaluateRequiredChecksForEvidenceForm(evidence, 'integrated-v2').state,
+    'success',
+  );
+
+  const unknownSuite = {
+    ...oldUnmappedLabel,
+    id: 903,
+    check_suite: { ...oldUnmappedLabel.check_suite, id: 11_903 },
+  };
+  assertState(evaluateRequiredChecksForEvidenceForm(input({
+    changedFiles: ['src/context/AudioContext.tsx'],
+    checkRuns: [...ci, unknownSuite, currentLabel],
+  }), 'integrated-v2'), 'failure', 'untrusted:frozen-audio-paths');
+});
+
+test('integrated form never fills a newer incomplete CI attempt with older green jobs', () => {
+  const older = integratedAppRuns({}, {
+    id: 21_100,
+    run_attempt: 1,
+    run_started_at: '2026-09-10T00:01:00.000Z',
+    check_suite_id: 11_100,
+    check_id_base: 300,
+  });
+  const newer = integratedAppRuns({}, {
+    id: 21_101,
+    run_attempt: 1,
+    run_started_at: '2026-09-10T00:02:00.000Z',
+    check_suite_id: 11_101,
+    check_id_base: 400,
+  }).filter(({ name }) => ['diff-check', 'impact'].includes(name));
+  const result = evaluateRequiredChecksForEvidenceForm(input({
+    changedFiles: ['src/app/page.tsx'],
+    checkRuns: [...older, ...newer],
+  }), 'integrated-v2');
+  assertState(result, 'pending', 'missing:lint-and-build');
+  assert.ok(result.reasons.includes('missing:required-impact-checks'), JSON.stringify(result));
+});
+
+test('integrated form binds every job to the newest rerun attempt of one CI run', () => {
+  const older = integratedAppRuns({}, {
+    id: 21_200,
+    run_attempt: 1,
+    run_started_at: '2026-09-10T00:01:00.000Z',
+    check_suite_id: 11_200,
+    check_id_base: 500,
+  });
+  const rerun = integratedAppRuns({}, {
+    id: 21_200,
+    run_attempt: 2,
+    run_started_at: '2026-09-10T00:02:00.000Z',
+    check_suite_id: 11_200,
+    check_id_base: 600,
+  }).filter(({ name }) => name === 'diff-check');
+  assertState(evaluateRequiredChecksForEvidenceForm(input({
+    changedFiles: ['src/app/page.tsx'],
+    checkRuns: [...older, ...rerun],
+    deadlineExpired: true,
+  }), 'integrated-v2'), 'failure', 'missing:impact');
 });
 
 test('rejects a same-name success emitted by a foreign check App', () => {
@@ -629,11 +869,14 @@ test('closed PRs and wrong target branches fail closed', () => {
   assertState(evaluateRequiredChecks(input({ currentBaseRef: 'early-birds' })), 'failure', 'unexpected-base');
 });
 
-test('constituent workflows rerun their base-sensitive evidence after retargeting', () => {
-  for (const path of ['ci.yml', 'e2e.yml', 'audio-boundary.yml']) {
+test('PR entry workflows rerun their base-sensitive evidence after retargeting', () => {
+  for (const path of ['ci.yml', 'audio-boundary.yml']) {
     const workflow = readFileSync(resolve(ROOT, '.github', 'workflows', path), 'utf8');
     assert.match(workflow, /pull_request:\n(?:.|\n)*?types: \[[^\]]*edited[^\]]*\]/, path);
   }
+  const e2eWorkflow = readFileSync(resolve(ROOT, '.github/workflows/e2e.yml'), 'utf8');
+  assert.match(e2eWorkflow, /^ {2}workflow_call:/m);
+  assert.doesNotMatch(e2eWorkflow, /^ {2}pull_request:/m);
 });
 
 test('privileged delivery authority is never loaded by workflow_run from the default branch', () => {
@@ -652,14 +895,15 @@ test('privileged delivery authority is never loaded by workflow_run from the def
   assert.doesNotMatch(workflow, /checkout[^\n]*event_head|node[^\n]*event_head/);
   assert.match(workflow, /id: target/);
   assert.match(workflow, /base_sha=.*\.base\.sha/);
-  assert.match(workflow, /merge_sha=.*\.merge_commit_sha/);
+  assert.doesNotMatch(workflow, /merge_sha=.*\.merge_commit_sha/);
   assert.match(workflow, /ref: \$\{\{ steps\.target\.outputs\.base_sha \}\}/);
   assert.match(workflow, /evaluator_base=.*git rev-parse HEAD/);
   assert.match(workflow, /evaluatorBaseSha.*evaluator_base/);
   assert.match(workflow, /currentMergeSha.*current_merge/);
   assert.match(workflow, /final_pr=.*repos\/\$REPOSITORY\/pulls\/\$pr_number/);
-  assert.match(workflow, /final_merge=.*\.merge_commit_sha/);
-  assert.match(workflow, /post_status success "\$description" "\$final_merge"/);
+  assert.doesNotMatch(workflow, /final_merge=.*\.merge_commit_sha/);
+  assert.match(workflow, /context="delivery-gate-\$expected_base"/);
+  assert.match(workflow, /post_status success "\$description" "\$final_head"/);
   assert.doesNotMatch(workflow, /post_status success "\$description" "\$event_head"/);
   assert.doesNotMatch(workflow, /ref:.*github\.sha/);
   assert.match(workflow, /previous_filename/);
@@ -773,36 +1017,20 @@ esac
         EVENT_ACTION: lifecycle[firstWake].action,
         INPUT_PR_NUMBER: '',
         WORKFLOW_HEAD: HEAD,
+        WORKFLOW_RUN_ID: '9002',
+        WORKFLOW_RUN_ATTEMPT: String(lifecycle[firstWake].run_attempt),
       },
     });
     assert.equal(dispatch.status, 0, dispatch.stderr);
     assert.match(readFileSync(ghLog, 'utf8'),
       /--method POST repos\/AlterMundi\/harmonic-beacon-webapp\/actions\/workflows\/delivery-gate\.yml\/dispatches -f ref=main -f inputs\[pr_number\]=534 -f inputs\[status_context\]=delivery-gate/);
 
-    const statusStart = authority.indexOf('          post_status() {');
-    const statusEnd = authority.indexOf('\n          initial_pr=', statusStart);
-    assert.ok(statusStart >= 0 && statusEnd > statusStart, 'initial authority status transition must be present');
-    const initialStatusScript = authority.slice(statusStart, statusEnd)
-      .split('\n').map((line) => line.replace(/^ {10}/, '')).join('\n');
-    const pending = spawnSync('bash', ['-c', initialStatusScript], {
-      encoding: 'utf8',
-      env: {
-        ...process.env,
-        PATH: `${temp}:${process.env.PATH}`,
-        GH_LOG: ghLog,
-        REPOSITORY: 'AlterMundi/harmonic-beacon-webapp',
-        RUN_URL: 'https://github.com/AlterMundi/harmonic-beacon-webapp/actions/runs/9002',
-        context: 'delivery-gate',
-        current_merge: MERGE,
-      },
-    });
-    assert.equal(pending.status, 0, pending.stderr);
-    const statusPosts = readFileSync(ghLog, 'utf8').split('\n')
-      .filter((line) => line.includes(`/statuses/${MERGE}`));
-    assert.equal(statusPosts.length, 1);
-    assert.match(statusPosts[0], /-f state=pending -f context=delivery-gate/);
-    assert.deepEqual(['success', ...statusPosts.map((line) => line.match(/-f state=([^ ]+)/)?.[1])],
-      ['success', 'pending']);
+    const identityBound = authority.indexOf('[ "$initial_base_ref" = "$expected_base" ]');
+    const firstPending = authority.indexOf("post_status pending 'evaluating exact current-base required checks' \"$initial_head\"");
+    assert.ok(identityBound >= 0 && firstPending > identityBound,
+      'rerun pending must be written to the rebound current head');
+    assert.match(authority, /context="delivery-gate-\$expected_base"/);
+    assert.doesNotMatch(authority, /post_status pending[^\n]+\$current_merge/);
   } finally {
     rmSync(temp, { recursive: true, force: true });
   }
