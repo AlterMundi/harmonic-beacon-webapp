@@ -43,6 +43,7 @@ export const COVERAGE_MATRICES = Object.freeze({
     analytics: ['analytics-contract'],
   },
   critical: {
+    governance: ['governance:ownership-workflow-contract'],
     audio: ['audio:frozen-paths', 'audio:media-continuity', 'audio:browser-engines'],
     auth: ['auth:oidc-cookie-logout', 'auth:account-chromium-android'],
     grants: ['grants:effects-integration', 'grants:rollback-compatibility'],
@@ -62,6 +63,8 @@ export const HOSTED_JOB_FOR_CHECK = Object.freeze({
   'diff-check': 'impact',
   'agent-skill-distributions': 'impact',
   'ops-tooling': 'impact',
+  'ownership-contract': 'impact',
+  'governance-tooling': 'impact',
   'lint-and-build': 'lint-and-build',
   test: 'test',
   analytics: 'analytics',
@@ -97,6 +100,7 @@ export const HOSTED_JOB_FOR_MATRIX = Object.freeze({
   'data:migration-state': 'data-recovery',
   'data:backup-isolated-restore': 'release-qualification',
   'data:app-worker-schema-compatibility': 'data-recovery',
+  'governance:ownership-workflow-contract': 'impact',
   'infrastructure:workflow-helper-boundary': 'workflow-review',
   'infrastructure:interrupted-stale-recovery': 'release-qualification',
   'required-check-completeness': 'impact',
@@ -109,6 +113,8 @@ const CHECKS = Object.freeze({
   'diff-check': { check: 'diff-check', command: 'git diff --check' },
   'agent-skill-distributions': { check: 'agent-skill-distributions', command: 'python3 .agents/skills/scripts/render_distributions.py --check' },
   'ops-tooling': { check: 'ops-tooling', command: 'npm run test:ops-tooling' },
+  'ownership-contract': { check: 'ownership-contract', command: 'node scripts/ci/validate-codeowners.mjs .github/CODEOWNERS' },
+  'governance-tooling': { check: 'governance-tooling', command: 'run focused ownership, selection, workflow and evaluator Node tests' },
   'lint-and-build': { check: 'lint-and-build', command: 'npm run lint && npm run build' },
   test: { check: 'test', command: 'npm run test:coverage' },
   analytics: { check: 'analytics', command: 'npm test --prefix services/analytics' },
@@ -160,6 +166,11 @@ function pathFacts(path) {
     return facts;
   }
 
+  if (path === '.github/CODEOWNERS') {
+    set('critical', ['governance'], [], ['ownership-contract', 'governance-tooling']);
+    return facts;
+  }
+
   if (/^src\/.*\.css$/u.test(path)) set('ui', ['ui'], ['app']);
   if (/^(src\/components\/|src\/app\/)/u.test(path) && !path.endsWith('.css')) set('functional', ['app'], ['app']);
   if (/^src\/lib\//u.test(path)) set('functional', ['app'], ['app', 'commerce-reconciler']);
@@ -199,7 +210,7 @@ function pathFacts(path) {
   if (/^deploy\/runtime-public-config\/[^/]+\.json$/u.test(path)) {
     set('critical', ['infrastructure'], ['app'], ['ops-tooling', 'workflow-review'], ['app']);
   }
-  if (/^(\.github\/workflows\/|\.github\/CODEOWNERS$|deploy\/(?!runtime-public-config\/)|docker-compose\.yml$)/u.test(path)) {
+  if (/^(\.github\/workflows\/|deploy\/(?!runtime-public-config\/)|docker-compose\.yml$)/u.test(path)) {
     set('critical', ['infrastructure'], SERVICES, ['ops-tooling', 'workflow-review']);
   }
   if (path === 'Dockerfile') set('critical', ['infrastructure'], ['app', 'commerce-reconciler'], ['workflow-review']);
@@ -227,6 +238,13 @@ function artifactList(services) {
 }
 
 function selectedMatrices(risk, domains) {
+  if (domains.includes('governance')
+      && domains.every(domain => domain === 'governance' || domain === 'documentation')) {
+    return {
+      ui: [], functional: [], critical: [...COVERAGE_MATRICES.critical.governance],
+      crossDomain: ['required-check-completeness'],
+    };
+  }
   if (domains.includes('observation-tooling')
       && domains.every(domain => domain === 'observation-tooling' || domain === 'documentation')) {
     return { ui: [], functional: [], critical: [], crossDomain: [] };
@@ -255,6 +273,10 @@ function selectedMatrices(risk, domains) {
 
 function checksFor(risk, domains, pathChecks, services) {
   const names = new Set(['diff-check', ...pathChecks]);
+  if (domains.includes('governance')
+      && domains.every(domain => domain === 'governance' || domain === 'documentation')) {
+    return Object.keys(CHECKS).filter((name) => names.has(name)).map((name) => CHECKS[name]);
+  }
   const appRequired = services.includes('app') || services.includes('commerce-reconciler');
   if (appRequired) addAll(names, ['lint-and-build', 'test', 'e2e']);
   if (risk === 'critical' && domains.includes('audio')) names.add('e2e');
@@ -273,7 +295,8 @@ function requiredContextsFor(risk, domains, requiredChecks, requiredJobChecks) {
   if (risk === 'critical' && domains.includes('infrastructure')) return [...CONTEXT_ORDER];
   const checks = new Set(requiredChecks.map(({ check }) => check));
   const contexts = new Set(['diff-check']);
-  if (checks.has('ops-tooling') || checks.has('agent-skill-distributions')) contexts.add('impact');
+  if (checks.has('ops-tooling') || checks.has('agent-skill-distributions')
+      || checks.has('ownership-contract') || checks.has('governance-tooling')) contexts.add('impact');
   for (const name of requiredJobChecks) {
     if (name === 'impact') continue;
     contexts.add(name);

@@ -46,6 +46,17 @@ test('the distinct audio label boundary remains a PR check', () => {
   assert.match(ciWorkflow, /^  frozen-audio-paths:/m);
 });
 
+test('governance-only impact uses local ownership and focused control-plane checks', () => {
+  assert.match(ciWorkflow, /node scripts\/ci\/validate-codeowners\.mjs \.github\/CODEOWNERS/u);
+  assert.match(ciWorkflow, /gh api --method GET[\s\S]*codeowners\/errors\?ref=\$HEAD_SHA[\s\S]*\.errors \| type == "array" and length == 0/u);
+  assert.match(ciWorkflow, /governance_only: \$\{\{ steps\.classify\.outputs\.governance_only \}\}/u);
+  assert.match(ciWorkflow, /ownership_changed: \$\{\{ steps\.classify\.outputs\.ownership_changed \}\}/u);
+  assert.match(ciWorkflow, /if: steps\.classify\.outputs\.ownership_changed == 'true'\n\s+run: node scripts\/ci\/validate-codeowners/u);
+  assert.match(ciWorkflow, /if: steps\.classify\.outputs\.governance_only == 'true'[\s\S]*scripts\/ci\/__tests__\/validate-codeowners\.test\.mjs/u);
+  assert.match(ciWorkflow, /if: steps\.classify\.outputs\.governance_only != 'true'\n\s+run: npm ci/u);
+  assert.doesNotMatch(e2eWorkflow, /^ {2}pull_request:/m);
+});
+
 test('candidate-executing pull request workflows grant read-only contents explicitly', () => {
   for (const [path, workflow] of [
     ['ci.yml', ciWorkflow],

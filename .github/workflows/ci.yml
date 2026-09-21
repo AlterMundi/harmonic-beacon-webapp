@@ -61,6 +61,8 @@ jobs:
       data_recovery: ${{ steps.classify.outputs.data_recovery }}
       workflow_review: ${{ steps.classify.outputs.workflow_review }}
       release_qualification: ${{ steps.classify.outputs.release_qualification }}
+      governance_only: ${{ steps.classify.outputs.governance_only }}
+      ownership_changed: ${{ steps.classify.outputs.ownership_changed }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -89,6 +91,10 @@ jobs:
             node scripts/hb.mjs change-impact --base "$base" --head "$head" --json > impact-plan.json
           fi
           node scripts/ci/impact-recovery.mjs validate-impact --input impact-plan.json
+          jq -r '((.domains | index("governance")) != null) and all(.domains[]; . == "governance" or . == "documentation") | "governance_only=\(.)"' \
+            impact-plan.json >> "$GITHUB_OUTPUT"
+          jq -r '(.files | index(".github/CODEOWNERS")) != null | "ownership_changed=\(.)"' \
+            impact-plan.json >> "$GITHUB_OUTPUT"
           for pair in \
             lint_and_build:lint-and-build test:test analytics:analytics tapestry:tapestry playlist:playlist \
             commerce_contract:commerce-contract e2e:e2e frozen_audio_paths:frozen-audio-paths \
@@ -98,11 +104,39 @@ jobs:
             job="${pair#*:}"
             printf '%s=%s\n' "$output" "$(jq -r --arg job "$job" '.requiredJobChecks | index($job) != null' impact-plan.json)" >> "$GITHUB_OUTPUT"
           done
+      - name: Validate the local ownership contract
+        if: steps.classify.outputs.ownership_changed == 'true'
+        run: node scripts/ci/validate-codeowners.mjs .github/CODEOWNERS
+      - name: Validate current GitHub ownership resolution
+        if: steps.classify.outputs.ownership_changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ inputs.head_sha || github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          gh api --method GET \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "repos/$GITHUB_REPOSITORY/codeowners/errors?ref=$HEAD_SHA" > codeowners-errors.json
+          jq -e '.errors | type == "array" and length == 0' codeowners-errors.json >/dev/null
       - name: Verify generated agent skill distributions
+        if: steps.classify.outputs.governance_only != 'true'
         run: python3 .agents/skills/scripts/render_distributions.py --check
-      - run: npm ci
+      - if: steps.classify.outputs.governance_only != 'true'
+        run: npm ci
       - name: Verify shared operations tooling
+        if: steps.classify.outputs.governance_only != 'true'
         run: npm run test:ops-tooling
+      - name: Verify focused ownership, selection, workflow and evaluator contracts
+        if: steps.classify.outputs.governance_only == 'true'
+        run: >-
+          node --test
+          scripts/ci/__tests__/validate-codeowners.test.mjs
+          scripts/ci/__tests__/impact-recovery.test.mjs
+          scripts/ops/__tests__/change-impact.test.mjs
+          scripts/ops/__tests__/delivery-efficiency.test.mjs
+          scripts/ops/__tests__/required-checks.test.mjs
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: change-impact-${{ github.run_id }}-${{ github.run_attempt }}

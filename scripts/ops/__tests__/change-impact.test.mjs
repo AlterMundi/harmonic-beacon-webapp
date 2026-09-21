@@ -135,6 +135,53 @@ test('documentation-only changes select no deployment or recovery ceremony', () 
   });
 });
 
+test('CODEOWNERS-only governance stays critical without selecting runtime or release work', () => {
+  for (const files of [
+    ['.github/CODEOWNERS'],
+    ['.github/CODEOWNERS', 'docs/ops/ownership-note.md'],
+  ]) {
+    const report = classifyChanges(files);
+    assert.equal(report.risk, 'critical');
+    assert.ok(report.domains.includes('governance'));
+    assert.deepEqual(report.matrices, {
+      ui: [], functional: [],
+      critical: ['governance:ownership-workflow-contract'],
+      crossDomain: ['required-check-completeness'],
+    });
+    assert.deepEqual(checkNames(report), ['diff-check', 'ownership-contract', 'governance-tooling']);
+    assert.deepEqual(report.requiredJobChecks, ['impact']);
+    assert.deepEqual(report.requiredContexts, ['diff-check', 'impact']);
+    assert.deepEqual(report.deployment, {
+      deploy: false,
+      artifactsToPull: [],
+      servicesToReplace: [],
+      reusePriorImages: [],
+      migration: 'never',
+      recovery: 'none',
+    });
+  }
+});
+
+test('CODEOWNERS never narrows mixed runtime, audio, auth, workflow or unknown coverage', () => {
+  for (const path of [
+    'src/lib/runtime.ts',
+    'src/context/AudioContext.tsx',
+    'src/lib/auth.ts',
+    '.github/workflows/ci.yml',
+    'unclassified/critical.surface',
+  ]) {
+    const baseline = classifyChanges([path]);
+    const mixed = classifyChanges(['.github/CODEOWNERS', path]);
+    for (const job of baseline.requiredJobChecks) {
+      assert.ok(mixed.requiredJobChecks.includes(job), `${path} lost ${job}`);
+    }
+    for (const [kind, matrices] of Object.entries(baseline.matrices)) {
+      for (const matrix of matrices) assert.ok(mixed.matrices[kind].includes(matrix), `${path} lost ${matrix}`);
+    }
+    assert.deepEqual(mixed.deployment, baseline.deployment, path);
+  }
+});
+
 test('bounded CSS selects the explicit UI matrix and only replaces app', () => {
   const report = classifyChanges(['src/app/landing.css']);
   assert.equal(report.risk, 'ui');

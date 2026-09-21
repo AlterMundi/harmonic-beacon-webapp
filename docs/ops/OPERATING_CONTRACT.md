@@ -64,6 +64,21 @@ selected-service replacement, migration compatibility and recovery ownership.
 A documentation edit or read-only diagnosis does not require that release
 rehearsal.
 
+### Proportionate governance checks
+
+A change limited to `.github/CODEOWNERS` and documentation remains a critical
+governance change and still requires the repository's configured independent
+CODEOWNER approval. It does not build or qualify application artifacts: CI runs
+the diff, bounded CODEOWNERS syntax, impact-selection, workflow-contract and
+required-check evaluator checks, and records `deployment.deploy=false`.
+
+The local validator checks the repository's supported CODEOWNERS structure; it
+does not decide who currently has repository access. GitHub's native CODEOWNERS
+errors and branch protection remain authoritative for that online fact, and an
+unavailable online result is unknown rather than proof. Mixing ownership edits
+with workflow, runtime, audio, authentication, unknown or other executable
+paths selects the complete applicable profile for those paths.
+
 ## Change and release flow
 
 The host-independent working procedure is [OPERATOR_LOOP.md](OPERATOR_LOOP.md).
