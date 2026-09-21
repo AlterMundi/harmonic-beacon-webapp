@@ -92,7 +92,7 @@ verde/nuevo rojo, null merge, fuentes inaccesibles y URLs sensibles; lectura de
 #554/#550/#553 reales. La distribución Hermes se genera del mismo cuerpo que
 Codex. Instalarla no demuestra discovery ni comportamiento del host remoto.
 
-## B. Gate que converge — siguiente cambio de autoridad
+## B. Gate que converge — implementado, pendiente de activación
 
 Propietarios: delivery-gate-dispatch.yml, delivery-gate.yml, required-checks.mjs,
 check-evidence.jq y sus tests. Conservar el evaluador de la base protegida y
@@ -241,8 +241,22 @@ destructivo por sospechar que un registro es test.
 
 ## Cierre
 
-Este lote establece la entrada y el diagnóstico; B–E siguen pendientes. No
-modifica workflows de autoridad, ramas protegidas, datos ni producción. No
-afirma que Hermes instaló la nueva skill ni que los PR de producto se desplegaron.
+El primer lote implementa la entrada común, el diagnóstico, la evaluación
+acotada del gate, su reconciliación y la selección de evidencia integrada,
+conservando ambos emisores durante la transición. Incluye el diagnóstico
+privado de configuración y la correspondencia explícita workflow/helper/sudo.
+Son cambios propuestos de autoridad: necesitan review e integración protegida;
+no están instalados en Mona ni activados por existir en esta rama.
+
+El segundo lote retira sólo el disparador E2E duplicado después de integrar
+el primero. La habilitación de CompAII como CODEOWNER de CI/deploy está
+autorizada y preparada por separado; mantiene audio y protecciones intactos.
+La publicación del bootstrap desde la identidad independiente de CompAII
+permite su revisión por el CODEOWNER vigente, sin autoaprobación.
+
+Siguen pendientes la calificación alojada completa, el bootstrap real de D,
+la instalación acotada del diagnóstico y el relevo E. No se modificaron datos
+ni producción. No se afirma que Hermes instaló la nueva skill ni que los PR de
+producto se desplegaron. La evidencia y el siguiente paso viven en PR #555.
 La operación compartida se demuestra con el relevo y la entrega, no con más
 documentos o con el número de tests.

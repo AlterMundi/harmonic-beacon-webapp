@@ -228,6 +228,19 @@ test('adding an observation tool never removes coverage from a critical batch', 
   assert.deepEqual(mixed.requiredContexts, critical.requiredContexts);
 });
 
+test('adding an app contract test never narrows conservative infrastructure coverage', () => {
+  const infrastructure = classifyChanges(['scripts/ci/required-checks.mjs']);
+  const mixed = classifyChanges([
+    'scripts/ci/required-checks.mjs',
+    'src/lib/__tests__/live-production-account-deploy-contract.test.ts',
+  ]);
+  assert.deepEqual(mixed.matrices.functional, infrastructure.matrices.functional);
+  for (const job of infrastructure.requiredJobChecks) {
+    assert.ok(mixed.requiredJobChecks.includes(job), `mixed batch removed required job: ${job}`);
+  }
+  assert.deepEqual(mixed.requiredContexts, infrastructure.requiredContexts);
+});
+
 test('documentation accompanying an observation-only change does not select runtime matrices', () => {
   const report = classifyChanges(['scripts/ops/delivery-status.mjs', 'docs/ops/OPERATOR_LOOP.md']);
   assert.deepEqual(report.matrices, { ui: [], functional: [], critical: [], crossDomain: [] });

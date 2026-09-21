@@ -67,9 +67,33 @@ function evidenceRequirements(changedFiles, evidenceForm) {
     requirements.findIndex(({ key }) => key === requirement.key) === index);
 }
 
-function knownAlternativeWorkflow(run, requirement) {
+function workflowLineageBySuite(checkRuns) {
+  const lineages = new Map();
+  for (const run of checkRuns) {
+    const suite = run?.check_suite;
+    const workflow = run?.workflow_run;
+    if (!isExpectedApp(run?.app) || !isExpectedApp(suite?.app)
+        || !Number.isSafeInteger(suite?.id) || suite.id <= 0
+        || workflow?.check_suite_id !== suite.id
+        || typeof workflow?.name !== 'string' || typeof workflow?.path !== 'string') continue;
+    const prior = lineages.get(suite.id);
+    if (prior === null) continue;
+    if (prior && workflowKey(prior) !== workflowKey(workflow)) {
+      lineages.set(suite.id, null);
+      continue;
+    }
+    lineages.set(suite.id, { name: workflow.name, path: workflow.path });
+  }
+  return lineages;
+}
+
+function knownAlternativeWorkflow(run, requirement, suiteLineages) {
   if (!isExpectedApp(run?.app) || !isExpectedApp(run?.check_suite?.app)) return false;
-  const workflow = run?.workflow_run;
+  // GitHub retains check runs from old attempts in one suite, while the runs
+  // endpoint exposes only the current attempt. Suite lineage may therefore
+  // reject an old unmapped check from a known alternative workflow, but it is
+  // never used by isTrustedRun to authorize that check.
+  const workflow = run?.workflow_run ?? suiteLineages.get(run?.check_suite?.id);
   const known = [LEGACY_EXPECTED_WORKFLOWS[requirement.context], CI_WORKFLOW].filter(Boolean);
   return known.some((expected) => workflow?.name === expected.name && workflow?.path === expected.path)
     && !(workflow?.name === requirement.expected?.name && workflow?.path === requirement.expected?.path);
@@ -259,6 +283,7 @@ function isTrustedRun(run, requirement, input) {
 
 function latestExactRuns(checkRuns, requirements, headSha, evidenceNotBefore) {
   const cutoff = Date.parse(evidenceNotBefore);
+  const suiteLineages = workflowLineageBySuite(checkRuns);
   const newestWorkflowAttempts = new Map();
   for (const requirement of requirements) {
     const key = workflowKey(requirement.expected);
@@ -277,7 +302,7 @@ function latestExactRuns(checkRuns, requirements, headSha, evidenceNotBefore) {
     const newestAttempt = newestWorkflowAttempts.get(workflowKey(requirement.expected));
     for (const run of checkRuns) {
       if (run.name !== requirement.context || run.head_sha !== headSha) continue;
-      if (knownAlternativeWorkflow(run, requirement)) continue;
+      if (knownAlternativeWorkflow(run, requirement, suiteLineages)) continue;
       if (matchesWorkflow(run, requirement.expected)
           && newestAttempt && !sameWorkflowAttempt(run, newestAttempt)) continue;
       const started = Date.parse(run.workflow_run?.run_started_at ?? run.started_at ?? run.created_at ?? '');
@@ -324,7 +349,7 @@ export function evaluateRequiredChecksForEvidenceForm(input, evidenceForm) {
   const failed = [];
 
   for (const requirement of requirements) {
-    const { context, key } = requirement;
+    const { key } = requirement;
     const run = latest.get(key);
     if (!run) {
       missing.push(`missing:${key}`);
