@@ -231,7 +231,9 @@ build_candidate() {
   tx="$ROOT/transactions/$(permit '.permitId')"; [ ! -e "$tx" ] || die 'permit already used'
   install -d -o root -g root -m 0700 "$tx" "$tx/source"
   install -o root -g root -m 0600 "$INBOX" "$tx/candidate.tar"
-  python3 "$ARCHIVE_VALIDATOR" "$tx/candidate.tar" "$tx/source" "$(permit '.archiveEntries')"
+  # The enclosing transaction/source stay root-only. Source children need
+  # canonical readable modes when Docker copies public assets as root.
+  (umask 022; python3 "$ARCHIVE_VALIDATOR" "$tx/candidate.tar" "$tx/source" "$(permit '.archiveEntries')")
   source="$tx/source"
   while IFS=$'\t' read -r migration expected; do
     [ -f "$source/prisma/migrations/$migration/migration.sql" ] || die "permitted migration is missing: $migration"

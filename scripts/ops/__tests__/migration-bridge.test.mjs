@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {chmod, mkdtemp, mkdir, readFile, rm, writeFile} from 'node:fs/promises';
+import {chmod, mkdtemp, mkdir, readFile, rm, stat, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {spawnSync} from 'node:child_process';
 import {join, resolve} from 'node:path';
@@ -7,6 +7,31 @@ import test from 'node:test';
 
 const root = resolve(import.meta.dirname, '../../..');
 const source = (path) => readFile(join(root, path), 'utf8');
+
+test('archive children remain readable under root-only transaction umask', async () => {
+  const area = await mkdtemp(join(tmpdir(), 'hb-migration-modes-'));
+  try {
+    const input = join(area, 'input');
+    const tx = join(area, 'transaction');
+    await mkdir(join(input, 'public/assets'), {recursive:true});
+    await writeFile(join(input, 'public/assets/test.txt'), 'asset');
+    await mkdir(join(tx, 'source'), {recursive:true,mode:0o700});
+    await chmod(tx, 0o700);
+    const tar = spawnSync('tar', ['-cf',join(tx,'candidate.tar'),'-C',input,'public'], {encoding:'utf8'});
+    assert.equal(tar.status,0,tar.stderr);
+    const helper = await source('deploy/hb-migration-bridge-root');
+    const line = helper.split('\n').find((value) => value.includes('python3 "$ARCHIVE_VALIDATOR" "$tx/candidate.tar"'));
+    assert.ok(line);
+    const run = spawnSync('bash',['-c',`set -eu; umask 077; permit() { printf 3; }; ${line}; test "$(umask)" = 0077`], {
+      encoding:'utf8',env:{...process.env,tx,ARCHIVE_VALIDATOR:join(root,'deploy/hb-app-bridge-archive.py')},
+    });
+    assert.equal(run.status,0,run.stderr);
+    assert.equal((await stat(tx)).mode & 0o777,0o700);
+    assert.equal((await stat(join(tx,'source'))).mode & 0o777,0o700);
+    assert.equal((await stat(join(tx,'source/public/assets'))).mode & 0o777,0o755);
+    assert.equal((await stat(join(tx,'source/public/assets/test.txt'))).mode & 0o777,0o644);
+  } finally { await rm(area,{recursive:true,force:true}); }
+});
 
 test('migration bridge is separate from the still-recoverable v1 transaction', async () => {
   const helper = await source('deploy/hb-migration-bridge-root');
