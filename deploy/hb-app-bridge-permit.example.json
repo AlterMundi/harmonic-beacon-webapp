@@ -1,0 +1,18 @@
+{
+  "archiveBytes": 1,
+  "archiveEntries": 1,
+  "archiveSha256": "REPLACE_WITH_64_LOWERCASE_HEX",
+  "archiveValidatorSha256": "REPLACE_WITH_64_LOWERCASE_HEX",
+  "buildTime": "2026-09-21T00:00:00Z",
+  "databaseSchemaVersion": "20260908233000_create_sep9_internal_rehearsal",
+  "expiresAt": "2026-09-22T00:00:00Z",
+  "livekitProbeSha256": "REPLACE_WITH_64_LOWERCASE_HEX",
+  "permitId": "REPLACE_WITH_RANDOM_64_LOWERCASE_HEX",
+  "productionBaseGitSha": "9a40237a4042345c6c76c24ba4b492faa40ee03c",
+  "productionBaseImageId": "sha256:REPLACE_WITH_64_LOWERCASE_HEX",
+  "productionComposeSha256": "REPLACE_WITH_64_LOWERCASE_HEX",
+  "schemaVersion": "hb-app-bridge.permit.v1",
+  "sourceSha": "8a8050f8fc4ef02a3183e472f336332f06469c42",
+  "sourceTree": "REPLACE_WITH_40_LOWERCASE_HEX",
+  "stagingComposeSha256": "REPLACE_WITH_64_LOWERCASE_HEX"
+}
