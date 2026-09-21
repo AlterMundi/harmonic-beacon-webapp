@@ -1,0 +1,46 @@
+services:
+  app:
+    image: ${HB_APP_BRIDGE_IMAGE:?immutable app image id required}
+    container_name: hb-live-staging-app
+    restart: unless-stopped
+    env_file:
+      - path: /etc/harmonic-beacon/live-staging.env
+        required: true
+      - path: /etc/harmonic-beacon/live-staging-secrets/account.env
+        required: false
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-beacon_staging}:${POSTGRES_PASSWORD:?required}@postgres:5432/${POSTGRES_DB:-beacon_live_staging}?schema=public
+      E2E_DASHBOARD_ENABLED: ${E2E_DASHBOARD_ENABLED:-0}
+      LIVEKIT_INTERNAL_URL: http://livekit-unavailable.invalid:7880
+      TAPESTRY_PUBLIC_ENABLED: "false"
+      TICKET_LOGIN_URL_PREFIX: https://live-staging.harmonicbeacon.com
+    ports:
+      - 127.0.0.1:3200:3000
+    networks:
+      - database
+      - app_egress
+    healthcheck:
+      test: [CMD, curl, --fail, http://localhost:3000/api/health/ready]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+networks:
+  database:
+    external: true
+    name: hb_live_staging_database
+  app_egress:
+    external: true
+    name: hb_live_staging_app_egress
