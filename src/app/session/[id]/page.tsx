@@ -317,6 +317,15 @@ function SessionRoom() {
     const stageExitCancelRef = useRef<HTMLButtonElement>(null);
     const stageExitTriggerRef = useRef<HTMLButtonElement>(null);
     const participantFallbackRef = useRef(copy.session.participantFallback);
+    const beaconConnectionHistoryRef = useRef({ sessionId: id, established: false });
+    if (beaconConnectionHistoryRef.current.sessionId !== id) {
+        beaconConnectionHistoryRef.current = { sessionId: id, established: false };
+    }
+    if (beaconConnected) beaconConnectionHistoryRef.current.established = true;
+    // Preserve the initial gesture until both rooms can consume it, but a
+    // terminal disconnect after that point must leave the reconnect action usable.
+    const awaitingInitialBeaconConnection = !beaconConnected && !beaconAudioError &&
+        !beaconConnectionHistoryRef.current.established;
     participantFallbackRef.current = copy.session.participantFallback;
     stageInvitationAcceptedRef.current = stageInvitationAccepted;
     principalKindRef.current = principalKind;
@@ -1289,7 +1298,7 @@ function SessionRoom() {
                             </p>
                             <button
                                 onClick={startListening}
-                                disabled={!beaconConnected && !beaconAudioError}
+                                disabled={awaitingInitialBeaconConnection}
                                 className="event-button event-button--primary w-full"
                             >
                                 {copy.session.startAudio}

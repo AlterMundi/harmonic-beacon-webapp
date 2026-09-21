@@ -1503,6 +1503,27 @@ describe('SessionRoomPage - audio activation', () => {
         expect(audioMocks.startBeaconAudio).toHaveBeenCalledOnce();
     });
 
+    it('keeps activation retry enabled after an established Beacon connection disconnects', async () => {
+        const view = renderPage();
+        const button = await screen.findByRole('button', { name: 'Start audio' });
+        expect(button).toBeEnabled();
+
+        audioMocks.isConnected = false;
+        view.rerender(
+            <LocaleProvider initialLocale="en">
+                <RoomExitProvider>
+                    <a href="/away" onClick={() => mockPush("/away")}>Global exit</a>
+                    <SessionRoomPage />
+                </RoomExitProvider>
+            </LocaleProvider>,
+        );
+
+        const retry = screen.getByRole('button', { name: 'Start audio' });
+        expect(retry).toBeEnabled();
+        fireEvent.click(retry);
+        expect(audioMocks.startBeaconAudio).toHaveBeenCalledOnce();
+    });
+
     it('preserves intentional native stage mute and zero gain during activation', async () => {
         audioMocks.isPlaying = true;
         await renderConnected();
