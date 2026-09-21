@@ -1,0 +1,448 @@
+#!/usr/bin/env bash
+
+# Candidate-pinned, app-only bridge for the legacy Live host.  This helper is
+# intentionally separate from hb-deploy and the OCI transaction machinery.
+# The unprivileged caller can select only a verb; candidate authority lives in
+# a root-installed, inert permit and source archive.
+
+set -euo pipefail
+
+readonly SYSTEM_PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+readonly TEST_ROOT="${HB_APP_BRIDGE_TEST_ROOT:-}"
+if [ -n "$TEST_ROOT" ] && [ "$EUID" -ne 0 ]; then
+  readonly PATH="$TEST_ROOT/bin:/usr/bin:/bin"
+  readonly ROOT="$TEST_ROOT/var/lib/harmonic-beacon/app-bridge"
+  readonly PERMIT="$TEST_ROOT/etc/harmonic-beacon/app-bridge/permit.json"
+  readonly ACTIVATION="$TEST_ROOT/etc/harmonic-beacon/app-bridge/activation.json"
+  readonly PRODUCTION_COMPOSE="$TEST_ROOT/usr/local/libexec/harmonic-beacon/app-bridge-production.compose.yml"
+  readonly STAGING_COMPOSE="$TEST_ROOT/usr/local/libexec/harmonic-beacon/app-bridge-staging.compose.yml"
+  readonly ARCHIVE_VALIDATOR="$TEST_ROOT/usr/local/libexec/harmonic-beacon/hb-app-bridge-archive.py"
+  readonly LIVEKIT_PROBE="$TEST_ROOT/usr/local/libexec/harmonic-beacon/hb-app-bridge-livekit.py"
+  readonly PRODUCTION_ENV="$TEST_ROOT/etc/harmonic-beacon/production.env"
+  readonly STAGING_ENV="$TEST_ROOT/etc/harmonic-beacon/live-staging.env"
+  readonly ACCOUNT_ENV="$TEST_ROOT/etc/harmonic-beacon/live-production-secrets/account.env"
+  readonly COMMERCE_ENV="$TEST_ROOT/etc/harmonic-beacon/commerce.env"
+else
+  readonly PATH="$SYSTEM_PATH"
+  readonly ROOT='/var/lib/harmonic-beacon/app-bridge'
+  readonly PERMIT='/etc/harmonic-beacon/app-bridge/permit.json'
+  readonly ACTIVATION='/etc/harmonic-beacon/app-bridge/activation.json'
+  readonly PRODUCTION_COMPOSE='/usr/local/libexec/harmonic-beacon/app-bridge-production.compose.yml'
+  readonly STAGING_COMPOSE='/usr/local/libexec/harmonic-beacon/app-bridge-staging.compose.yml'
+  readonly ARCHIVE_VALIDATOR='/usr/local/libexec/harmonic-beacon/hb-app-bridge-archive.py'
+  readonly LIVEKIT_PROBE='/usr/local/libexec/harmonic-beacon/hb-app-bridge-livekit.py'
+  readonly PRODUCTION_ENV='/etc/harmonic-beacon/production.env'
+  readonly STAGING_ENV='/etc/harmonic-beacon/live-staging.env'
+  readonly ACCOUNT_ENV='/etc/harmonic-beacon/live-production-secrets/account.env'
+  readonly COMMERCE_ENV='/etc/harmonic-beacon/commerce.env'
+fi
+export PATH
+
+readonly INBOX="$ROOT/inbox/candidate.tar"
+readonly LOCK="$ROOT/operation.lock"
+readonly STATE="$ROOT/state.json"
+readonly REHEARSAL_RECEIPT="$ROOT/staging-rehearsal.json"
+readonly PRODUCTION_CONTAINER='beacon-app'
+readonly STAGING_CONTAINER='hb-live-staging-app'
+
+die() { printf 'hb-app-bridge: %s\n' "$*" >&2; exit 1; }
+
+require_root() {
+  [ "$EUID" -eq 0 ] || { [ -n "$TEST_ROOT" ] && [ "$TEST_ROOT" != / ]; } ||
+    die 'must run as root through the restricted sudo rule'
+}
+
+expected_owner() {
+  if [ -n "$TEST_ROOT" ] && [ "$EUID" -ne 0 ]; then id -un; else printf root; fi
+}
+
+require_safe_parent_chain() {
+  local path="$1" current mode owner
+  current="$(dirname -- "$path")"
+  while :; do
+    [ -d "$current" ] && [ ! -L "$current" ] || die "$current must be a real directory"
+    owner="$(stat -c '%U' "$current")"
+    [ "$owner" = "$(expected_owner)" ] || die "$current has unexpected owner"
+    mode="$(stat -c '%a' "$current")"
+    (( (8#$mode & 8#022) == 0 )) || die "$current must not be group/world writable"
+    [ "$current" = / ] && break
+    if [ -n "$TEST_ROOT" ] && [ "$EUID" -ne 0 ] && [ "$current" = "$TEST_ROOT" ]; then break; fi
+    current="$(dirname -- "$current")"
+  done
+}
+
+require_regular_root_file() {
+  local path="$1" mode="$2"
+  require_safe_parent_chain "$path"
+  [ -f "$path" ] && [ ! -L "$path" ] || die "$path must be a regular file"
+  [ "$(stat -c '%U %a' "$path")" = "$(expected_owner) $mode" ] ||
+    die "$path has unexpected owner or mode"
+}
+
+sha256() { sha256sum -- "$1" | cut -d' ' -f1; }
+
+permit_value() { jq -er "$1" "$PERMIT"; }
+
+validate_permit() {
+  local enforce_expiry="${1:-true}" now expires archive_commit
+  if [ "$EUID" -eq 0 ]; then require_regular_root_file "$0" 755; fi
+  require_regular_root_file "$PERMIT" 600
+  require_regular_root_file "$INBOX" 600
+  require_regular_root_file "$PRODUCTION_COMPOSE" 644
+  require_regular_root_file "$STAGING_COMPOSE" 644
+  jq -e '
+    keys == ["archiveBytes","archiveEntries","archiveSha256","archiveValidatorSha256","buildTime",
+      "databaseSchemaVersion","expiresAt","livekitProbeSha256","permitId","productionBaseGitSha",
+      "productionBaseImageId","productionComposeSha256","schemaVersion",
+      "sourceSha","sourceTree","stagingComposeSha256"] and
+    .schemaVersion == "hb-app-bridge.permit.v1" and
+    (.permitId | test("^[0-9a-f]{64}$")) and
+    (.sourceSha | test("^[0-9a-f]{40}$")) and
+    (.sourceTree | test("^[0-9a-f]{40}$")) and
+    (.archiveSha256 | test("^[0-9a-f]{64}$")) and
+    (.archiveValidatorSha256 | test("^[0-9a-f]{64}$")) and
+    (.archiveBytes | type == "number" and . >= 1 and . <= 67108864 and floor == .) and
+    (.archiveEntries | type == "number" and . >= 1 and . <= 4096 and floor == .) and
+    (.buildTime | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")) and
+    (.databaseSchemaVersion | test("^[0-9]{14}_[a-z0-9_]+$")) and
+    (.expiresAt | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")) and
+    (.productionBaseGitSha | test("^[0-9a-f]{40}$")) and
+    (.productionBaseImageId | test("^sha256:[0-9a-f]{64}$")) and
+    (.productionComposeSha256 | test("^[0-9a-f]{64}$")) and
+    (.livekitProbeSha256 | test("^[0-9a-f]{64}$")) and
+    (.stagingComposeSha256 | test("^[0-9a-f]{64}$"))
+  ' "$PERMIT" >/dev/null || die 'invalid or non-closed permit'
+  [ "$(stat -c '%s' "$INBOX")" = "$(permit_value '.archiveBytes')" ] || die 'archive size mismatch'
+  [ "$(sha256 "$INBOX")" = "$(permit_value '.archiveSha256')" ] || die 'archive digest mismatch'
+  [ "$(sha256 "$PRODUCTION_COMPOSE")" = "$(permit_value '.productionComposeSha256')" ] ||
+    die 'production Compose digest mismatch'
+  [ "$(sha256 "$STAGING_COMPOSE")" = "$(permit_value '.stagingComposeSha256')" ] ||
+    die 'staging Compose digest mismatch'
+  require_regular_root_file "$ARCHIVE_VALIDATOR" 755
+  require_regular_root_file "$LIVEKIT_PROBE" 755
+  [ "$(sha256 "$ARCHIVE_VALIDATOR")" = "$(permit_value '.archiveValidatorSha256')" ] ||
+    die 'archive validator digest mismatch'
+  [ "$(sha256 "$LIVEKIT_PROBE")" = "$(permit_value '.livekitProbeSha256')" ] ||
+    die 'LiveKit probe digest mismatch'
+  archive_commit="$(git get-tar-commit-id < "$INBOX")"
+  [ "$archive_commit" = "$(permit_value '.sourceSha')" ] || die 'archive source revision mismatch'
+  if [ "$enforce_expiry" = true ]; then
+    expires="$(permit_value '.expiresAt')"
+    now="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+    [[ "$now" < "$expires" ]] || die 'permit has expired'
+  fi
+}
+
+validate_runtime_files() {
+  require_regular_root_file "$PRODUCTION_ENV" 600
+  require_regular_root_file "$STAGING_ENV" 600
+  require_regular_root_file "$COMMERCE_ENV" 600
+  if [ -e "$ACCOUNT_ENV" ]; then require_regular_root_file "$ACCOUNT_ENV" 600; fi
+}
+
+validate_activation() {
+  local now expires
+  require_regular_root_file "$ACTIVATION" 600
+  require_regular_root_file "$REHEARSAL_RECEIPT" 600
+  jq -e '
+    keys == ["candidateImageId","expiresAt","permitId","productionBaseImageId",
+      "rehearsalReceiptSha256","schemaVersion"] and
+    .schemaVersion == "hb-app-bridge.activation.v1" and
+    (.permitId | test("^[0-9a-f]{64}$")) and
+    (.candidateImageId | test("^sha256:[0-9a-f]{64}$")) and
+    (.productionBaseImageId | test("^sha256:[0-9a-f]{64}$")) and
+    (.rehearsalReceiptSha256 | test("^[0-9a-f]{64}$")) and
+    (.expiresAt | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"))
+  ' "$ACTIVATION" >/dev/null || die 'invalid or non-closed activation receipt'
+  [ "$(jq -er '.permitId' "$ACTIVATION")" = "$(permit_value '.permitId')" ] || die 'activation permit mismatch'
+  [ "$(jq -er '.candidateImageId' "$ACTIVATION")" = "$(candidate_image)" ] || die 'activation image mismatch'
+  [ "$(jq -er '.productionBaseImageId' "$ACTIVATION")" = "$(permit_value '.productionBaseImageId')" ] ||
+    die 'activation base image mismatch'
+  [ "$(jq -er '.rehearsalReceiptSha256' "$ACTIVATION")" = "$(sha256 "$REHEARSAL_RECEIPT")" ] ||
+    die 'activation rehearsal receipt mismatch'
+  expires="$(jq -er '.expiresAt' "$ACTIVATION")"
+  now="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+  [[ "$now" < "$expires" ]] || die 'activation receipt has expired'
+}
+
+container_image_id() {
+  docker inspect "$1" --format '{{.Image}}'
+}
+
+container_health() {
+  docker inspect "$1" --format '{{.State.Health.Status}}'
+}
+
+source_sha() { permit_value '.sourceSha'; }
+candidate_image() { jq -er '.candidateImageId' "$STATE"; }
+
+production_compose() {
+  local image="$1"
+  shift
+  HB_APP_BRIDGE_IMAGE="$image" docker compose --project-name app --file "$PRODUCTION_COMPOSE" \
+    --env-file "$PRODUCTION_ENV" "$@"
+}
+
+staging_compose() {
+  local image="$1"
+  shift
+  HB_APP_BRIDGE_IMAGE="$image" docker compose --project-name hb-live-staging --file "$STAGING_COMPOSE" \
+    --env-file "$STAGING_ENV" "$@"
+}
+
+write_state() {
+  local input="$1" temporary="$STATE.new"
+  jq -c . "$input" > "$temporary"
+  chown root:root "$temporary"
+  chmod 600 "$temporary"
+  mv -f -- "$temporary" "$STATE"
+}
+
+assert_state_phase() {
+  require_regular_root_file "$STATE" 600
+  [ "$(jq -er '.permitId' "$STATE")" = "$(permit_value '.permitId')" ] || die 'state belongs to another permit'
+  [ "$(jq -er '.phase' "$STATE")" = "$1" ] || die "transaction is not in $1 phase"
+}
+
+read_health_sha() {
+  local origin="$1" body
+  body="$(curl --fail --silent --show-error --connect-timeout 2 --max-time 5 "$origin/api/health")" || return 1
+  jq -er 'select(.schemaVersion == "health.response.v2") | .gitSha |
+    select(type == "string" and test("^[0-9a-f]{40}$"))' <<<"$body"
+}
+
+wait_container() {
+  local container="$1" origin="$2" expected_sha="$3" body
+  for _attempt in $(seq 1 60); do
+    if [ "$(container_health "$container" 2>/dev/null || true)" = healthy ]; then
+      body="$(curl --fail --silent --show-error --connect-timeout 2 --max-time 5 "$origin/api/health" 2>/dev/null || true)"
+      if jq -e --arg sha "$expected_sha" '.schemaVersion == "health.response.v2" and .gitSha == $sha' \
+        <<<"$body" >/dev/null 2>&1 && curl --fail --silent --show-error --connect-timeout 2 --max-time 5 \
+        "$origin/api/health/ready" >/dev/null 2>&1; then return 0; fi
+    fi
+    sleep 2
+  done
+  return 1
+}
+
+private_boundary() {
+  local members
+  [ "$(docker network inspect pmp_beacon_internal --format '{{.Internal}}')" = true ] ||
+    { printf '%s\n' 'commerce network is not internal' >&2; return 1; }
+  members="$(docker network inspect pmp_beacon_internal \
+    --format '{{range .Containers}}{{println .Name}}{{end}}' | sed '/^[[:space:]]*$/d' | sort)"
+  [ "$members" = $'beacon-app\npmp-myth-worker\npmp-myth-worker-secondary' ] ||
+    { printf '%s\n' 'private network membership changed' >&2; return 1; }
+  for name in BEACON_COMMERCE_SERVICE_KEY_CURRENT_ID BEACON_COMMERCE_SERVICE_KEY_CURRENT; do
+    docker inspect "$PRODUCTION_CONTAINER" --format '{{range .Config.Env}}{{println .}}{{end}}' |
+      cut -d= -f1 | grep -Fxq "$name" || { printf 'app is missing %s\n' "$name" >&2; return 1; }
+  done
+  if [ -e "$ACCOUNT_ENV" ]; then
+    docker inspect "$PRODUCTION_CONTAINER" --format '{{range .Config.Env}}{{println .}}{{end}}' |
+      cut -d= -f1 | grep -Fxq BEACON_ACCOUNT_CLIENT_SECRET ||
+      { printf '%s\n' 'app is missing Account secret' >&2; return 1; }
+  fi
+}
+
+stage() {
+  local tx archive source image_id prior prior_sha state_input
+  validate_permit
+  validate_runtime_files
+  tx="$ROOT/transactions/$(permit_value '.permitId')"
+  [ ! -e "$tx" ] || die 'permit already has a transaction'
+  install -d -o root -g root -m 700 "$tx" "$tx/source"
+  archive="$tx/candidate.tar"
+  install -o root -g root -m 600 "$INBOX" "$archive"
+  [ "$(sha256 "$archive")" = "$(permit_value '.archiveSha256')" ] || die 'copied archive digest mismatch'
+  [ "$(stat -c '%s' "$archive")" = "$(permit_value '.archiveBytes')" ] || die 'copied archive size mismatch'
+  python3 "$ARCHIVE_VALIDATOR" \
+    "$archive" "$tx/source" "$(permit_value '.archiveEntries')"
+  source="$tx/source"
+  [ -f "$source/Dockerfile" ] && [ -f "$source/package-lock.json" ] && [ -d "$source/src" ] ||
+    die 'candidate archive lacks the fixed app build roots'
+  image_id="$(env -i PATH="$PATH" docker build --pull=false \
+    --label "com.harmonicbeacon.app-bridge.permit=$(permit_value '.permitId')" \
+    --label "org.opencontainers.image.revision=$(source_sha)" \
+    --build-arg 'NEXT_PUBLIC_LIVEKIT_URL=wss://live.harmonicbeacon.com' \
+    --build-arg "BEACON_GIT_SHA=$(source_sha)" \
+    --build-arg "BEACON_BUILD_TIME=$(permit_value '.buildTime')" \
+    --build-arg "BEACON_DATABASE_SCHEMA_VERSION=$(permit_value '.databaseSchemaVersion')" \
+    --quiet "$source")"
+  [[ "$image_id" =~ ^sha256:[0-9a-f]{64}$ ]] || die 'build did not return an immutable image id'
+  [ "$(docker image inspect "$image_id" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$(source_sha)" ] ||
+    die 'built image revision label mismatch'
+  prior="$(container_image_id "$STAGING_CONTAINER")"
+  prior_sha="$(read_health_sha http://127.0.0.1:3200)" || die 'cannot attest prior staging revision'
+  state_input="$tx/state.initial.json"
+  jq -n --arg permitId "$(permit_value '.permitId')" --arg phase staging \
+    --arg sourceSha "$(source_sha)" --arg candidateImageId "$image_id" \
+    --arg stagingPriorImageId "$prior" --arg stagingPriorGitSha "$prior_sha" \
+    --arg productionPriorImageId "$(permit_value '.productionBaseImageId')" \
+    '{permitId:$permitId,phase:$phase,sourceSha:$sourceSha,candidateImageId:$candidateImageId,
+      stagingPriorImageId:$stagingPriorImageId,stagingPriorGitSha:$stagingPriorGitSha,
+      productionPriorImageId:$productionPriorImageId}' > "$state_input"
+  write_state "$state_input"
+  if ! staging_compose "$image_id" up -d --no-deps --force-recreate app ||
+    ! wait_container "$STAGING_CONTAINER" http://127.0.0.1:3200 "$(source_sha)"; then
+    if staging_compose "$prior" up -d --no-deps --force-recreate app &&
+      wait_container "$STAGING_CONTAINER" http://127.0.0.1:3200 "$prior_sha"; then
+      jq '.phase="stage-failed-restored"' "$STATE" > "$state_input"
+      write_state "$state_input"
+      die 'staging app did not attest the candidate; prior staging image was restored'
+    fi
+    jq '.phase="stage-recovery-required"' "$STATE" > "$state_input"
+    write_state "$state_input"
+    die 'staging candidate and verified restore both failed'
+  fi
+  jq '.phase="staged"' "$STATE" > "$state_input"
+  write_state "$state_input"
+  printf 'staged source=%s image=%s\n' "$(source_sha)" "$image_id"
+}
+
+stage_rollback() {
+  local candidate prior prior_sha state_input
+  validate_permit
+  validate_runtime_files
+  assert_state_phase staged
+  candidate="$(candidate_image)"
+  prior="$(jq -er '.stagingPriorImageId' "$STATE")"
+  prior_sha="$(jq -er '.stagingPriorGitSha' "$STATE")"
+  [ "$(container_image_id "$STAGING_CONTAINER")" = "$candidate" ] || die 'staging image changed before rehearsal rollback'
+  staging_compose "$prior" up -d --no-deps --force-recreate app
+  wait_container "$STAGING_CONTAINER" http://127.0.0.1:3200 "$prior_sha" || die 'staging prior image did not recover'
+  state_input="$(dirname "$STATE")/state.stage-rolled-back.json"
+  jq '.phase="stage-rolled-back"' "$STATE" > "$state_input"
+  write_state "$state_input"
+  printf 'stage-rolled-back source=%s image=%s\n' "$prior_sha" "$prior"
+}
+
+stage_reapply() {
+  local candidate prior state_input
+  validate_permit
+  validate_runtime_files
+  assert_state_phase stage-rolled-back
+  candidate="$(candidate_image)"
+  prior="$(jq -er '.stagingPriorImageId' "$STATE")"
+  [ "$(container_image_id "$STAGING_CONTAINER")" = "$prior" ] || die 'staging image changed before rehearsal reapply'
+  staging_compose "$candidate" up -d --no-deps --force-recreate app
+  wait_container "$STAGING_CONTAINER" http://127.0.0.1:3200 "$(source_sha)" || die 'staging candidate reapply failed'
+  state_input="$(dirname "$STATE")/state.rehearsed.json"
+  jq '.phase="rehearsed"' "$STATE" > "$state_input"
+  write_state "$state_input"
+  printf 'rehearsed source=%s image=%s\n' "$(source_sha)" "$candidate"
+}
+
+run_read_only_quiesce_preflight() {
+  production_compose "$1" run --rm --no-deps preflight
+  python3 "$LIVEKIT_PROBE"
+}
+
+restore_production() {
+  local image="$1" expected_sha="$2"
+  production_compose "$image" up -d --no-deps --force-recreate app
+  wait_container "$PRODUCTION_CONTAINER" http://127.0.0.1:3000 "$expected_sha"
+}
+
+apply_candidate() {
+  local expected_base candidate state_input
+  validate_permit
+  validate_runtime_files
+  assert_state_phase rehearsed
+  validate_activation
+  candidate="$(candidate_image)"
+  [ "$(container_image_id "$STAGING_CONTAINER")" = "$candidate" ] || die 'staging no longer runs the candidate image'
+  wait_container "$STAGING_CONTAINER" http://127.0.0.1:3200 "$(source_sha)" ||
+    die 'staging candidate is not healthy'
+  expected_base="$(permit_value '.productionBaseImageId')"
+  [ "$(container_image_id "$PRODUCTION_CONTAINER")" = "$expected_base" ] || die 'production app image changed since permit review'
+  run_read_only_quiesce_preflight "$candidate"
+  state_input="$(dirname "$STATE")/state.applying.json"
+  jq '.phase="applying"' "$STATE" > "$state_input"
+  write_state "$state_input"
+  if ! production_compose "$candidate" up -d --no-deps --force-recreate app ||
+    ! wait_container "$PRODUCTION_CONTAINER" http://127.0.0.1:3000 "$(source_sha)" ||
+    ! private_boundary; then
+    if restore_production "$expected_base" "$(permit_value '.productionBaseGitSha')" && private_boundary; then
+      jq '.phase="rolled-back-after-failure"' "$STATE" > "$state_input"
+      write_state "$state_input"
+      die 'candidate verification failed; prior app image was verified after restore'
+    fi
+    jq '.phase="recovery-required"' "$STATE" > "$state_input"
+    write_state "$state_input"
+    die 'candidate verification and verified restore failed; recovery is required'
+  fi
+  jq '.phase="applied"' "$STATE" > "$state_input"
+  write_state "$state_input"
+  printf 'applied source=%s image=%s\n' "$(source_sha)" "$candidate"
+}
+
+rollback_candidate() {
+  local candidate prior state_input
+  # Expiry prevents a new stage/apply, not recovery of an already applied
+  # transaction. All byte, ownership and transaction bindings still apply.
+  validate_permit false
+  validate_runtime_files
+  assert_state_phase applied
+  candidate="$(candidate_image)"
+  prior="$(jq -er '.productionPriorImageId' "$STATE")"
+  [ "$(container_image_id "$PRODUCTION_CONTAINER")" = "$candidate" ] || die 'production app changed after bridge apply'
+  run_read_only_quiesce_preflight "$candidate"
+  restore_production "$prior" "$(permit_value '.productionBaseGitSha')" || die 'prior app did not become healthy'
+  private_boundary
+  state_input="$(dirname "$STATE")/state.rolled-back.json"
+  jq '.phase="rolled-back"' "$STATE" > "$state_input"
+  write_state "$state_input"
+  printf 'rolled-back source=%s image=%s\n' "$(permit_value '.productionBaseGitSha')" "$prior"
+}
+
+recover_interrupted() {
+  local phase current candidate prior state_input
+  validate_permit false
+  validate_runtime_files
+  require_regular_root_file "$STATE" 600
+  [ "$(jq -er '.permitId' "$STATE")" = "$(permit_value '.permitId')" ] || die 'state belongs to another permit'
+  phase="$(jq -er '.phase' "$STATE")"
+  [ "$phase" = applying ] || [ "$phase" = recovery-required ] || die 'transaction does not require apply recovery'
+  candidate="$(candidate_image)"
+  prior="$(jq -er '.productionPriorImageId' "$STATE")"
+  current="$(container_image_id "$PRODUCTION_CONTAINER")"
+  [ "$current" = "$candidate" ] || [ "$current" = "$prior" ] || die 'production image matches neither recovery CAS endpoint'
+  run_read_only_quiesce_preflight "$current"
+  if [ "$current" = "$candidate" ]; then
+    restore_production "$prior" "$(permit_value '.productionBaseGitSha')" || die 'recovery restore did not become healthy'
+  else
+    wait_container "$PRODUCTION_CONTAINER" http://127.0.0.1:3000 "$(permit_value '.productionBaseGitSha')" ||
+      die 'prior image is present but not healthy'
+  fi
+  private_boundary || die 'recovered app failed the private boundary'
+  state_input="$(dirname "$STATE")/state.recovered.json"
+  jq '.phase="recovered"' "$STATE" > "$state_input"
+  write_state "$state_input"
+  printf 'recovered source=%s image=%s\n' "$(permit_value '.productionBaseGitSha')" "$prior"
+}
+
+status() {
+  validate_permit false
+  require_regular_root_file "$STATE" 600
+  jq '{permitId,phase,sourceSha,candidateImageId,productionPriorImageId,stagingPriorImageId}' "$STATE"
+}
+
+usage() { printf '%s\n' 'usage: hb-app-bridge {stage|stage-rollback|stage-reapply|apply|rollback|recover|status}' >&2; exit 2; }
+
+require_root
+[ "$#" -eq 1 ] || usage
+require_safe_parent_chain "$ROOT/inbox"
+install -d -o root -g root -m 700 "$ROOT" "$ROOT/inbox" "$ROOT/transactions"
+[ ! -L "$LOCK" ] || die 'lock must not be a symbolic link'
+exec 9>"$LOCK"
+flock -n 9 || die 'another app bridge command is active'
+case "$1" in
+  stage) stage ;;
+  stage-rollback) stage_rollback ;;
+  stage-reapply) stage_reapply ;;
+  apply) apply_candidate ;;
+  rollback) rollback_candidate ;;
+  recover) recover_interrupted ;;
+  status) status ;;
+  *) usage ;;
+esac

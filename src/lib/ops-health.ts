@@ -85,6 +85,7 @@ export interface OperatorHealthReport {
         id: string;
         title: string;
         status: 'SCHEDULED' | 'LIVE';
+        maxPublishers: number;
     } | null;
     checks: {
         postgres: SubsystemCheck;
@@ -227,7 +228,12 @@ export async function collectOperatorHealth(
         status,
         checkedAt: new Date().toISOString(),
         session: watched
-            ? { id: watched.id, title: watched.title, status: watched.status }
+            ? {
+                id: watched.id,
+                title: watched.title,
+                status: watched.status,
+                maxPublishers: watched.maxPublishers,
+            }
             : null,
         checks,
     };

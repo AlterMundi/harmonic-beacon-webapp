@@ -1,0 +1,68 @@
+name: Scene capacity toolchain
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/scene-capacity-tool.yml'
+      - 'config/livekit-load-profiles.json'
+      - 'package-lock.json'
+      - 'package.json'
+      - 'scripts/install-livekit-load-cli.sh'
+      - 'scripts/patches/livekit-cli-v2.16.3-vp8-depacketizer.patch'
+      - 'scripts/lib/livekit-scene-capacity.mjs'
+      - 'scripts/livekit-scene-capacity.mjs'
+      - 'src/lib/__tests__/livekit-scene-capacity.test.ts'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22.22'
+          cache: npm
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: '1.25.8'
+          cache: false
+
+      - run: npm ci
+
+      - name: Verify scene-capacity contracts
+        run: npm test -- --run src/lib/__tests__/livekit-scene-capacity.test.ts
+
+      - name: Build the pinned LiveKit load generator
+        run: scripts/install-livekit-load-cli.sh "$RUNNER_TEMP/livekit-scene-capacity/lk"
+
+      - name: Verify generator and bounded plans
+        run: |
+          set -euo pipefail
+          test "$("$RUNNER_TEMP/livekit-scene-capacity/lk" --version)" = \
+            'lk version 2.16.3-hb-vp8.1'
+          for capacity in 6 9 12; do
+            npm run load:scene-capacity -- \
+              --profile "scene-${capacity}" \
+              --run-id "pr-${GITHUB_RUN_ID}-${capacity}" \
+              --duration 30 \
+              --lk-bin "$RUNNER_TEMP/livekit-scene-capacity/lk" \
+              --dry-run \
+              --manifest "artifacts/scene-capacity/scene-${capacity}.json"
+          done
+
+      - name: Upload exact generator and plans
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: scene-capacity-toolchain-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/livekit-scene-capacity/lk
+            artifacts/scene-capacity/*.json
+          if-no-files-found: error
+          retention-days: 7

@@ -1,13 +1,14 @@
 import { expect, stackTest } from '../fixtures/stack';
 import { loginAttendeeWithTicket } from '../fixtures/auth';
 import { SESSION_ES, TICKETS } from '../fixtures/test-data';
+import { startAudioPublishers } from '../fixtures/audio-publishers';
 import { requireDirectDb, withoutContributions, withSessionStatus } from '../fixtures/db';
 import {
     expectMediaContinuity,
     installMediaProbe,
     mediaProbeSnapshot,
 } from '../helpers/media-probe';
-import { activateAudioAtMostOnce } from '../helpers/audio-readiness';
+import { activateAudioAtMostOnce, expectNativeAudioAdvancing } from '../helpers/audio-readiness';
 
 /**
  * CHAT-01 UI (#141, PR B): the questions-and-emotions chat end to end, in
@@ -156,8 +157,10 @@ stackTest.describe('session contributions chat (#141)', () => {
         );
         stackTest.slow();
         const db = requireDirectDb(testInfo);
-        await withoutContributions(db, SESSION_ES.id, () =>
-            withSessionStatus(db, SESSION_ES.id, 'LIVE', async () => {
+        const stopAudioPublishers = await startAudioPublishers();
+        try {
+            await withoutContributions(db, SESSION_ES.id, () =>
+                withSessionStatus(db, SESSION_ES.id, 'LIVE', async () => {
             const context = await browser.newContext();
             const page = await context.newPage();
             try {
@@ -170,6 +173,7 @@ stackTest.describe('session contributions chat (#141)', () => {
                     { timeout: 30_000 },
                 );
                 await activateAudioAtMostOnce(page);
+                await expectNativeAudioAdvancing(page, 2);
 
                 // Baseline: let the media pipeline settle before touching the
                 // chat (same stable-read discipline as the canonical
@@ -211,7 +215,10 @@ stackTest.describe('session contributions chat (#141)', () => {
             } finally {
                 await context.close();
             }
-            }),
-        );
+                }),
+            );
+        } finally {
+            await stopAudioPublishers();
+        }
     });
 });

@@ -139,6 +139,7 @@ function statementViolation(statement: ScannedStatement): string | null {
     new RegExp(String.raw`^CREATE\s+SCHEMA\s+(?:IF\s+NOT\s+EXISTS\s+)?${IDENTIFIER}$`, 'iu'),
     new RegExp(String.raw`^ALTER\s+TABLE\s+(?:ONLY\s+)?${IDENTIFIER}\s+ADD\s+COLUMN\s+(?:IF\s+NOT\s+EXISTS\s+)?.+$`, 'iu'),
     new RegExp(String.raw`^ALTER\s+TABLE\s+(?:ONLY\s+)?${IDENTIFIER}\s+ADD\s+CONSTRAINT\s+${IDENTIFIER}\s+.+$`, 'iu'),
+    /^ALTER\s+TABLE\s+"scheduled_sessions"\s+ALTER\s+COLUMN\s+"scene_capacity"\s+SET\s+DEFAULT\s+12$/u,
     new RegExp(String.raw`^ALTER\s+TYPE\s+${IDENTIFIER}\s+ADD\s+VALUE\s+(?:IF\s+NOT\s+EXISTS\s+)?${STRING}(?:\s+(?:BEFORE|AFTER)\s+${STRING})?$`, 'iu'),
     new RegExp(String.raw`^INSERT\s+INTO\s+${IDENTIFIER}(?:\s*\([^)]*\))?\s+VALUES\s*\(.+\)(?:\s*,\s*\(.+\))*(?:\s+ON\s+CONFLICT(?:\s*\([^)]*\))?\s+DO\s+NOTHING)?$`, 'iu'),
   ];

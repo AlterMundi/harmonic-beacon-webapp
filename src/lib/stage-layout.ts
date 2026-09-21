@@ -7,7 +7,8 @@
  * but never the social or DOM order of the scene.
  */
 
-export const STAGE_MAX_PUBLISHERS = 6;
+export const DEFAULT_STAGE_MAX_PUBLISHERS = 6;
+export const STAGE_MAX_PUBLISHERS = 12;
 export const MAX_AUXILIARY_TILES = STAGE_MAX_PUBLISHERS - 1;
 
 export interface StageVideoDimensions {
@@ -56,6 +57,7 @@ export interface StageSceneComposition<T> {
 }
 
 export interface StageSceneOptions {
+    maxPublishers?: 6 | 9 | 12;
     /**
      * A shared, durable protagonist selection may be supplied in the future.
      * This policy does not create, persist, or expose a local pin control.
@@ -86,11 +88,11 @@ function canRequestVideo(member: StagePublisher): boolean {
 }
 
 /**
- * Compose 0–6 unique grant holders into a stable scene.
+ * Compose 0–12 unique grant holders into a stable scene.
  *
  * Duplicate identities collapse before the cap. The first canonical record
- * wins. The cap is then applied in stable grant order, so a seventh arrival
- * can never displace or cause decoding of an existing scene member.
+ * wins. The configured cap is then applied in stable grant order, so an arrival
+ * beyond that session limit can never displace or cause decoding of an existing scene member.
  */
 export function composeStageScene<T extends StagePublisher>(
     publishers: readonly T[],
@@ -102,8 +104,9 @@ export function composeStageScene<T extends StagePublisher>(
     }
 
     const canonical = [...unique.values()].sort(byGrantOrder);
-    const members = canonical.slice(0, STAGE_MAX_PUBLISHERS);
-    const overflow = canonical.slice(STAGE_MAX_PUBLISHERS);
+    const maxPublishers = options.maxPublishers ?? DEFAULT_STAGE_MAX_PUBLISHERS;
+    const members = canonical.slice(0, maxPublishers);
+    const overflow = canonical.slice(maxPublishers);
     const kind = sceneKindFor(members.length);
     if (members.length === 0) return { kind, placements: [], overflow };
 

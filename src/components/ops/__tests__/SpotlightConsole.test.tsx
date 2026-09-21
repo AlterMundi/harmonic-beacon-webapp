@@ -55,9 +55,24 @@ function snapshot(participants: Participant[], overrides: Record<string, unknown
 }
 
 const stagePosts: Array<Record<string, unknown>> = [];
+const capacityPatches: Array<Record<string, unknown>> = [];
 
 function mockFetch(participantsPayload: unknown, stageResponder?: (body: Record<string, unknown>) => { status: number; data: Record<string, unknown> }) {
     return vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+        if (init?.method === 'PATCH') {
+            const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+            capacityPatches.push(body);
+            return {
+                ok: true,
+                status: 200,
+                json: async () => ({
+                    scheduledSessionId: 'event-1',
+                    previousMaxPublishers: 6,
+                    maxPublishers: body.maxPublishers,
+                    activePublisherGrants: 2,
+                }),
+            };
+        }
         if (init?.method === 'POST') {
             const body = JSON.parse(String(init.body)) as Record<string, unknown>;
             stagePosts.push(body);
@@ -81,6 +96,7 @@ function mockFetch(participantsPayload: unknown, stageResponder?: (body: Record<
 describe('SpotlightConsole', () => {
     beforeEach(() => {
         stagePosts.length = 0;
+        capacityPatches.length = 0;
     });
 
     afterEach(() => {
@@ -122,6 +138,33 @@ describe('SpotlightConsole', () => {
         expect(screen.getByText(/left/)).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Take floor' })).toBeInTheDocument();
         expect(screen.getAllByRole('button', { name: 'Give floor' })).toHaveLength(2);
+    });
+
+    it('lets system administrators select exactly 6, 9, or 12 scene publishers', async () => {
+        vi.stubGlobal('fetch', mockFetch(snapshot([])));
+        render(<SpotlightConsole sessionId="event-1" role="ADMIN" />);
+
+        const selector = await screen.findByRole('combobox', { name: 'Scene capacity' });
+        expect(selector).toHaveValue('6');
+        expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
+            '6 publishers',
+            '9 publishers',
+            '12 publishers',
+        ]);
+
+        await userEvent.selectOptions(selector, '12');
+        await waitFor(() => {
+            expect(capacityPatches).toEqual([{ maxPublishers: 12 }]);
+        });
+        expect(await screen.findByText('Scene capacity changed to 12 publishers')).toBeInTheDocument();
+    });
+
+    it('does not expose the capacity selector to stage-only operators', async () => {
+        vi.stubGlobal('fetch', mockFetch(snapshot([])));
+        render(<SpotlightConsole sessionId="event-1" role="OPERATOR" />);
+
+        await screen.findByText(/Stage: 2\/6 publishing/);
+        expect(screen.queryByRole('combobox', { name: 'Scene capacity' })).not.toBeInTheDocument();
     });
 
     it('renders the stage workflow and staff role in Spanish', async () => {

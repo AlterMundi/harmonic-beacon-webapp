@@ -9,6 +9,7 @@ import {
     requireDirectDb,
     withFixtureStaffRole,
     withPreservedFixtureStaff,
+    withReconciledPublicationGrant,
     withSessionStatus,
 } from '../fixtures/db';
 import { expect, stackTest } from '../fixtures/stack';
@@ -75,6 +76,7 @@ stackTest.describe('role capability contract', () => {
             ['ADMIN', false],
         ] as const;
 
+        await withReconciledPublicationGrant(db, SESSION_ES.id, async () => {
         await withPreservedFixtureStaff(db, STAFF.facilitator.email, async () => {
             for (const locale of ['es', 'en'] as const) {
                 for (const [role, publishesInitially] of roles) {
@@ -103,6 +105,7 @@ stackTest.describe('role capability contract', () => {
                     });
                 }
             }
+        });
         });
     });
 

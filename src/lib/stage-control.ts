@@ -103,7 +103,14 @@ type MuteInput = {
     muted: boolean;
 };
 
-async function requireConnectedParticipant(input: GrantInput): Promise<void> {
+type ConnectedParticipantSnapshot = {
+    participantIdentity: string;
+    grantVersion: number;
+};
+
+async function requireConnectedParticipant(
+    input: GrantInput,
+): Promise<ConnectedParticipantSnapshot> {
     const participant = await prisma.sessionParticipant.findFirst({
         where: {
             id: input.participantId,
@@ -111,6 +118,7 @@ async function requireConnectedParticipant(input: GrantInput): Promise<void> {
         },
         select: {
             participantIdentity: true,
+            grantVersion: true,
             scheduledSession: { select: { roomName: true } },
         },
     });
@@ -142,6 +150,10 @@ async function requireConnectedParticipant(input: GrantInput): Promise<void> {
             'This participant is not connected. Wait for them to rejoin before giving the floor.',
         );
     }
+    return {
+        participantIdentity: participant.participantIdentity,
+        grantVersion: participant.grantVersion,
+    };
 }
 
 /**
@@ -196,7 +208,7 @@ export async function promoteParticipant(
     // Updating permissions for a disconnected LiveKit identity always fails.
     // Reject before reserving a durable slot so a stale hand cannot create a
     // false reconciliation incident or occupy the stage after a long absence.
-    await requireConnectedParticipant(input);
+    const connectedParticipant = await requireConnectedParticipant(input);
     const now = input.now ?? new Date();
     const reservation = await prisma.$transaction(async (transaction) => {
         await lockGrantSession(transaction, input.scheduledSessionId);
@@ -246,6 +258,7 @@ export async function promoteParticipant(
                 participantIdentity: true,
                 publishGrantedAt: true,
                 publishRevokedAt: true,
+                grantVersion: true,
                 raisedAt: true,
                 staffUserId: true,
                 staffUser: { select: { role: true, disabledAt: true } },
@@ -303,21 +316,24 @@ export async function promoteParticipant(
                 'This attendee no longer has active event access',
             );
         }
-
+        // Revocation is authoritative even when it also advances the grant
+        // version. Report the revoked entitlement before rejecting a stale
+        // connection snapshot; active entitlements still require an exact
+        // identity and grant-version match before any durable mutation.
         if (
-            !hasActiveGrant(target) &&
-            target.staffUserId !== scheduledSession.facilitatorId
+            target.participantIdentity !== connectedParticipant.participantIdentity ||
+            target.grantVersion !== connectedParticipant.grantVersion
         ) {
-            // Julián owns one slot even before preflight creates his participant
-            // row. Excluding his row here avoids counting that reserved slot
-            // twice once he has joined.
-            const activeNonFacilitators = participants.filter(
-                (participant) =>
-                    participant.staffUserId !== scheduledSession.facilitatorId &&
-                    hasActiveGrant(participant),
-            ).length;
-            const occupiedPublishers = 1 + activeNonFacilitators;
-            if (occupiedPublishers >= scheduledSession.maxPublishers) {
+            throw new StageControlError(
+                'stale_grant_version',
+                409,
+                'The participant connection changed; refresh before trying again',
+            );
+        }
+
+        if (!hasActiveGrant(target)) {
+            const activePublishers = participants.filter(hasActiveGrant).length;
+            if (activePublishers >= scheduledSession.maxPublishers) {
                 throw new StageControlError(
                     'stage_full',
                     409,
