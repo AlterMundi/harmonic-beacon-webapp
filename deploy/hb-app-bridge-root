@@ -207,11 +207,8 @@ assert_state_phase() {
 read_health_sha() {
   local origin="$1" body
   body="$(curl --fail --silent --show-error --connect-timeout 2 --max-time 5 "$origin/api/health")" || return 1
-  BODY="$body" node -e '
-    const value = JSON.parse(process.env.BODY || "null");
-    if (value?.schemaVersion !== "health.response.v2" || !/^[0-9a-f]{40}$/.test(value?.gitSha || "")) process.exit(1);
-    process.stdout.write(value.gitSha);
-  '
+  jq -er 'select(.schemaVersion == "health.response.v2") | .gitSha |
+    select(type == "string" and test("^[0-9a-f]{40}$"))' <<<"$body"
 }
 
 wait_container() {
@@ -219,10 +216,8 @@ wait_container() {
   for _attempt in $(seq 1 60); do
     if [ "$(container_health "$container" 2>/dev/null || true)" = healthy ]; then
       body="$(curl --fail --silent --show-error --connect-timeout 2 --max-time 5 "$origin/api/health" 2>/dev/null || true)"
-      if BODY="$body" EXPECTED_SHA="$expected_sha" node -e '
-        const value = JSON.parse(process.env.BODY || "null");
-        process.exit(value?.schemaVersion === "health.response.v2" && value?.gitSha === process.env.EXPECTED_SHA ? 0 : 1);
-      ' 2>/dev/null && curl --fail --silent --show-error --connect-timeout 2 --max-time 5 \
+      if jq -e --arg sha "$expected_sha" '.schemaVersion == "health.response.v2" and .gitSha == $sha' \
+        <<<"$body" >/dev/null 2>&1 && curl --fail --silent --show-error --connect-timeout 2 --max-time 5 \
         "$origin/api/health/ready" >/dev/null 2>&1; then return 0; fi
     fi
     sleep 2
