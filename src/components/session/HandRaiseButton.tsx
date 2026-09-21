@@ -83,6 +83,8 @@ export default function HandRaiseButton({
     const [authorizationBlocked, setAuthorizationBlocked] = useState(false);
     const mounted = useRef(true);
     const authorizationBlockedRef = useRef(false);
+    const mutationInFlight = useRef(false);
+    const refreshGeneration = useRef(0);
     const lastAuthority = useRef<{ canPublish: boolean; grantVersion: number } | null>(null);
 
     const applyState = useCallback((next: OwnHandState) => {
@@ -102,19 +104,28 @@ export default function HandRaiseButton({
     }, [onPublishGrantChange]);
 
     const refresh = useCallback(async () => {
-        if (authorizationBlockedRef.current) return;
+        if (authorizationBlockedRef.current || mutationInFlight.current) return;
+        const generation = refreshGeneration.current;
         try {
             const response = await fetch(
                 `/api/scheduled-sessions/${sessionId}/hand`,
                 { cache: 'no-store' },
             );
             const next = await handStateFrom(response);
-            if (mounted.current) {
+            if (
+                mounted.current &&
+                !mutationInFlight.current &&
+                generation === refreshGeneration.current
+            ) {
                 applyState(next);
                 setError(null);
             }
         } catch (failure) {
-            if (mounted.current) {
+            if (
+                mounted.current &&
+                !mutationInFlight.current &&
+                generation === refreshGeneration.current
+            ) {
                 const blocked = failure instanceof HandRequestError && failure.status === 403;
                 authorizationBlockedRef.current = blocked;
                 setAuthorizationBlocked(blocked);
@@ -134,6 +145,11 @@ export default function HandRaiseButton({
     }, [refresh]);
 
     async function setHand(raised: boolean) {
+        // A poll that began before this mutation can legitimately return the
+        // old durable state after the mutation response. Invalidate it before
+        // sending the write so it cannot roll the control back in the UI.
+        mutationInFlight.current = true;
+        refreshGeneration.current += 1;
         setBusy(true);
         setError(null);
         try {
@@ -148,6 +164,7 @@ export default function HandRaiseButton({
             setAuthorizationBlocked(blocked);
             setError(handFailureMessage(failure, raised ? 'raise' : 'lower', copy.hand));
         } finally {
+            mutationInFlight.current = false;
             setBusy(false);
             void refresh();
         }

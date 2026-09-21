@@ -93,6 +93,7 @@ function mockSession(overrides: Record<string, unknown> = {}) {
         roomName: 'event-stage',
         status: 'LIVE',
         startedAt: null,
+        maxPublishers: 6,
         facilitatorId: 'facilitator-1',
         ...overrides,
     });

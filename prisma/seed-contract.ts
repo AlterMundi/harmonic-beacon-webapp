@@ -1,5 +1,5 @@
 export const WEEKEND_ATTENDEE_CAP = 150;
-export const WEEKEND_MAX_PUBLISHERS = 6;
+export const WEEKEND_MAX_PUBLISHERS = 12;
 export const WEEKEND_SESSION_COOKIE_TTL_SECONDS = 7 * 24 * 60 * 60;
 
 export type WeekendLanguage = 'ENGLISH' | 'SPANISH';
@@ -22,6 +22,59 @@ export type StaffDefinition = {
     role: WeekendStaffRole;
     accountSubject?: string;
 };
+
+type SeedGrantParticipant = {
+    id: string;
+    publishGrantedAt: Date | null;
+    publishRevokedAt: Date | null;
+};
+
+export function buildProductionSessionSeedData(event: EventDefinition, facilitatorId: string) {
+    const update = {
+        title: event.title,
+        description: event.description,
+        roomName: event.roomName,
+        language: event.language,
+        scheduledAt: event.scheduledAt,
+        isTest: event.isTest,
+        paidMode: true,
+        attendeeCap: WEEKEND_ATTENDEE_CAP,
+        facilitatorId,
+    };
+    return {
+        update,
+        create: {
+            ...event,
+            paidMode: true,
+            attendeeCap: WEEKEND_ATTENDEE_CAP,
+            maxPublishers: WEEKEND_MAX_PUBLISHERS,
+            facilitatorId,
+        },
+    };
+}
+
+export function assertSeedFacilitatorGrantCapacity(
+    maxPublishers: number,
+    participants: SeedGrantParticipant[],
+    facilitatorParticipantId: string,
+): { activePublisherGrants: number; shouldGrant: boolean } {
+    if (![6, 9, 12].includes(maxPublishers)) {
+        throw new Error(`Seed refused: unsupported scene capacity ${maxPublishers}`);
+    }
+    const facilitator = participants.find(({ id }) => id === facilitatorParticipantId);
+    if (!facilitator) throw new Error('Seed refused: facilitator participant disappeared after locking');
+
+    const activePublisherGrants = participants.filter(
+        ({ publishGrantedAt, publishRevokedAt }) => publishGrantedAt !== null && publishRevokedAt === null,
+    ).length;
+    const shouldGrant = facilitator.publishGrantedAt === null || facilitator.publishRevokedAt !== null;
+    if (shouldGrant && activePublisherGrants >= maxPublishers) {
+        throw new Error(
+            `Seed refused: session already has ${activePublisherGrants} active publisher grants for capacity ${maxPublishers}`,
+        );
+    }
+    return { activePublisherGrants, shouldGrant };
+}
 
 function accountSubject(env: NodeJS.ProcessEnv, name: string): string | undefined {
     const value = env[name]?.trim();

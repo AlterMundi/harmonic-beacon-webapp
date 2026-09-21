@@ -229,13 +229,12 @@ export async function GET(
         activePublishers: participants.filter(
             (participant) => participant.stageState === 'ON_STAGE',
         ).length,
-        // Julián's facilitator slot is reserved even before preflight creates
-        // his participant row. Exclude an active facilitator row to avoid
-        // double-counting that reservation.
-        grantedPublishers: 1 + participants.filter(
+        // Capacity is consumed by every durable active grant, including the
+        // assigned facilitator only after that facilitator is actually granted.
+        grantedPublishers: scheduledSession.participants.filter(
             (participant) =>
-                participant.canPublish &&
-                !participant.isAssignedFacilitator,
+                participant.publishGrantedAt !== null &&
+                participant.publishRevokedAt === null,
         ).length,
         liveStateAvailable,
         tapestryThumbnailsAvailable: tapestrySnapshot.available,

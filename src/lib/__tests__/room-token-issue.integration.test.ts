@@ -23,6 +23,7 @@ const session = {
     roomName: 'room-token-race-integration',
     status: 'LIVE' as const,
     startedAt: NOW,
+    maxPublishers: 6 as const,
 };
 
 const ticketPrincipal: RoomPrincipal = {

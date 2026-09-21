@@ -208,6 +208,68 @@ describe('durable stage grant effects', () => {
         expect(mocks.participantUpdateMany).not.toHaveBeenCalled();
     });
 
+    it('keeps a connected-only promotion pending when the checked identity is absent', async () => {
+        mocks.outboxUpdate.mockResolvedValue(claimedJob({
+            canPublish: true,
+            participantIdentity: 'checked-connected-identity',
+            resultingParticipantIdentity: 'checked-connected-identity',
+        }));
+        mocks.listParticipants.mockResolvedValue([]);
+        const { processNextStageGrantEffect } = await import('../stage-grant-effects');
+
+        await expect(processNextStageGrantEffect(NOW)).resolves.toBe(true);
+
+        expect(mocks.updateParticipant).not.toHaveBeenCalled();
+        expect(mocks.outboxUpdateMany).toHaveBeenLastCalledWith({
+            where: expect.objectContaining({ claimToken: expect.any(String) }),
+            data: expect.objectContaining({
+                status: 'PENDING',
+                lastErrorCode: 'LIVEKIT_TARGET_ABSENT',
+            }),
+        });
+        expect(mocks.participantUpdateMany).not.toHaveBeenCalled();
+    });
+
+    it('accepts only an exact durable disconnected promotion as forward-drain coverage', async () => {
+        mocks.queryRaw.mockResolvedValue([{
+            marker_count: BigInt(1),
+            covered_marker_count: BigInt(1),
+            deferred_positive_effect_count: BigInt(1),
+            unsafe_unapplied_negative_effect_count: BigInt(0),
+            unsafe_unapplied_positive_effect_count: BigInt(0),
+        }]);
+        const { assessStageGrantForwardDrain } = await import('../stage-grant-effects');
+
+        await expect(assessStageGrantForwardDrain()).resolves.toEqual({
+            safe: true,
+            markerCount: 1,
+            coveredMarkerCount: 1,
+            deferredPositiveEffectCount: 1,
+            unsafeUnappliedNegativeEffectCount: 0,
+            unsafeUnappliedPositiveEffectCount: 0,
+        });
+    });
+
+    it('keeps a present promotion permission failure generic and blocking', async () => {
+        mocks.outboxUpdate.mockResolvedValue(claimedJob({
+            canPublish: true,
+            participantIdentity: 'opaque-participant',
+            resultingParticipantIdentity: 'opaque-participant',
+        }));
+        mocks.updateParticipant.mockRejectedValue(new Error('synthetic permission failure'));
+        const { processNextStageGrantEffect } = await import('../stage-grant-effects');
+
+        await expect(processNextStageGrantEffect(NOW)).resolves.toBe(true);
+
+        expect(mocks.outboxUpdateMany).toHaveBeenLastCalledWith({
+            where: expect.objectContaining({ claimToken: expect.any(String) }),
+            data: expect.objectContaining({
+                status: 'PENDING',
+                lastErrorCode: 'LIVEKIT_EFFECT_INCOMPLETE',
+            }),
+        });
+    });
+
     it('treats an absent participant as converged without a remote grant write', async () => {
         mocks.listParticipants.mockResolvedValue([]);
         const { processNextStageGrantEffect } = await import('../stage-grant-effects');

@@ -45,6 +45,7 @@ const principal = {
         roomName: 'stage',
         status: 'LIVE' as const,
         startedAt: new Date(),
+        maxPublishers: 6 as const,
     },
     identity: 'identity-current',
     displayName: 'Attendee',

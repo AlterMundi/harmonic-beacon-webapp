@@ -167,6 +167,7 @@ integration('commerce entitlement PostgreSQL contract', () => {
                 roomName: 'commerce-integration',
                 status: 'LIVE' as const,
                 startedAt: NOW,
+                maxPublishers: 6 as const,
             },
             identity: 'event-commerce-participant',
             displayName: 'Synthetic attendee',

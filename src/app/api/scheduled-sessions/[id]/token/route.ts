@@ -93,6 +93,7 @@ export async function GET(
                 title: principal.session.title,
                 status: principal.session.status,
                 startedAt: principal.session.startedAt?.toISOString() ?? null,
+                maxPublishers: principal.session.maxPublishers,
             },
         });
     } catch (error) {

@@ -33,7 +33,7 @@ export async function syntheticPublisher(browser: Browser, baseURL: string) {
     const page = await context.newPage();
     let stopBeacon: Awaited<ReturnType<typeof startAudioPublishers>> | undefined;
     try {
-        stopBeacon = await startAudioPublishers(browser, { beaconOnly: true, ignoreHTTPSErrors: accountFixtureEnabled() });
+        stopBeacon = await startAudioPublishers({ beaconOnly: true, ignoreHTTPSErrors: accountFixtureEnabled() });
         return await withReconciledPublicationGrant(continuityDatabase(), SESSION_ES.id, async () => {
         await loginForContinuity(page, 'FACILITATOR', 'Continuity signal', '/');
         const response = await page.request.get(`/api/scheduled-sessions/${SESSION_ES.id}/token`);

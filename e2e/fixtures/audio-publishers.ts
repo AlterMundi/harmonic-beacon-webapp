@@ -1,4 +1,4 @@
-import { expect, type Browser } from '@playwright/test';
+import { chromium, expect } from '@playwright/test';
 import { AccessToken } from 'livekit-server-sdk';
 import { resolve } from 'node:path';
 import { SESSION_ES } from './test-data';
@@ -7,7 +7,7 @@ import { SESSION_ES } from './test-data';
  * The same installed LiveKit SDK talks to the genuine local server. This is a
  * test-side publisher, never an app mock or a production endpoint.
  */
-export async function startAudioPublishers(browser: Browser, options: { beaconOnly?: boolean; ignoreHTTPSErrors?: boolean } = {}) {
+export async function startAudioPublishers(options: { beaconOnly?: boolean; ignoreHTTPSErrors?: boolean } = {}) {
     const url = process.env.E2E_LIVEKIT_URL ?? 'ws://localhost:7880';
     const target = new URL(url);
     if (!['localhost', '127.0.0.1', '[::1]'].includes(target.hostname)) {
@@ -28,12 +28,18 @@ export async function startAudioPublishers(browser: Browser, options: { beaconOn
         token.addGrant({ room: source.room, roomJoin: true, canPublish: true, canSubscribe: false, canPublishData: false });
         return { ...source, token: await token.toJwt() };
     }));
-    const context = await browser.newContext({ ignoreHTTPSErrors: options.ignoreHTTPSErrors ?? false });
-    const page = await context.newPage();
+    // The publisher is test infrastructure, not the subscriber under test.
+    // Keep it on a dedicated Chromium process so WebKit/Firefox gates exercise
+    // their real receive/playback path without also inheriting publisher-engine
+    // lifecycle failures.
+    const publisherBrowser = await chromium.launch();
     try {
-        await page.setContent('<button id="publish">Publish fixture audio</button>');
-        await page.addScriptTag({ path: resolve('node_modules/livekit-client/dist/livekit-client.umd.js') });
-        await page.evaluate(({ url, tokens }) => {
+        const context = await publisherBrowser.newContext({ ignoreHTTPSErrors: options.ignoreHTTPSErrors ?? false });
+        const page = await context.newPage();
+        try {
+            await page.setContent('<button id="publish">Publish fixture audio</button>');
+            await page.addScriptTag({ path: resolve('node_modules/livekit-client/dist/livekit-client.umd.js') });
+            await page.evaluate(({ url, tokens }) => {
             const sdk = (window as unknown as { LivekitClient: typeof import('livekit-client') }).LivekitClient;
             const rooms: import('livekit-client').Room[] = [];
             const audio = new AudioContext();
@@ -74,20 +80,24 @@ export async function startAudioPublishers(browser: Browser, options: { beaconOn
                     await audio.close();
                 },
             });
-        }, { url, tokens });
-        await page.getByRole('button', { name: 'Publish fixture audio' }).click();
-        await page.evaluate(() => (window as unknown as { fixtureAudioReady: () => Promise<void> }).fixtureAudioReady());
-        expect(await page.evaluate(() => !!(window as unknown as { closeFixtureAudio?: unknown }).closeFixtureAudio)).toBe(true);
-        const sources = await page.evaluate(() => (window as unknown as { fixtureAudioSources: () => { identity: string; participantSid: string; trackSid: string }[] }).fixtureAudioSources());
-        return Object.assign(async () => {
-            try {
-                await page.evaluate(() => (window as unknown as { closeFixtureAudio: () => Promise<void> }).closeFixtureAudio());
-            } finally {
-                await context.close();
-            }
-        }, { sources });
+            }, { url, tokens });
+            await page.getByRole('button', { name: 'Publish fixture audio' }).click();
+            await page.evaluate(() => (window as unknown as { fixtureAudioReady: () => Promise<void> }).fixtureAudioReady());
+            expect(await page.evaluate(() => !!(window as unknown as { closeFixtureAudio?: unknown }).closeFixtureAudio)).toBe(true);
+            const sources = await page.evaluate(() => (window as unknown as { fixtureAudioSources: () => { identity: string; participantSid: string; trackSid: string }[] }).fixtureAudioSources());
+            return Object.assign(async () => {
+                try {
+                    await page.evaluate(() => (window as unknown as { closeFixtureAudio: () => Promise<void> }).closeFixtureAudio());
+                } finally {
+                    try { await context.close(); } finally { await publisherBrowser.close(); }
+                }
+            }, { sources, engine: publisherBrowser.browserType().name() });
+        } catch (error) {
+            await context.close().catch(() => {});
+            throw error;
+        }
     } catch (error) {
-        await context.close();
+        await publisherBrowser.close().catch(() => {});
         throw error;
     }
 }

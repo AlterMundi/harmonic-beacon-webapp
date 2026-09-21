@@ -21,7 +21,10 @@ const request = (body: unknown) => new NextRequest('https://live.harmonicbeacon.
 describe('Live presence heartbeat', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.resolveRoomViewer.mockResolvedValue({ ok: true, principal: { identity: 'opaque-person' } });
+        mocks.resolveRoomViewer.mockResolvedValue({
+            ok: true,
+            principal: { identity: 'opaque-person', session: { maxPublishers: 6 } },
+        });
     });
 
     it('derives identity and time server-side', async () => {
@@ -30,6 +33,22 @@ describe('Live presence heartbeat', () => {
         expect(mocks.observeLivePresence).toHaveBeenCalledWith({
             scheduledSessionId: 'event-1', participantIdentity: 'opaque-person', reconnect: true,
         });
+        await expect(response.json()).resolves.toEqual({ accepted: true, maxPublishers: 6 });
+    });
+
+    it('returns authoritative 6→9→12 capacity changes on the existing heartbeat surface', async () => {
+        for (const maxPublishers of [6, 9, 12] as const) {
+            mocks.resolveRoomViewer.mockResolvedValueOnce({
+                ok: true,
+                principal: { identity: 'opaque-person', session: { maxPublishers } },
+            });
+            const response = await POST(
+                request({ state: 'connected' }),
+                { params: Promise.resolve({ id: 'event-1' }) },
+            );
+            await expect(response.json()).resolves.toMatchObject({ maxPublishers });
+        }
+        expect(mocks.observeLivePresence).toHaveBeenCalledTimes(3);
     });
 
     it('closes only the authenticated principal and rejects client duration', async () => {
