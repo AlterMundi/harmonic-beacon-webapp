@@ -22,7 +22,6 @@ if [ -n "$TEST_ROOT" ] && [ "$EUID" -ne 0 ]; then
   readonly STAGING_ENV="$TEST_ROOT/etc/harmonic-beacon/live-staging.env"
   readonly ACCOUNT_ENV="$TEST_ROOT/etc/harmonic-beacon/live-production-secrets/account.env"
   readonly COMMERCE_ENV="$TEST_ROOT/etc/harmonic-beacon/commerce.env"
-  readonly LOCK="$TEST_ROOT/run/lock/hb-app-bridge.lock"
 else
   readonly PATH="$SYSTEM_PATH"
   readonly ROOT='/var/lib/harmonic-beacon/app-bridge'
@@ -36,11 +35,11 @@ else
   readonly STAGING_ENV='/etc/harmonic-beacon/live-staging.env'
   readonly ACCOUNT_ENV='/etc/harmonic-beacon/live-production-secrets/account.env'
   readonly COMMERCE_ENV='/etc/harmonic-beacon/commerce.env'
-  readonly LOCK='/run/lock/hb-app-bridge.lock'
 fi
 export PATH
 
 readonly INBOX="$ROOT/inbox/candidate.tar"
+readonly LOCK="$ROOT/operation.lock"
 readonly STATE="$ROOT/state.json"
 readonly REHEARSAL_RECEIPT="$ROOT/staging-rehearsal.json"
 readonly PRODUCTION_CONTAINER='beacon-app'
@@ -288,8 +287,8 @@ stage() {
       stagingPriorImageId:$stagingPriorImageId,stagingPriorGitSha:$stagingPriorGitSha,
       productionPriorImageId:$productionPriorImageId}' > "$state_input"
   write_state "$state_input"
-  staging_compose "$image_id" up -d --no-deps --force-recreate app
-  if ! wait_container "$STAGING_CONTAINER" http://127.0.0.1:3200 "$(source_sha)"; then
+  if ! staging_compose "$image_id" up -d --no-deps --force-recreate app ||
+    ! wait_container "$STAGING_CONTAINER" http://127.0.0.1:3200 "$(source_sha)"; then
     if staging_compose "$prior" up -d --no-deps --force-recreate app &&
       wait_container "$STAGING_CONTAINER" http://127.0.0.1:3200 "$prior_sha"; then
       jq '.phase="stage-failed-restored"' "$STATE" > "$state_input"
@@ -437,8 +436,9 @@ usage() { printf '%s\n' 'usage: hb-app-bridge {stage|stage-rollback|stage-reappl
 
 require_root
 [ "$#" -eq 1 ] || usage
+require_safe_parent_chain "$ROOT/inbox"
 install -d -o root -g root -m 700 "$ROOT" "$ROOT/inbox" "$ROOT/transactions"
-if [ -n "$TEST_ROOT" ] && [ "$EUID" -ne 0 ]; then install -d -m 700 "$(dirname "$LOCK")"; fi
+[ ! -L "$LOCK" ] || die 'lock must not be a symbolic link'
 exec 9>"$LOCK"
 flock -n 9 || die 'another app bridge command is active'
 case "$1" in
