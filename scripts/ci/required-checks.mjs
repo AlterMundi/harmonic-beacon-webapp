@@ -29,10 +29,10 @@ const INTEGRATED_JOB_NAMES = Object.freeze({
   e2e: ['e2e / e2e', 'e2e / account'],
 });
 
-// C1 compatibility only: protected-base policy remains legacy until this
-// commit is integrated. A later protected-base change may select integrated-v2
-// before the direct E2E/audio emitters are retired.
-export const ACTIVE_EVIDENCE_FORM = 'legacy-v1';
+// C2 policy selection: this commit is safe only after C1 is present on the
+// protected base. Keep the legacy verifier available for rollback diagnosis,
+// but never combine checks from the two forms in one decision.
+export const ACTIVE_EVIDENCE_FORM = 'integrated-v2';
 
 function evidenceRequirements(changedFiles, evidenceForm) {
   const impact = classifyChanges(changedFiles);
@@ -55,6 +55,20 @@ function knownAlternativeWorkflow(run, requirement) {
   const known = [LEGACY_EXPECTED_WORKFLOWS[requirement.context], CI_WORKFLOW].filter(Boolean);
   return known.some((expected) => workflow?.name === expected.name && workflow?.path === expected.path)
     && !(workflow?.name === requirement.expected?.name && workflow?.path === requirement.expected?.path);
+}
+
+function workflowKey(expected) {
+  return `${expected.name}\u0000${expected.path}`;
+}
+
+function matchesWorkflow(run, expected) {
+  return run?.workflow_run?.name === expected.name
+    && run?.workflow_run?.path === expected.path;
+}
+
+function sameWorkflowAttempt(left, right) {
+  return left?.workflow_run?.id === right?.workflow_run?.id
+    && left?.workflow_run?.run_attempt === right?.workflow_run?.run_attempt;
 }
 
 function fail(requiredContexts, ...reasons) {
@@ -227,11 +241,27 @@ function isTrustedRun(run, requirement, input) {
 
 function latestExactRuns(checkRuns, requirements, headSha, evidenceNotBefore) {
   const cutoff = Date.parse(evidenceNotBefore);
+  const newestWorkflowAttempts = new Map();
+  for (const requirement of requirements) {
+    const key = workflowKey(requirement.expected);
+    if (newestWorkflowAttempts.has(key)) continue;
+    for (const run of checkRuns) {
+      if (run.head_sha !== headSha || !matchesWorkflow(run, requirement.expected)
+          || !isExpectedApp(run?.app) || !isExpectedApp(run?.check_suite?.app)) continue;
+      const started = Date.parse(run.workflow_run?.run_started_at ?? run.started_at ?? run.created_at ?? '');
+      if (run.status === 'completed' && run.conclusion === 'success' && started < cutoff) continue;
+      const prior = newestWorkflowAttempts.get(key);
+      if (!prior || compareRuns(run, prior) > 0) newestWorkflowAttempts.set(key, run);
+    }
+  }
   const latest = new Map();
   for (const requirement of requirements) {
+    const newestAttempt = newestWorkflowAttempts.get(workflowKey(requirement.expected));
     for (const run of checkRuns) {
       if (run.name !== requirement.context || run.head_sha !== headSha) continue;
       if (knownAlternativeWorkflow(run, requirement)) continue;
+      if (matchesWorkflow(run, requirement.expected)
+          && newestAttempt && !sameWorkflowAttempt(run, newestAttempt)) continue;
       const started = Date.parse(run.workflow_run?.run_started_at ?? run.started_at ?? run.created_at ?? '');
       if (run.status === 'completed' && run.conclusion === 'success' && started < cutoff) continue;
       const prior = latest.get(requirement.context);

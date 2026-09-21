@@ -8,9 +8,13 @@ import { fileURLToPath } from 'node:url';
 
 import {
   ACTIVE_EVIDENCE_FORM,
-  evaluateRequiredChecks,
+  evaluateRequiredChecks as evaluateActiveRequiredChecks,
   evaluateRequiredChecksForEvidenceForm,
 } from '../../ci/required-checks.mjs';
+
+// Preserve the legacy regression corpus while C2 adds an explicit active-form
+// assertion below. Both complete forms remain independently testable.
+const evaluateRequiredChecks = (input) => evaluateRequiredChecksForEvidenceForm(input, 'legacy-v1');
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const HEAD = '1111111111111111111111111111111111111111';
@@ -104,16 +108,44 @@ function input(overrides = {}) {
 }
 
 function appRuns(overrides = {}) {
-  return ['diff-check', 'lint-and-build', 'test', 'e2e', 'account'].map((name, index) =>
-    checkRun(name, { id: index + 1, ...(overrides[name] ?? {}) }),
-  );
+  return ['diff-check', 'lint-and-build', 'test', 'e2e', 'account'].map((name, index) => {
+    const id = index + 1;
+    const e2e = ['e2e', 'account'].includes(name);
+    const runId = e2e ? 20_002 : 20_001;
+    const suiteId = e2e ? 10_002 : 10_001;
+    return checkRun(name, {
+      id,
+      check_suite: { id: suiteId, head_sha: HEAD, app: { id: ACTIONS_APP_ID, slug: 'github-actions' } },
+      workflow_run: workflowIdentity(name, id, { id: runId, check_suite_id: suiteId }),
+      ...(overrides[name] ?? {}),
+    });
+  });
 }
 
-function integratedAppRuns(overrides = {}) {
+function integratedAppRuns(overrides = {}, run = {}) {
+  const runId = run.id ?? 21_001;
+  const runAttempt = run.run_attempt ?? 1;
+  const runStartedAt = run.run_started_at ?? '2026-09-10T00:01:00.000Z';
+  const suiteId = run.check_suite_id ?? 11_001;
   return [
     'diff-check', 'impact', 'lint-and-build', 'test',
     'e2e / e2e', 'e2e / account', 'required-impact-checks',
-  ].map((name, index) => checkRun(name, { id: 100 + index, ...(overrides[name] ?? {}) }));
+  ].map((name, index) => {
+    const id = (run.check_id_base ?? 100) + index;
+    return checkRun(name, {
+      id,
+      created_at: runStartedAt,
+      started_at: runStartedAt,
+      check_suite: { id: suiteId, head_sha: HEAD, app: { id: ACTIONS_APP_ID, slug: 'github-actions' } },
+      workflow_run: workflowIdentity(name, id, {
+        id: runId,
+        check_suite_id: suiteId,
+        run_attempt: runAttempt,
+        run_started_at: runStartedAt,
+      }),
+      ...(overrides[name] ?? {}),
+    });
+  });
 }
 
 function assertState(actual, state, reason) {
@@ -273,12 +305,13 @@ test('succeeds when every selected application context passed on the exact head'
   assert.deepEqual(result.requiredContexts, ['diff-check', 'lint-and-build', 'test', 'e2e', 'account']);
 });
 
-test('C1 verifies the complete integrated form while protected-base policy remains legacy', () => {
-  assert.equal(ACTIVE_EVIDENCE_FORM, 'legacy-v1');
-  const result = evaluateRequiredChecksForEvidenceForm(input({
+test('C2 selects the complete integrated form only after C1 compatibility exists', () => {
+  assert.equal(ACTIVE_EVIDENCE_FORM, 'integrated-v2');
+  const evidence = input({
     changedFiles: ['src/app/page.tsx'],
     checkRuns: integratedAppRuns(),
-  }), 'integrated-v2');
+  });
+  const result = evaluateActiveRequiredChecks(evidence);
   assert.equal(result.state, 'success');
   assert.deepEqual(result.requiredContexts, [
     'diff-check', 'impact', 'lint-and-build', 'test',
@@ -287,7 +320,7 @@ test('C1 verifies the complete integrated form while protected-base policy remai
 
   const e2eWorkflow = readFileSync(resolve(ROOT, '.github/workflows/e2e.yml'), 'utf8');
   assert.match(e2eWorkflow, /^ {2}pull_request:/m,
-    'the legacy emitter stays active until integrated-v2 is selected on the protected base');
+    'the legacy emitter stays active while protected-base policy switches to integrated-v2');
 });
 
 test('integrated evidence never mixes direct legacy E2E success with missing or red CI E2E', () => {
@@ -310,10 +343,10 @@ test('legacy policy never mixes integrated success with a red direct legacy form
     ...appRuns({ account: { conclusion: 'failure' } }),
     ...integratedAppRuns(),
   ];
-  assertState(evaluateRequiredChecks(input({
+  assertState(evaluateRequiredChecksForEvidenceForm(input({
     changedFiles: ['src/app/page.tsx'],
     checkRuns: checks,
-  })), 'failure', 'conclusion:account:failure');
+  }), 'legacy-v1'), 'failure', 'conclusion:account:failure');
 });
 
 test('integrated form requires its exact aggregate in addition to every selected job', () => {
@@ -327,6 +360,51 @@ test('integrated form requires its exact aggregate in addition to every selected
     changedFiles: ['src/app/page.tsx'],
     checkRuns: integratedAppRuns({ 'required-impact-checks': { conclusion: 'skipped' } }),
   }), 'integrated-v2'), 'failure', 'conclusion:required-impact-checks:skipped');
+});
+
+test('integrated form never fills a newer incomplete CI attempt with older green jobs', () => {
+  const older = integratedAppRuns({}, {
+    id: 21_100,
+    run_attempt: 1,
+    run_started_at: '2026-09-10T00:01:00.000Z',
+    check_suite_id: 11_100,
+    check_id_base: 300,
+  });
+  const newer = integratedAppRuns({}, {
+    id: 21_101,
+    run_attempt: 1,
+    run_started_at: '2026-09-10T00:02:00.000Z',
+    check_suite_id: 11_101,
+    check_id_base: 400,
+  }).filter(({ name }) => ['diff-check', 'impact'].includes(name));
+  const result = evaluateRequiredChecksForEvidenceForm(input({
+    changedFiles: ['src/app/page.tsx'],
+    checkRuns: [...older, ...newer],
+  }), 'integrated-v2');
+  assertState(result, 'pending', 'missing:lint-and-build');
+  assert.ok(result.reasons.includes('missing:required-impact-checks'), JSON.stringify(result));
+});
+
+test('integrated form binds every job to the newest rerun attempt of one CI run', () => {
+  const older = integratedAppRuns({}, {
+    id: 21_200,
+    run_attempt: 1,
+    run_started_at: '2026-09-10T00:01:00.000Z',
+    check_suite_id: 11_200,
+    check_id_base: 500,
+  });
+  const rerun = integratedAppRuns({}, {
+    id: 21_200,
+    run_attempt: 2,
+    run_started_at: '2026-09-10T00:02:00.000Z',
+    check_suite_id: 11_200,
+    check_id_base: 600,
+  }).filter(({ name }) => name === 'diff-check');
+  assertState(evaluateRequiredChecksForEvidenceForm(input({
+    changedFiles: ['src/app/page.tsx'],
+    checkRuns: [...older, ...rerun],
+    deadlineExpired: true,
+  }), 'integrated-v2'), 'failure', 'missing:impact');
 });
 
 test('rejects a same-name success emitted by a foreign check App', () => {
