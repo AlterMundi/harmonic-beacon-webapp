@@ -1,0 +1,12 @@
+Defaults:beacon-runner env_reset
+Defaults:beacon-runner !setenv
+
+Cmnd_Alias HARMONIC_BEACON_MIGRATION_BRIDGE = \
+  /usr/local/sbin/hb-migration-bridge stage, \
+  /usr/local/sbin/hb-migration-bridge stage-rollback, \
+  /usr/local/sbin/hb-migration-bridge stage-reapply, \
+  /usr/local/sbin/hb-migration-bridge apply, \
+  /usr/local/sbin/hb-migration-bridge rollback, \
+  /usr/local/sbin/hb-migration-bridge recover, \
+  /usr/local/sbin/hb-migration-bridge status
+beacon-runner ALL=(root) NOPASSWD: HARMONIC_BEACON_MIGRATION_BRIDGE

@@ -1,0 +1,96 @@
+services:
+  app:
+    image: ${HB_MIGRATION_BRIDGE_IMAGE:?immutable candidate image required}
+    container_name: beacon-app
+    restart: unless-stopped
+    env_file:
+      - path: /etc/harmonic-beacon/production.env
+        required: true
+      - path: /etc/harmonic-beacon/live-production-secrets/account.env
+        required: false
+      - path: /etc/harmonic-beacon/commerce.env
+        required: true
+    environment: &app_environment
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-beacon}:${POSTGRES_PASSWORD:?required}@postgres:5432/${POSTGRES_DB:-beacon}
+      LIVEKIT_INTERNAL_URL: http://beacon-livekit:7880
+      LIVEKIT_PUBLIC_URL: ${HB_LIVEKIT_PUBLIC_URL:?validated runtime endpoint required}
+      LIVEKIT_PUBLIC_URL_ALLOWLIST: ${HB_LIVEKIT_PUBLIC_URL_ALLOWLIST:?validated runtime allowlist required}
+      BEACON_PUBLIC_ORIGIN: ${HB_PUBLIC_ORIGIN:?validated public origin required}
+      BEACON_CONFIG_PROFILE_SHA256: ${HB_CONFIG_PROFILE_SHA256:?validated profile digest required}
+      PROMO_INVITATIONS_ENABLED: ${HB_PROMO_INVITATIONS_ENABLED:?validated feature flag required}
+      TAPESTRY_PUBLIC_ENABLED: ${HB_TAPESTRY_PUBLIC_ENABLED:?validated feature flag required}
+      BEACON_REFERENCE_AUDIO_PATH: /data/beacon-records/luz_de_manana.ogg
+    volumes:
+      - /mnt/beacon-data/beacon-records:/data/beacon-records:ro
+    ports: [127.0.0.1:3000:3000]
+    networks: [beacon, pmp_beacon_internal]
+    healthcheck:
+      test: [CMD, curl, -f, http://localhost:3000/api/health/ready]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    deploy:
+      resources:
+        limits: {cpus: "2", memory: 1G}
+        reservations: {cpus: "1", memory: 512M}
+    logging: &logging
+      driver: json-file
+      options: {max-size: 20m, max-file: "3"}
+
+  commerce-reconciler:
+    image: ${HB_MIGRATION_BRIDGE_WORKER_IMAGE:?immutable worker image required}
+    container_name: beacon-commerce-reconciler
+    restart: unless-stopped
+    command: [npx, tsx, scripts/commerce-media-worker.ts]
+    env_file: [/etc/harmonic-beacon/production.env]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-beacon}:${POSTGRES_PASSWORD:?required}@postgres:5432/${POSTGRES_DB:-beacon}
+      LIVEKIT_INTERNAL_URL: http://beacon-livekit:7880
+    networks: [beacon]
+    healthcheck:
+      test: [CMD, node, -e, "const fs=require('fs');const t=Number(fs.readFileSync('/tmp/commerce-reconciler-heartbeat','utf8'));if(!Number.isFinite(t)||Date.now()-t>30000)process.exit(1)"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    deploy:
+      resources:
+        limits: {cpus: "0.25", memory: 512M}
+    logging: *logging
+
+  migrate:
+    image: ${HB_MIGRATION_BRIDGE_IMAGE:?immutable candidate image required}
+    command: [npx, prisma, migrate, deploy]
+    restart: "no"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-beacon}:${POSTGRES_PASSWORD:?required}@postgres:5432/${POSTGRES_DB:-beacon}
+    networks: [beacon]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs: [/tmp:size=32m,mode=1777]
+
+  preflight:
+    image: ${HB_MIGRATION_BRIDGE_IMAGE:?immutable candidate image required}
+    command: [npx, tsx, scripts/release-quiesce-preflight.ts]
+    restart: "no"
+    env_file: [/etc/harmonic-beacon/production.env]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-beacon}:${POSTGRES_PASSWORD:?required}@postgres:5432/${POSTGRES_DB:-beacon}
+      LIVEKIT_INTERNAL_URL: http://beacon-livekit:7880
+    networks: [beacon]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs: [/tmp:size=32m,mode=1777]
+
+networks:
+  beacon:
+    external: true
+    name: app_beacon
+  pmp_beacon_internal:
+    external: true
+    name: pmp_beacon_internal

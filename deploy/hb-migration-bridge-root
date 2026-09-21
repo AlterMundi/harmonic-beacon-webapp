@@ -1,0 +1,498 @@
+#!/usr/bin/env bash
+
+# One-candidate migration bridge for the legacy Live host. It deliberately
+# does not read or write OCI publication data and never reuses the v1
+# app bridge transaction. Candidate authority is a closed root-owned permit.
+
+set -euo pipefail
+umask 077
+
+readonly SYSTEM_PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+readonly TEST_ROOT="${HB_MIGRATION_BRIDGE_TEST_ROOT:-}"
+readonly TEST_MODE="$([ -n "$TEST_ROOT" ] && [ "$EUID" -ne 0 ] && printf true || printf false)"
+if [ "$TEST_MODE" = true ]; then
+  readonly PATH="$TEST_ROOT/bin:/usr/bin:/bin"
+  readonly ROOT="$TEST_ROOT/var/lib/harmonic-beacon/migration-bridge-v2"
+  readonly SHARED_LOCK="$TEST_ROOT/var/lib/harmonic-beacon/app-bridge/operation.lock"
+  readonly CONFIG="$TEST_ROOT/etc/harmonic-beacon/migration-bridge-v2"
+  readonly LIBEXEC="$TEST_ROOT/usr/local/libexec/harmonic-beacon"
+  readonly BACKUP_ROOT="$TEST_ROOT/mnt/beacon-data/backups/live/postgres"
+  readonly PRODUCTION_ENV="$TEST_ROOT/etc/harmonic-beacon/production.env"
+  readonly COMMERCE_ENV="$TEST_ROOT/etc/harmonic-beacon/commerce.env"
+  readonly ACCOUNT_ENV="$TEST_ROOT/etc/harmonic-beacon/live-production-secrets/account.env"
+else
+  readonly PATH="$SYSTEM_PATH"
+  readonly ROOT='/var/lib/harmonic-beacon/migration-bridge-v2'
+  readonly SHARED_LOCK='/var/lib/harmonic-beacon/app-bridge/operation.lock'
+  readonly CONFIG='/etc/harmonic-beacon/migration-bridge-v2'
+  readonly LIBEXEC='/usr/local/libexec/harmonic-beacon'
+  readonly BACKUP_ROOT='/mnt/beacon-data/backups/live/postgres'
+  readonly PRODUCTION_ENV='/etc/harmonic-beacon/production.env'
+  readonly COMMERCE_ENV='/etc/harmonic-beacon/commerce.env'
+  readonly ACCOUNT_ENV='/etc/harmonic-beacon/live-production-secrets/account.env'
+fi
+export PATH
+
+readonly PERMIT="$CONFIG/permit.json"
+readonly ACTIVATION="$CONFIG/activation.json"
+readonly INBOX="$ROOT/inbox/candidate.tar"
+readonly STATE="$ROOT/state.json"
+readonly RECEIPT="$ROOT/staging-rehearsal.json"
+readonly PRODUCTION_COMPOSE="$LIBEXEC/migration-bridge-production.compose.yml"
+readonly REHEARSAL_COMPOSE="$LIBEXEC/migration-bridge-rehearsal.compose.yml"
+readonly ARCHIVE_VALIDATOR="$LIBEXEC/hb-app-bridge-archive.py"
+readonly LIVEKIT_PROBE="$LIBEXEC/hb-app-bridge-livekit.py"
+readonly PRODUCTION_PROFILE="$LIBEXEC/runtime-public-config/production.json"
+readonly STAGING_PROFILE="$LIBEXEC/runtime-public-config/live-staging.json"
+
+die() { printf 'hb-migration-bridge: %s\n' "$*" >&2; exit 1; }
+sha256() { sha256sum -- "$1" | cut -d' ' -f1; }
+permit() { jq -er "$1" "$PERMIT"; }
+candidate_image() { jq -er '.candidateImageId' "$STATE"; }
+
+expected_owner() { if [ "$TEST_MODE" = true ]; then id -un; else printf root; fi; }
+safe_parents() {
+  local current owner mode
+  current="$(dirname -- "$1")"
+  while :; do
+    [ -d "$current" ] && [ ! -L "$current" ] || die "unsafe directory: $current"
+    owner="$(stat -c '%U' "$current")"; mode="$(stat -c '%a' "$current")"
+    [ "$owner" = "$(expected_owner)" ] || die "unexpected owner: $current"
+    (( (8#$mode & 8#022) == 0 )) || die "writable trusted directory: $current"
+    [ "$current" = / ] && break
+    if [ "$TEST_MODE" = true ] && [ "$current" = "$TEST_ROOT" ]; then break; fi
+    current="$(dirname -- "$current")"
+  done
+}
+root_file() {
+  safe_parents "$1"
+  [ -f "$1" ] && [ ! -L "$1" ] || die "missing or unsafe file: $1"
+  [ "$(stat -c '%U:%a:%h' "$1")" = "$(expected_owner):$2:1" ] || die "bad ownership, mode, or links: $1"
+}
+atomic_state() {
+  local input="$1" temporary="$STATE.new"
+  jq -c . "$input" > "$temporary" || die 'could not serialize transaction state'
+  if [ "$TEST_MODE" = false ]; then chown root:root "$temporary" || die 'could not own transaction state'; fi
+  chmod 0600 "$temporary" || die 'could not protect transaction state'
+  sync -f "$temporary" || die 'could not persist transaction state'
+  mv -f -- "$temporary" "$STATE" || die 'could not publish transaction state'
+  sync -f "$ROOT" || die 'could not persist transaction directory'
+}
+set_phase() { local tmp="$ROOT/state.phase.json"; jq --arg phase "$1" '.phase=$phase' "$STATE" > "$tmp"; atomic_state "$tmp"; }
+phase_is() { root_file "$STATE" 600; [ "$(jq -er '.permitId' "$STATE")" = "$(permit '.permitId')" ] || die 'state permit mismatch'; [ "$(jq -er '.phase' "$STATE")" = "$1" ] || die "transaction is not in $1 phase"; }
+failpoint() { if [ "$EUID" -ne 0 ] && [ "${HB_MIGRATION_BRIDGE_FAILPOINT:-}" = "$1" ]; then die "injected failure after $1"; fi; }
+
+validate_profile() {
+  local path="$1" expected="$2"
+  root_file "$path" 644; [ "$(sha256 "$path")" = "$expected" ] || die 'runtime profile digest mismatch'
+  jq -e 'keys==["featureFlags","livekitPublicUrl","publicOrigin","schemaVersion"] and
+    .schemaVersion=="harmonic-beacon.runtime-public-config.v1" and
+    (.publicOrigin|test("^https://[^/]+$")) and (.livekitPublicUrl|test("^wss://")) and
+    (.featureFlags|keys==["promoInvitations","tapestryPublic"] and
+      (.promoInvitations|type=="boolean") and (.tapestryPublic|type=="boolean"))' "$path" >/dev/null || die 'runtime profile is invalid'
+}
+
+validate_permit() {
+  local enforce_expiry="${1:-true}" expiry commit migration_dir actual
+  root_file "$PERMIT" 600; root_file "$INBOX" 600
+  root_file "$PRODUCTION_COMPOSE" 644; root_file "$REHEARSAL_COMPOSE" 644
+  root_file "$ARCHIVE_VALIDATOR" 755; root_file "$LIVEKIT_PROBE" 755
+  jq -e '
+    keys==["archiveBytes","archiveEntries","archiveSha256","archiveValidatorSha256","buildTime",
+      "databaseSchemaVersion","expectedMigrations","expiresAt","livekitProbeSha256","permitId",
+      "productionBaseAppGitSha","productionBaseAppImageId","productionBaseWorkerGitSha",
+      "productionBaseWorkerImageId","productionComposeSha256","productionPostgresImageId","productionProfileSha256",
+      "rehearsalComposeSha256","schemaVersion","sourceSha","sourceTree","stagingProfileSha256"] and
+    .schemaVersion=="hb-migration-bridge.permit.v2" and
+    ([.permitId,.archiveSha256,.archiveValidatorSha256,.livekitProbeSha256,.productionComposeSha256,
+      .productionProfileSha256,.rehearsalComposeSha256,.stagingProfileSha256][]|test("^[0-9a-f]{64}$")) and
+    ([.sourceSha,.sourceTree,.productionBaseAppGitSha,.productionBaseWorkerGitSha][]|test("^[0-9a-f]{40}$")) and
+    ([.productionBaseAppImageId,.productionBaseWorkerImageId,.productionPostgresImageId][]|test("^sha256:[0-9a-f]{64}$")) and
+    (.archiveBytes|type=="number" and .>=1 and .<=67108864 and floor==.) and
+    (.archiveEntries|type=="number" and .>=1 and .<=4096 and floor==.) and
+    (.expectedMigrations|type=="array" and length>=1 and length<=8 and
+      all(.[]; keys==["name","sha256"] and (.name|test("^[0-9]{14}_[a-z0-9_]+$")) and (.sha256|test("^[0-9a-f]{64}$"))) and
+      ((map(.name)|length)==(map(.name)|unique|length))) and
+    (.buildTime|test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")) and
+    (.expiresAt|test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")) and
+    (.databaseSchemaVersion|test("^[0-9]{14}_[a-z0-9_]+$"))' "$PERMIT" >/dev/null || die 'invalid or non-closed v2 permit'
+  [ "$(stat -c '%s' "$INBOX")" = "$(permit '.archiveBytes')" ] || die 'archive size mismatch'
+  [ "$(sha256 "$INBOX")" = "$(permit '.archiveSha256')" ] || die 'archive digest mismatch'
+  [ "$(sha256 "$ARCHIVE_VALIDATOR")" = "$(permit '.archiveValidatorSha256')" ] || die 'archive validator mismatch'
+  [ "$(sha256 "$LIVEKIT_PROBE")" = "$(permit '.livekitProbeSha256')" ] || die 'LiveKit probe mismatch'
+  [ "$(sha256 "$PRODUCTION_COMPOSE")" = "$(permit '.productionComposeSha256')" ] || die 'production Compose mismatch'
+  [ "$(sha256 "$REHEARSAL_COMPOSE")" = "$(permit '.rehearsalComposeSha256')" ] || die 'rehearsal Compose mismatch'
+  validate_profile "$PRODUCTION_PROFILE" "$(permit '.productionProfileSha256')"
+  validate_profile "$STAGING_PROFILE" "$(permit '.stagingProfileSha256')"
+  commit="$(git get-tar-commit-id < "$INBOX")"; [ "$commit" = "$(permit '.sourceSha')" ] || die 'archive commit mismatch'
+  while IFS=$'\t' read -r migration_dir actual; do
+    [ -f "$ROOT/transactions/$(permit '.permitId')/source/prisma/migrations/$migration_dir/migration.sql" ] || continue
+    [ "$(sha256 "$ROOT/transactions/$(permit '.permitId')/source/prisma/migrations/$migration_dir/migration.sql")" = "$actual" ] || die 'migration checksum mismatch in extracted source'
+  done < <(jq -r '.expectedMigrations[]|[.name,.sha256]|@tsv' "$PERMIT")
+  if [ "$enforce_expiry" = true ]; then
+    expiry="$(permit '.expiresAt')"; [[ "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" < "$expiry" ]] || die 'permit expired'
+  fi
+}
+
+validate_activation() {
+  root_file "$ACTIVATION" 600; root_file "$RECEIPT" 600
+  jq -e 'keys==["candidateImageId","expiresAt","permitId","productionBaseAppImageId",
+    "productionBaseWorkerImageId","rehearsalReceiptSha256","schemaVersion"] and
+    .schemaVersion=="hb-migration-bridge.activation.v2" and
+    (.permitId|test("^[0-9a-f]{64}$")) and
+    ([.candidateImageId,.productionBaseAppImageId,.productionBaseWorkerImageId][]|test("^sha256:[0-9a-f]{64}$")) and
+    (.rehearsalReceiptSha256|test("^[0-9a-f]{64}$")) and
+    (.expiresAt|test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"))' "$ACTIVATION" >/dev/null || die 'invalid activation'
+  [ "$(jq -er '.permitId' "$ACTIVATION")" = "$(permit '.permitId')" ] || die 'activation permit mismatch'
+  [ "$(jq -er '.candidateImageId' "$ACTIVATION")" = "$(candidate_image)" ] || die 'activation candidate mismatch'
+  [ "$(jq -er '.productionBaseAppImageId' "$ACTIVATION")" = "$(permit '.productionBaseAppImageId')" ] || die 'activation app base mismatch'
+  [ "$(jq -er '.productionBaseWorkerImageId' "$ACTIVATION")" = "$(permit '.productionBaseWorkerImageId')" ] || die 'activation worker base mismatch'
+  [ "$(jq -er '.rehearsalReceiptSha256' "$ACTIVATION")" = "$(sha256 "$RECEIPT")" ] || die 'rehearsal receipt mismatch'
+  [[ "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" < "$(jq -er '.expiresAt' "$ACTIVATION")" ]] || die 'activation expired'
+}
+
+profile_compose() {
+  local profile="$1" compose="$2" image="$3" worker="$4" project="$5"; shift 5
+  local -a env_file=()
+  if [ "$project" = app ]; then env_file=(--env-file "$PRODUCTION_ENV"); fi
+  HB_MIGRATION_BRIDGE_IMAGE="$image" HB_MIGRATION_BRIDGE_WORKER_IMAGE="$worker" \
+  HB_PUBLIC_ORIGIN="$(jq -er '.publicOrigin' "$profile")" \
+  HB_LIVEKIT_PUBLIC_URL="$(jq -er '.livekitPublicUrl' "$profile")" \
+  HB_LIVEKIT_PUBLIC_URL_ALLOWLIST="$(jq -er '.livekitPublicUrl' "$profile")" \
+  HB_CONFIG_PROFILE_SHA256="sha256:$(sha256 "$profile")" \
+  HB_PROMO_INVITATIONS_ENABLED="$(jq -er '.featureFlags.promoInvitations' "$profile")" \
+  HB_TAPESTRY_PUBLIC_ENABLED="$(jq -er '.featureFlags.tapestryPublic' "$profile")" \
+  HB_MIGRATION_BRIDGE_POSTGRES_IMAGE="$(permit '.productionPostgresImageId')" \
+    docker compose --project-name "$project" --file "$compose" "${env_file[@]}" "$@"
+}
+prod_compose() { local image="$1" worker="$2"; shift 2; profile_compose "$PRODUCTION_PROFILE" "$PRODUCTION_COMPOSE" "$image" "$worker" app "$@"; }
+rehearsal_compose() {
+  local image="$1" worker="$2" database="$3"; shift 3
+  HB_RESTORE_DATABASE_NAME="$database" profile_compose "$STAGING_PROFILE" "$REHEARSAL_COMPOSE" "$image" "$worker" hb-migration-rehearsal "$@"
+}
+container_image() { docker inspect "$1" --format '{{.Image}}'; }
+image_revision() {
+  local image="$1" revision values
+  revision="$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
+  if [[ "$revision" =~ ^[0-9a-f]{40}$ ]]; then printf '%s\n' "$revision"; return; fi
+  values="$(docker image inspect "$image" --format '{{range .Config.Env}}{{println .}}{{end}}' | awk -F= '$1=="BEACON_GIT_SHA"{print substr($0,index($0,"=")+1)}')"
+  [ "$(printf '%s\n' "$values" | sed '/^$/d' | wc -l)" -eq 1 ] && [[ "$values" =~ ^[0-9a-f]{40}$ ]] || die 'image has no unique trusted revision identity'
+  printf '%s\n' "$values"
+}
+healthy() { [ "$(docker inspect "$1" --format '{{.State.Health.Status}}' 2>/dev/null || true)" = healthy ]; }
+wait_worker() { for _ in $(seq 1 60); do healthy "$1" && return 0; sleep 2; done; return 1; }
+wait_prior_app() {
+  local container="$1" expected="$2" body
+  for _ in $(seq 1 60); do
+    if healthy "$container"; then
+      body="$(docker exec "$container" curl -fsS http://127.0.0.1:3000/api/health 2>/dev/null || true)"
+      if jq -e --arg sha "$expected" '.schemaVersion=="health.response.v2" and .gitSha==$sha' <<<"$body" >/dev/null &&
+        docker exec "$container" curl -fsS http://127.0.0.1:3000/api/health/ready >/dev/null; then return 0; fi
+    fi
+    sleep 2
+  done
+  return 1
+}
+wait_candidate_inside() {
+  local container="$1" expected="$2" profile="$3" body
+  for _ in $(seq 1 60); do
+    if healthy "$container"; then
+      body="$(docker exec "$container" curl -fsS http://127.0.0.1:3000/api/health 2>/dev/null || true)"
+      if jq -e --arg sha "$expected" --arg origin "$(jq -r '.publicOrigin' "$profile")" --arg digest "sha256:$(sha256 "$profile")" \
+        '.schemaVersion=="health.response.v2" and .gitSha==$sha and .publicOrigin==$origin and .configProfileSha256==$digest' <<<"$body" >/dev/null &&
+        docker exec "$container" curl -fsS http://127.0.0.1:3000/api/health/ready >/dev/null; then return 0; fi
+    fi
+    sleep 2
+  done
+  return 1
+}
+
+assert_expected_migrations() {
+  local state="$1" mode="$2"
+  jq -e '.schemaVersion=="harmonic-beacon.migration-state.v1" and .databaseStateVerified==true and
+    (.failed|length)==0 and (.unexpected|length)==0 and (.unsafe|length)==0 and
+    (.checksumErrors|length)==0 and (.duplicateRecords|length)==0 and (.conflictingRecords|length)==0' "$state" >/dev/null || die 'migration state is unsafe'
+  if [ "$mode" = pending ]; then
+    jq -e --slurpfile permit "$PERMIT" '([.pending[]]|sort)==([$permit[0].expectedMigrations[].name]|sort) and
+      ([.migrationChecksums[]|select(.migrationName as $n|[$permit[0].expectedMigrations[].name]|index($n))|{name:.migrationName,sha256:.checksum}]|sort_by(.name))==($permit[0].expectedMigrations|sort_by(.name))' "$state" >/dev/null || die 'pending migrations do not exactly match permit'
+  else
+    [ "$(jq '.pending|length' "$state")" -eq 0 ] || die 'migration remains pending'
+  fi
+}
+migration_state() {
+  local kind="$1" image="$2" output="$3"
+  [ "$kind" = production ] || die 'unsupported migration-state target'
+  prod_compose "$image" "$image" run --rm --no-deps migrate npx tsx scripts/release-migration-state.ts > "$output" || die 'migration-state read failed'
+  chmod 0600 "$output"
+}
+
+build_candidate() {
+  local tx source image state_tmp
+  tx="$ROOT/transactions/$(permit '.permitId')"; [ ! -e "$tx" ] || die 'permit already used'
+  install -d -o root -g root -m 0700 "$tx" "$tx/source"
+  install -o root -g root -m 0600 "$INBOX" "$tx/candidate.tar"
+  python3 "$ARCHIVE_VALIDATOR" "$tx/candidate.tar" "$tx/source" "$(permit '.archiveEntries')"
+  source="$tx/source"
+  while IFS=$'\t' read -r migration expected; do
+    [ -f "$source/prisma/migrations/$migration/migration.sql" ] || die "permitted migration is missing: $migration"
+    [ "$(sha256 "$source/prisma/migrations/$migration/migration.sql")" = "$expected" ] || die "permitted migration bytes changed: $migration"
+  done < <(jq -r '.expectedMigrations[]|[.name,.sha256]|@tsv' "$PERMIT")
+  image="$(env -i PATH="$PATH" docker build --pull=false --label "com.harmonicbeacon.migration-bridge=$(permit '.permitId')" \
+    --label "org.opencontainers.image.revision=$(permit '.sourceSha')" --build-arg "BEACON_GIT_SHA=$(permit '.sourceSha')" \
+    --build-arg "BEACON_BUILD_TIME=$(permit '.buildTime')" --build-arg "BEACON_DATABASE_SCHEMA_VERSION=$(permit '.databaseSchemaVersion')" --quiet "$source")"
+  [[ "$image" =~ ^sha256:[0-9a-f]{64}$ ]] || die 'build did not return immutable image ID'
+  [ "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$(permit '.sourceSha')" ] || die 'candidate revision label mismatch'
+  state_tmp="$tx/state.initial.json"
+  jq -n --arg permitId "$(permit '.permitId')" --arg sourceSha "$(permit '.sourceSha')" --arg image "$image" \
+    '{permitId:$permitId,phase:"staging",sourceSha:$sourceSha,candidateImageId:$image,
+      migrationAttemptedToProduction:false,migrationAppliedToProduction:false,fenceState:"absent"}' > "$state_tmp"
+  atomic_state "$state_tmp"
+}
+
+create_stage_restore() {
+  local database="$1" dump="$BACKUP_ROOT/staging-$(permit '.permitId' | cut -c1-24).dump" container_dump="/tmp/$database.dump"
+  if [ "$TEST_MODE" = false ]; then mountpoint -q /mnt/beacon-data || die 'backup filesystem is not mounted'; fi
+  [ -d "$BACKUP_ROOT" ] || die 'dedicated backup directory is missing'
+  safe_parents "$dump"
+  docker exec beacon-postgres sh -eu -c 'pg_dump --format=custom --no-owner --no-acl --username="$POSTGRES_USER" --dbname="$POSTGRES_DB"' > "$dump.partial"
+  [ -s "$dump.partial" ] || die 'staging source dump is empty'; chmod 0600 "$dump.partial"; mv -f "$dump.partial" "$dump"; sync -f "$dump"
+  rehearsal_compose "$(candidate_image)" "$(candidate_image)" "$database" up -d --wait postgres
+  [ "$(container_image hb-migration-rehearsal-postgres)" = "$(permit '.productionPostgresImageId')" ] || die 'isolated PostgreSQL image mismatch'
+  docker cp "$dump" "hb-migration-rehearsal-postgres:$container_dump" >/dev/null
+  docker exec hb-migration-rehearsal-postgres sh -eu -c 'dropdb --if-exists --username=beacon "$1"; createdb --username=beacon "$1"; pg_restore --exit-on-error --no-owner --no-acl --username=beacon --dbname="$1" "$2"' sh "$database" "$container_dump"
+  docker exec hb-migration-rehearsal-postgres rm -f -- "$container_dump"
+}
+
+stage_candidate() {
+  local image database state_path="$ROOT/staging-migration-state.json"
+  validate_permit; build_candidate; image="$(candidate_image)"; database="hb_restore_stage_$(permit '.permitId' | cut -c1-16)"
+  create_stage_restore "$database"
+  rehearsal_compose "$image" "$image" "$database" run --rm --no-deps migrate npx tsx scripts/release-migration-state.ts > "$state_path"
+  assert_expected_migrations "$state_path" pending
+  rehearsal_compose "$image" "$image" "$database" run --rm --no-deps migrate npx prisma migrate deploy
+  rehearsal_compose "$image" "$image" "$database" run --rm --no-deps migrate npx tsx scripts/release-migration-state.ts > "$state_path"
+  assert_expected_migrations "$state_path" applied
+  rehearsal_compose "$image" "$image" "$database" up -d --no-deps --force-recreate app commerce-reconciler
+  wait_candidate_inside hb-migration-rehearsal-app "$(permit '.sourceSha')" "$STAGING_PROFILE" || die 'candidate rehearsal app failed'
+  wait_worker hb-migration-rehearsal-worker || die 'candidate rehearsal worker failed'
+  jq --arg database "$database" '.rehearsalDatabase=$database|.phase="staged"' "$STATE" > "$ROOT/state.stage.json"; atomic_state "$ROOT/state.stage.json"
+}
+stage_rollback() {
+  validate_permit; phase_is staged
+  rehearsal_compose "$(permit '.productionBaseAppImageId')" "$(permit '.productionBaseWorkerImageId')" "$(jq -er '.rehearsalDatabase' "$STATE")" up -d --no-deps --force-recreate app commerce-reconciler
+  wait_prior_app hb-migration-rehearsal-app "$(permit '.productionBaseAppGitSha')" || die 'prior app incompatible with migrated schema'
+  wait_worker hb-migration-rehearsal-worker || die 'prior worker incompatible with migrated schema'
+  set_phase stage-rolled-back
+}
+stage_reapply() {
+  validate_permit; phase_is stage-rolled-back
+  rehearsal_compose "$(candidate_image)" "$(candidate_image)" "$(jq -er '.rehearsalDatabase' "$STATE")" up -d --no-deps --force-recreate app commerce-reconciler
+  wait_candidate_inside hb-migration-rehearsal-app "$(permit '.sourceSha')" "$STAGING_PROFILE" || die 'candidate rehearsal reapply failed'
+  wait_worker hb-migration-rehearsal-worker || die 'candidate rehearsal worker reapply failed'
+  set_phase rehearsed
+}
+
+entry_rule() { iptables "$1" OUTPUT -o lo -p tcp -d 127.0.0.1 --dport "$3" -m conntrack --ctstate NEW -m comment --comment "hb-migration-$2" -j REJECT --reject-with tcp-reset; }
+fence_acquire() { command -v iptables >/dev/null || die 'iptables required'; entry_rule -I "$1" 3000; if ! entry_rule -I "$1" 7880; then entry_rule -D "$1" 3000 || true; die 'complete entry fence failed'; fi; }
+fence_ensure() {
+  local attempt="$1" port
+  command -v iptables >/dev/null || die 'iptables required'
+  for port in 3000 7880; do
+    if ! entry_rule -C "$attempt" "$port" >/dev/null 2>&1; then
+      entry_rule -I "$attempt" "$port" || die "could not reacquire entry fence on $port"
+    fi
+  done
+  for port in 3000 7880; do entry_rule -C "$attempt" "$port" >/dev/null 2>&1 || die 'complete entry fence is not present'; done
+}
+fence_release() { local status; for port in 7880 3000; do while true; do if entry_rule -C "$1" "$port" >/dev/null 2>&1; then entry_rule -D "$1" "$port" || die 'could not remove entry fence'; else status=$?; [ "$status" -eq 1 ] || die 'cannot prove fence absence'; break; fi; done; done; }
+continuity() { prod_compose "$(candidate_image)" "$(candidate_image)" run --rm --no-deps preflight || return 1; python3 "$LIVEKIT_PROBE" >/dev/null || return 1; }
+
+private_boundary() {
+  local members
+  [ "$(docker network inspect pmp_beacon_internal --format '{{.Internal}}')" = true ] || return 1
+  members="$(docker network inspect pmp_beacon_internal --format '{{range .Containers}}{{println .Name}}{{end}}' | sed '/^[[:space:]]*$/d' | sort)"
+  [ "$members" = $'beacon-app\npmp-myth-worker\npmp-myth-worker-secondary' ] || return 1
+  for name in BEACON_COMMERCE_SERVICE_KEY_CURRENT_ID BEACON_COMMERCE_SERVICE_KEY_CURRENT; do
+    docker inspect beacon-app --format '{{range .Config.Env}}{{println .}}{{end}}' | cut -d= -f1 | grep -Fxq "$name" || return 1
+  done
+  [ ! -e "$ACCOUNT_ENV" ] || docker inspect beacon-app --format '{{range .Config.Env}}{{println .}}{{end}}' | cut -d= -f1 | grep -Fxq BEACON_ACCOUNT_CLIENT_SECRET
+}
+
+backup_and_prove() {
+  local attempt="$1" image="$(candidate_image)" tx="$ROOT/transactions/$(permit '.permitId')" dump partial restore container_dump result
+  local app_probe="hb-migration-prior-app-$attempt" worker_probe="hb-migration-prior-worker-$attempt"
+  if [ "$TEST_MODE" = false ]; then mountpoint -q /mnt/beacon-data || die 'backup filesystem is not mounted'; fi
+  dump="$BACKUP_ROOT/migration-${attempt}.dump"; partial="$dump.partial"; restore="hb_restore_${attempt//-/_}"; container_dump="/tmp/$restore.dump"
+  [ -d "$BACKUP_ROOT" ] || die 'dedicated backup directory is missing'
+  safe_parents "$dump"
+  rm -f -- "$partial"; docker exec beacon-postgres sh -eu -c 'pg_dump --format=custom --no-owner --no-acl --username="$POSTGRES_USER" --dbname="$POSTGRES_DB"' > "$partial"
+  [ -s "$partial" ] || die 'database backup is empty'; chmod 0600 "$partial"; mv -f "$partial" "$dump"; sync -f "$dump"
+  rehearsal_compose "$image" "$image" "$restore" up -d --wait postgres
+  [ "$(container_image hb-migration-rehearsal-postgres)" = "$(permit '.productionPostgresImageId')" ] || die 'isolated PostgreSQL image mismatch'
+  docker cp "$dump" "hb-migration-rehearsal-postgres:$container_dump" >/dev/null
+  docker exec hb-migration-rehearsal-postgres sh -eu -c 'dropdb --if-exists --username=beacon "$1"; createdb --username=beacon "$1"; pg_restore --exit-on-error --no-owner --no-acl --username=beacon --dbname="$1" "$2"' sh "$restore" "$container_dump"
+  result="$tx/restore-verification.json"
+  rehearsal_compose "$image" "$image" "$restore" run --rm --no-deps migrate npx prisma migrate deploy
+  rehearsal_compose "$image" "$image" "$restore" run --rm --no-deps -e "HB_RESTORE_DATABASE_NAME=$restore" migrate npx tsx scripts/release-restore-verify.ts > "$result"
+  jq -e '.schemaVersion=="harmonic-beacon.restore-verification.v2" and .migrationState.databaseStateVerified==true and (.migrationState.pending|length)==0' "$result" >/dev/null || die 'isolated migration verification failed'
+  rehearsal_compose "$(permit '.productionBaseAppImageId')" "$(permit '.productionBaseWorkerImageId')" "$restore" run -d --name "$app_probe" --no-deps app
+  [ "$(container_image "$app_probe")" = "$(permit '.productionBaseAppImageId')" ] || die 'prior app probe image mismatch'
+  for _ in $(seq 1 60); do docker exec "$app_probe" curl -fsS http://127.0.0.1:3000/api/health/ready >/dev/null && break; sleep 2; done
+  docker exec "$app_probe" curl -fsS http://127.0.0.1:3000/api/health/ready >/dev/null || die 'prior app failed migrated restore'
+  rehearsal_compose "$(permit '.productionBaseAppImageId')" "$(permit '.productionBaseWorkerImageId')" "$restore" run -d --name "$worker_probe" --no-deps commerce-reconciler
+  [ "$(container_image "$worker_probe")" = "$(permit '.productionBaseWorkerImageId')" ] || die 'prior worker probe image mismatch'
+  for _ in $(seq 1 60); do docker exec "$worker_probe" node -e 'const fs=require("fs");const t=Number(fs.readFileSync("/tmp/commerce-reconciler-heartbeat","utf8"));process.exit(Date.now()-t<30000?0:1)' >/dev/null 2>&1 && break; sleep 2; done
+  docker exec "$worker_probe" node -e 'const fs=require("fs");const t=Number(fs.readFileSync("/tmp/commerce-reconciler-heartbeat","utf8"));process.exit(Date.now()-t<30000?0:1)' || die 'prior worker failed migrated restore'
+  rehearsal_compose "$(permit '.productionBaseAppImageId')" "$(permit '.productionBaseWorkerImageId')" "$restore" run --rm --no-deps migrate \
+    npx tsx scripts/stage-grant-rollback-preflight.ts
+  jq -n --arg permitId "$(permit '.permitId')" --arg dumpSha256 "$(sha256 "$dump")" --arg app "$(permit '.productionBaseAppImageId')" --arg worker "$(permit '.productionBaseWorkerImageId')" \
+    --arg candidate "$image" --arg attempt "$attempt" --arg expectedMigrationsSha256 "$(jq -cS '.expectedMigrations' "$PERMIT" | sha256sum | cut -d' ' -f1)" \
+    --arg restoreVerificationSha256 "$(sha256 "$result")" --arg createdAt "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+    '{schemaVersion:"hb-migration-bridge.backup-restore.v2",result:"success",isolatedRestoreProof:"passed",permitId:$permitId,
+      attemptId:$attempt,dumpSha256:$dumpSha256,candidateImageId:$candidate,priorAppImageId:$app,priorWorkerImageId:$worker,
+      expectedMigrationsSha256:$expectedMigrationsSha256,restoreVerificationSha256:$restoreVerificationSha256,createdAt:$createdAt}' > "$tx/backup-restore.json"
+  chmod 0600 "$tx/backup-restore.json"; sync -f "$tx/backup-restore.json"
+  docker rm -f "$app_probe" "$worker_probe" >/dev/null
+  docker exec hb-migration-rehearsal-postgres sh -eu -c 'dropdb --username=beacon "$1"; rm -f -- "$2"' sh "$restore" "$container_dump"
+}
+
+restore_prior() {
+  prod_compose "$(permit '.productionBaseAppImageId')" "$(permit '.productionBaseWorkerImageId')" up -d --no-deps --force-recreate app commerce-reconciler || return 1
+  wait_prior_app beacon-app "$(permit '.productionBaseAppGitSha')" && wait_worker beacon-commerce-reconciler && private_boundary
+}
+rollback_barriers() {
+  local image="$(candidate_image)"
+  prod_compose "$image" "$image" run --rm --no-deps migrate npx tsx scripts/stage-grant-rollback-preflight.ts >/dev/null || die 'durable-grant rollback barrier refused'
+  prod_compose "$image" "$image" run --rm --no-deps migrate npx tsx scripts/scene-capacity-rollback-preflight.ts >/dev/null || die 'scene-capacity rollback barrier refused'
+}
+
+assert_recovery_migration_state() {
+  local state="$1"
+  jq -e --slurpfile permit "$PERMIT" '.schemaVersion=="harmonic-beacon.migration-state.v1" and .databaseStateVerified==true and
+    (.failed|length)==0 and (.unexpected|length)==0 and (.unsafe|length)==0 and (.checksumErrors|length)==0 and
+    (.duplicateRecords|length)==0 and (.conflictingRecords|length)==0 and
+    ([.pending[]] - [$permit[0].expectedMigrations[].name] | length)==0' "$state" >/dev/null || die 'recovery migration state is unsafe'
+}
+
+endpoint_cas() {
+  local app worker candidate
+  app="$(container_image beacon-app)" || die 'cannot inspect production app'
+  worker="$(container_image beacon-commerce-reconciler)" || die 'cannot inspect production worker'
+  candidate="$(candidate_image)" || die 'cannot read candidate identity'
+  [[ "$app" =~ ^sha256:[0-9a-f]{64}$ && "$worker" =~ ^sha256:[0-9a-f]{64}$ && "$candidate" =~ ^sha256:[0-9a-f]{64}$ ]] || die 'invalid recovery endpoint identity'
+  { [ "$app" = "$candidate" ] || [ "$app" = "$(permit '.productionBaseAppImageId')" ]; } || die 'production app is outside recovery endpoints'
+  { [ "$worker" = "$candidate" ] || [ "$worker" = "$(permit '.productionBaseWorkerImageId')" ]; } || die 'production worker is outside recovery endpoints'
+}
+
+recover_internal() {
+  local attempt attempted state_permit permit_id state_path="$ROOT/recovery-migration-state.json" expected_count pending_count
+  trap - EXIT
+  root_file "$STATE" 600
+  state_permit="$(jq -er '.permitId' "$STATE")" || die 'cannot read recovery state permit'
+  permit_id="$(permit '.permitId')" || die 'cannot read recovery permit'
+  [ "$state_permit" = "$permit_id" ] || die 'recovery state permit mismatch'
+  attempt="$(printf '%s' "$permit_id" | cut -c1-24)" || die 'cannot read recovery attempt'; endpoint_cas
+  # State survives reboot; iptables does not necessarily survive and restart
+  # policies may have brought writers back. Re-prove inactivity before fencing.
+  continuity || die 'recovery continuity refused'
+  jq '.fenceState="reacquiring"' "$STATE" > "$ROOT/state.reacquiring.json"; atomic_state "$ROOT/state.reacquiring.json"
+  fence_ensure "$attempt"
+  jq '.fenceState="held"' "$STATE" > "$ROOT/state.recovery-fenced.json"; atomic_state "$ROOT/state.recovery-fenced.json"
+  prod_compose "$(candidate_image)" "$(candidate_image)" stop app commerce-reconciler || die 'could not stop recovery writers'
+  attempted="$(jq -r '.migrationAttemptedToProduction' "$STATE")" || die 'cannot read migration recovery state'
+  [[ "$attempted" = true || "$attempted" = false ]] || die 'invalid migration recovery state'
+  if [ "$attempted" = true ]; then
+    migration_state production "$(candidate_image)" "$state_path" || die 'recovery migration-state read failed'
+    assert_recovery_migration_state "$state_path" || die 'recovery migration-state rejected'
+    expected_count="$(jq -er '.expectedMigrations|length' "$PERMIT")" || die 'cannot read expected migration count'
+    pending_count="$(jq -er '.pending|length' "$state_path")" || die 'cannot read pending migration count'
+    if [ "$pending_count" -ne "$expected_count" ]; then rollback_barriers || die 'rollback barriers refused'; fi
+  fi
+  restore_prior || die 'prior app/worker recovery failed'
+  fence_release "$attempt" || die 'could not release recovery fence'
+  jq '.fenceState="absent"|.phase="recovered"' "$STATE" > "$ROOT/state.recovered.json"; atomic_state "$ROOT/state.recovered.json"
+}
+
+automatic_recovery() {
+  local original="$1"
+  trap - EXIT
+  if [ -f "$STATE" ] && [ "$(jq -r '.fenceState // "absent"' "$STATE")" != absent ]; then
+    if ! (recover_internal); then
+      jq '.phase="recovery-required"' "$STATE" > "$ROOT/state.recovery-required.json" && atomic_state "$ROOT/state.recovery-required.json" || true
+    fi
+  fi
+  exit "$original"
+}
+
+apply_candidate() {
+  local image attempt state_path="$ROOT/production-migration-state.json"
+  validate_permit; phase_is rehearsed; validate_activation; root_file "$PRODUCTION_ENV" 600; root_file "$COMMERCE_ENV" 600
+  image="$(candidate_image)"
+  [ "$(container_image hb-migration-rehearsal-app)" = "$image" ] || die 'rehearsal app no longer runs candidate'
+  [ "$(container_image hb-migration-rehearsal-worker)" = "$image" ] || die 'rehearsal worker no longer runs candidate'
+  [ "$(container_image beacon-app)" = "$(permit '.productionBaseAppImageId')" ] || die 'production app CAS failed'
+  [ "$(container_image beacon-commerce-reconciler)" = "$(permit '.productionBaseWorkerImageId')" ] || die 'production worker CAS failed'
+  [ "$(image_revision "$(permit '.productionBaseAppImageId')")" = "$(permit '.productionBaseAppGitSha')" ] || die 'prior app revision mismatch'
+  [ "$(image_revision "$(permit '.productionBaseWorkerImageId')")" = "$(permit '.productionBaseWorkerGitSha')" ] || die 'prior worker revision mismatch'
+  migration_state production "$image" "$state_path"; assert_expected_migrations "$state_path" pending
+  continuity; attempt="$(permit '.permitId' | cut -c1-24)"; jq '.phase="applying"|.fenceState="acquiring"' "$STATE" > "$ROOT/state.applying.json"; atomic_state "$ROOT/state.applying.json"
+  trap 'automatic_recovery "$?"' EXIT
+  fence_acquire "$attempt"
+  jq '.fenceState="held"' "$STATE" > "$ROOT/state.fenced.json"; atomic_state "$ROOT/state.fenced.json"; failpoint fence-acquired
+  prod_compose "$image" "$image" stop app commerce-reconciler; set_phase writers-stopped; continuity; failpoint writers-stopped
+  migration_state production "$image" "$state_path"; assert_expected_migrations "$state_path" pending
+  backup_and_prove "$attempt"; set_phase recovery-proven; failpoint recovery-proven
+  jq -e --arg permit "$(permit '.permitId')" --arg attempt "$attempt" --arg candidate "$image" \
+    --arg app "$(permit '.productionBaseAppImageId')" --arg worker "$(permit '.productionBaseWorkerImageId')" \
+    --arg migrations "$(jq -cS '.expectedMigrations' "$PERMIT" | sha256sum | cut -d' ' -f1)" '
+      keys==["attemptId","candidateImageId","createdAt","dumpSha256","expectedMigrationsSha256","isolatedRestoreProof",
+        "permitId","priorAppImageId","priorWorkerImageId","restoreVerificationSha256","result","schemaVersion"] and
+      .schemaVersion=="hb-migration-bridge.backup-restore.v2" and .result=="success" and .isolatedRestoreProof=="passed" and
+      .permitId==$permit and .attemptId==$attempt and .candidateImageId==$candidate and
+      .priorAppImageId==$app and .priorWorkerImageId==$worker and .expectedMigrationsSha256==$migrations and
+      ([.dumpSha256,.restoreVerificationSha256][]|test("^[0-9a-f]{64}$"))' \
+      "$ROOT/transactions/$(permit '.permitId')/backup-restore.json" >/dev/null || die 'backup/restore proof binding failed'
+  jq '.migrationAttemptedToProduction=true|.phase="production-migration-attempted"' "$STATE" > "$ROOT/state.migration-attempted.json"; atomic_state "$ROOT/state.migration-attempted.json"
+  prod_compose "$image" "$image" run --rm --no-deps migrate npx prisma migrate deploy
+  prod_compose "$image" "$image" run --rm --no-deps migrate npx tsx scripts/stage-grant-forward-drain.ts
+  migration_state production "$image" "$state_path"; assert_expected_migrations "$state_path" applied
+  jq '.migrationAppliedToProduction=true|.phase="production-migrated"' "$STATE" > "$ROOT/state.migrated.json"; atomic_state "$ROOT/state.migrated.json"; failpoint production-migrated
+  prod_compose "$image" "$image" up -d --no-deps --force-recreate app commerce-reconciler
+  wait_candidate_inside beacon-app "$(permit '.sourceSha')" "$PRODUCTION_PROFILE" || die 'candidate app failed'
+  wait_worker beacon-commerce-reconciler || die 'candidate worker failed'
+  [ "$(container_image beacon-app)" = "$image" ] && [ "$(container_image beacon-commerce-reconciler)" = "$image" ] || die 'candidate image identity failed'
+  private_boundary || die 'candidate private boundary failed'
+  fence_release "$attempt"; jq '.fenceState="absent"|.phase="applied"' "$STATE" > "$ROOT/state.applied.json"; atomic_state "$ROOT/state.applied.json"; trap - EXIT
+}
+
+recover() {
+  validate_permit false; root_file "$STATE" 600
+  case "$(jq -r '.phase' "$STATE")" in applying|writers-stopped|recovery-proven|production-migration-attempted|production-migrated|rollback-writers-stopping|recovery-required) ;; *) die 'state does not require recovery';; esac
+  [ "$(jq -r '.fenceState' "$STATE")" != absent ] || die 'recovery requires a recorded fence'
+  recover_internal
+}
+rollback_candidate() {
+  local attempt candidate; validate_permit false; phase_is applied; candidate="$(candidate_image)"
+  [ "$(container_image beacon-app)" = "$candidate" ] && [ "$(container_image beacon-commerce-reconciler)" = "$candidate" ] || die 'rollback candidate CAS failed'
+  continuity; attempt="$(permit '.permitId' | cut -c1-24)"; jq '.fenceState="acquiring"|.phase="rollback-writers-stopping"' "$STATE" > "$ROOT/state.rollback.json"; atomic_state "$ROOT/state.rollback.json"
+  trap 'automatic_recovery "$?"' EXIT; fence_acquire "$attempt"
+  jq '.fenceState="held"' "$STATE" > "$ROOT/state.rollback-fenced.json"; atomic_state "$ROOT/state.rollback-fenced.json"
+  prod_compose "$(candidate_image)" "$(candidate_image)" stop app commerce-reconciler; continuity; rollback_barriers
+  restore_prior || die 'prior rollback failed'; fence_release "$attempt"
+  jq '.fenceState="absent"|.phase="rolled-back"' "$STATE" > "$ROOT/state.rolledback.json"; atomic_state "$ROOT/state.rolledback.json"; trap - EXIT
+}
+status() { validate_permit false; root_file "$STATE" 600; jq '{permitId,phase,sourceSha,candidateImageId,migrationAttemptedToProduction,migrationAppliedToProduction,fenceState}' "$STATE"; }
+
+usage() { printf '%s\n' 'usage: hb-migration-bridge {stage|stage-rollback|stage-reapply|apply|rollback|recover|status}' >&2; exit 2; }
+if [ "$TEST_MODE" = true ] && [ "${HB_MIGRATION_BRIDGE_SOURCE_ONLY:-}" = 1 ]; then return 0 2>/dev/null || exit 0; fi
+[ "$#" -eq 1 ] || usage
+if [ "$EUID" -eq 0 ]; then root_file "$0" 755; elif [ "$TEST_MODE" = false ]; then die 'must run as root through restricted sudo'; fi
+safe_parents "$SHARED_LOCK"
+[ -f "$SHARED_LOCK" ] && [ ! -L "$SHARED_LOCK" ] && [ "$(stat -c '%U:%h' "$SHARED_LOCK")" = "$(expected_owner):1" ] || die 'shared v1 bridge lock is missing or unsafe'
+(( (8#$(stat -c '%a' "$SHARED_LOCK") & 8#022) == 0 )) || die 'shared v1 bridge lock is writable'
+install -d -o root -g root -m 0700 "$ROOT" "$ROOT/inbox" "$ROOT/transactions"
+exec 9>"$SHARED_LOCK"; flock -n 9 || die 'another bridge operation is active'
+case "$1" in
+  stage) stage_candidate;; stage-rollback) stage_rollback;; stage-reapply) stage_reapply;;
+  apply) apply_candidate;; rollback) rollback_candidate;; recover) recover;; status) status;; *) usage;;
+esac

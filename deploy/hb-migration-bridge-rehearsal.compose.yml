@@ -1,0 +1,80 @@
+services:
+  postgres:
+    image: ${HB_MIGRATION_BRIDGE_POSTGRES_IMAGE:?immutable production PostgreSQL image required}
+    container_name: hb-migration-rehearsal-postgres
+    environment:
+      POSTGRES_USER: beacon
+      POSTGRES_PASSWORD: isolated-rehearsal-password
+      POSTGRES_DB: postgres
+    networks: [database]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U beacon -d postgres]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    volumes: [postgres-data:/var/lib/postgresql/data]
+
+  migrate:
+    image: ${HB_MIGRATION_BRIDGE_IMAGE:?immutable candidate image required}
+    command: [npx, prisma, migrate, deploy]
+    environment: &isolated_environment
+      NODE_ENV: production
+      DATABASE_URL: postgresql://beacon:isolated-rehearsal-password@postgres:5432/${HB_RESTORE_DATABASE_NAME:?isolated database required}
+      LIVEKIT_INTERNAL_URL: http://127.0.0.1:9
+      LIVEKIT_PUBLIC_URL: ${HB_LIVEKIT_PUBLIC_URL:?validated runtime endpoint required}
+      LIVEKIT_PUBLIC_URL_ALLOWLIST: ${HB_LIVEKIT_PUBLIC_URL_ALLOWLIST:?validated runtime allowlist required}
+      LIVEKIT_API_KEY: isolated
+      LIVEKIT_API_SECRET: isolated-secret
+      TICKET_CODE_PEPPER: isolated-rehearsal-pepper-at-least-32-characters
+    networks: [database]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs: [/tmp:size=32m,mode=1777]
+
+  app:
+    image: ${HB_MIGRATION_BRIDGE_IMAGE:?immutable candidate image required}
+    container_name: hb-migration-rehearsal-app
+    environment:
+      <<: *isolated_environment
+      BEACON_PUBLIC_ORIGIN: ${HB_PUBLIC_ORIGIN:?validated origin required}
+      BEACON_CONFIG_PROFILE_SHA256: ${HB_CONFIG_PROFILE_SHA256:?validated profile digest required}
+      BEACON_ACCOUNT_ENABLED: "false"
+      PROMO_INVITATIONS_ENABLED: ${HB_PROMO_INVITATIONS_ENABLED:?validated feature flag required}
+      TAPESTRY_PUBLIC_ENABLED: ${HB_TAPESTRY_PUBLIC_ENABLED:?validated feature flag required}
+    networks: [database]
+    healthcheck:
+      test: [CMD, curl, -f, http://localhost:3000/api/health/ready]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs: [/tmp:size=64m,mode=1777]
+
+  commerce-reconciler:
+    image: ${HB_MIGRATION_BRIDGE_WORKER_IMAGE:?immutable worker image required}
+    container_name: hb-migration-rehearsal-worker
+    command: [npx, tsx, scripts/commerce-media-worker.ts]
+    environment: *isolated_environment
+    networks: [database]
+    healthcheck:
+      test: [CMD, node, -e, "const fs=require('fs');const t=Number(fs.readFileSync('/tmp/commerce-reconciler-heartbeat','utf8'));if(!Number.isFinite(t)||Date.now()-t>30000)process.exit(1)"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs: [/tmp:size=64m,mode=1777]
+
+networks:
+  database:
+    internal: true
+
+volumes:
+  postgres-data:
