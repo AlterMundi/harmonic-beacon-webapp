@@ -42,7 +42,7 @@ export async function GET(
 
     const currentCookie = request.cookies.get(SESSION_COOKIE_NAME)?.value;
     const currentAccount = await accountIdentityFromToken(currentCookie);
-    if (!currentAccount || !currentCookie) {
+    if (!currentAccount || !currentCookie || currentAccount.profileComplete !== true) {
         const login = new URL('/api/account/login', origin);
         login.searchParams.set('flow', 'attendee');
         login.searchParams.set('next', `/session/${id}`);

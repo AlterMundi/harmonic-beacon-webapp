@@ -350,6 +350,22 @@ it('keeps stage connected on cancellable unload and retires it once on committed
 });
 
 describe('SessionRoomPage - event entry', () => {
+    it('stops an incomplete-profile redirect loop and offers explicit continuation without media', async () => {
+        window.sessionStorage.setItem('hb-profile-handoff:session-1', 'started');
+        vi.mocked(global.fetch).mockResolvedValue({ ok: false, status: 428,
+            json: async () => ({ error: 'profile_required' }),
+        } as Response);
+        renderPage('es');
+        expect(await screen.findByText('Completá tu perfil')).toBeInTheDocument();
+        expect(screen.getByRole('link', { name: 'Continuar con Beacon Account' })).toHaveAttribute(
+            'href', '/api/account/login?flow=attendee&next=%2Fsession%2Fsession-1',
+        );
+        expect(Room).not.toHaveBeenCalled();
+        fireEvent.focus(window);
+        await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(2));
+        expect(Room).not.toHaveBeenCalled();
+    });
+
     it('sends an invalid or expired room session back through login before mounting LiveKit', async () => {
         vi.mocked(global.fetch).mockResolvedValue({
             ok: false,

@@ -27,7 +27,7 @@ export async function attachPublicSessionAccess(
     account: AccountIdentity,
     now = new Date(),
 ): Promise<boolean> {
-    if (!session.publicAccess) return false;
+    if (!session.publicAccess || account.profileComplete !== true) return false;
 
     const expiresAt = new Date(Math.max(
         session.scheduledAt.getTime() + 24 * 60 * 60 * 1000,
@@ -54,6 +54,15 @@ export async function attachPublicSessionAccess(
             },
             select: { id: true },
         });
+        // Fill only an absent snapshot through the already-bound opaque
+        // identity. Never match by email/name or rewrite a historical value.
+        if (account.email && account.emailVerified === true) {
+            await tx.ticketEntitlement.updateMany({
+                where: { id: entitlement.id, accountIssuer: account.issuer,
+                    accountId: account.subject, accountEmail: null },
+                data: { accountEmail: account.email, accountEmailVerified: true },
+            });
+        }
 
         const existing = await tx.webSession.findUnique({
             where: { tokenDigest: digestSessionToken(cookieValue) },

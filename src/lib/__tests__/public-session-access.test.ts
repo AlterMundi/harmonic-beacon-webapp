@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { transaction, entitlementUpsert, webSessionUpdateMany, findSession, findParticipant } = vi.hoisted(() => ({
+const { transaction, entitlementUpsert, webSessionUpdateMany, findSession, findParticipant, fillEmail } = vi.hoisted(() => ({
     transaction: vi.fn(),
     entitlementUpsert: vi.fn(),
     webSessionUpdateMany: vi.fn(),
     findSession: vi.fn(),
     findParticipant: vi.fn(),
+    fillEmail: vi.fn(),
 }));
 
 vi.mock('@/lib/db', () => ({
@@ -17,6 +18,7 @@ const account = {
     subject: 'account-person-1',
     sessionId: 'central-session-1',
     displayName: '  Sai  ',
+    profileComplete: true,
     validatedAt: new Date('2026-08-18T12:00:00Z'),
 };
 const publicSession = {
@@ -33,7 +35,7 @@ describe('attachPublicSessionAccess', () => {
         findSession.mockResolvedValue(null);
         findParticipant.mockResolvedValue(null);
         transaction.mockImplementation(async (work) => work({
-            ticketEntitlement: { upsert: entitlementUpsert },
+            ticketEntitlement: { upsert: entitlementUpsert, updateMany: fillEmail },
             webSession: { updateMany: webSessionUpdateMany, findUnique: findSession },
             sessionParticipant: { findFirst: findParticipant },
         }));
@@ -46,6 +48,12 @@ describe('attachPublicSessionAccess', () => {
             { ...publicSession, publicAccess: false },
             account,
         )).resolves.toBe(false);
+        expect(transaction).not.toHaveBeenCalled();
+    });
+
+    it('does not create an entitlement for an incomplete profile', async () => {
+        const { attachPublicSessionAccess } = await import('../public-session-access');
+        expect(await attachPublicSessionAccess('cookie', publicSession, { ...account, profileComplete: false })).toBe(false);
         expect(transaction).not.toHaveBeenCalled();
     });
 
@@ -83,7 +91,7 @@ describe('attachPublicSessionAccess', () => {
             data: {
                 ticketEntitlementId: 'free-entitlement-1',
                 displayName: 'Sai',
-                displayNameConfirmedAt: null,
+                displayNameConfirmedAt: now,
                 lastSeenAt: now,
             },
         });
@@ -105,6 +113,18 @@ describe('attachPublicSessionAccess', () => {
         const now = new Date();
         await attachPublicSessionAccess('cookie', publicSession, { ...account, profileComplete: true }, now);
         expect(webSessionUpdateMany.mock.calls[0][0].data).toMatchObject({ displayName: 'Sai', displayNameConfirmedAt: now });
+    });
+
+    it('fills missing email only for the exact Account-bound entitlement', async () => {
+        const { attachPublicSessionAccess } = await import('../public-session-access');
+        await attachPublicSessionAccess('cookie', publicSession, { ...account, email: 'synthetic@example.test', emailVerified: true });
+        expect(fillEmail).toHaveBeenCalledWith({
+            where: { id: 'free-entitlement-1', accountIssuer: account.issuer, accountId: account.subject, accountEmail: null },
+            data: { accountEmail: 'synthetic@example.test', accountEmailVerified: true },
+        });
+        fillEmail.mockClear();
+        await attachPublicSessionAccess('cookie', publicSession, { ...account, email: 'synthetic@example.test', emailVerified: false });
+        expect(fillEmail).not.toHaveBeenCalled();
     });
 
     it('preserves a chosen event alias when the Account preferred name changes', async () => {
