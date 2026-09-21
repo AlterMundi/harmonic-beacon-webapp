@@ -718,7 +718,7 @@ write_receipt() {
     outcome=rolled-back
     current_json='{"kind":"restored"}'
   fi
-  if [ "$operation" = interruption-checkpoint ]; then
+  if [ "$evidence_scope" = synthetic-interruption ]; then
     outcome=synthetic-interruption
     interruption_json='{"checkpoint":"after-cutover","expected_failure_observed":true,"synthetic_inputs":true,"cleanup":"verified"}'
   fi
@@ -876,7 +876,7 @@ preflight() {
 }
 
 deploy() {
-  local phase previous_sha previous_worker nav_present=0
+  local phase previous_sha previous_worker nav_present=0 checkpoint_status=0
   phase="$(json_value "$(state_file)" phase)"
   case "$phase:$operation" in
     preflight:*) require_state preflight ;;
@@ -902,7 +902,10 @@ deploy() {
     [ -n "$previous_sha" ] || fail 'interruption drill requires a previous staging revision'
     if "$SOURCE_ROOT/scripts/beacon-account/start.sh" staging "$DEPLOY_ENV" interrupt-after-cutover; then
       fail 'deterministic interruption unexpectedly succeeded'
+    else
+      checkpoint_status=$?
     fi
+    [ "$checkpoint_status" -eq 86 ] || fail 'deployment failed before the deterministic interruption checkpoint'
     account_verify_running staging "$previous_sha" "$previous_sha" "$previous_worker"
     if account_image_supports_navigation_asset "$previous_sha"; then nav_present=1; fi
     "$SOURCE_ROOT/scripts/beacon-account/health-smoke.sh" \

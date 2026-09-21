@@ -354,19 +354,19 @@ account_capture_previous_worker() {
   printf '1\n'
 }
 
-account_image_supports_mail_worker() {
+account_image_supports_mail_worker() (
   sha=$1
   docker run --rm --entrypoint sh "harmonic-beacon/account:$sha" -ec \
     'test -f scripts/process-account-mail-outbox.ts && node -e "const p=require(\"./package.json\");if(!p.scripts?.[\"account:mail-worker\"])process.exit(1)"' \
     >/dev/null 2>&1
-}
+)
 
-account_image_supports_navigation_asset() {
+account_image_supports_navigation_asset() (
   sha=$1
   docker image inspect "harmonic-beacon/account:$sha" \
     --format '{{range .Config.Env}}{{println .}}{{end}}' |
     grep -Fxq 'BEACON_ACCOUNT_NAV_ASSET=1'
-}
+)
 
 account_restore_previous_runtime() {
   environment=$1
