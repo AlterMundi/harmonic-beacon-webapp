@@ -19,6 +19,12 @@ const VALIDATOR = path.join(DELIVERY, 'validate-receipt.mjs');
 const START = path.join(REPOSITORY, 'scripts/beacon-account/start.sh');
 const SHA = 'b'.repeat(40);
 
+test('production uses the existing canonical Account deployment file', () => {
+  const helper = fs.readFileSync(HELPER, 'utf8');
+  assert.ok(helper.includes("readonly DEPLOY_ENV='/etc/harmonic-beacon/beacon-account-deploy.env'"));
+  assert.ok(!helper.includes("readonly DEPLOY_ENV='/etc/harmonic-beacon/account.deploy.env'"));
+});
+
 function read(file) {
   return fs.readFileSync(file, 'utf8');
 }
