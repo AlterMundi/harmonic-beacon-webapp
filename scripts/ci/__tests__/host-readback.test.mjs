@@ -27,7 +27,10 @@ function tree(root) {
   return visit(root);
 }
 
-function readback({ lane, state, active, implementationValid = true, unstablePath } = {}) {
+function readback({
+  lane, state, active, implementationValid = true, unstablePath,
+  removeOnValidationPath, removeAfterStatPath, removeAfterStatCall = 1,
+} = {}) {
   const root = mkdtempSync(join(process.cwd(), '.hb-host-readback-'));
   try {
     const releaseRoot = join(root, 'releases');
@@ -48,8 +51,30 @@ function readback({ lane, state, active, implementationValid = true, unstablePat
       RELEASE_LANE_STATE: join(root, 'lane'),
       RELEASE_MANIFEST: resolve('scripts/ci/release-manifest.mjs'),
     })) script = script.replace(new RegExp(`^readonly ${name}=.*$`, 'm'), `readonly ${name}=${quote(value)}`);
+    const racePath = removeOnValidationPath === 'active' || removeAfterStatPath === 'active'
+      ? join(releaseRoot, 'active-transaction') : '';
     script += `
-require_secure_root_file() { [ -f "$1" ] && [ ! -L "$1" ]; }
+require_secure_root_file() {
+  [ -f "$1" ] && [ ! -L "$1" ] || return 1
+  if [ -n ${quote(removeOnValidationPath ? racePath : '')} ] && [ "$1" = ${quote(racePath)} ]; then
+    rm -f -- "$1"
+  fi
+}
+${removeAfterStatPath ? `stat() {
+  if [ "$*" = "-c %s ${racePath}" ]; then
+    readback_stat_calls=0
+    [ ! -f ${quote(join(root, 'stat-calls'))} ] || read -r readback_stat_calls < ${quote(join(root, 'stat-calls'))}
+    readback_stat_calls=$((readback_stat_calls + 1))
+    printf '%s\n' "$readback_stat_calls" > ${quote(join(root, 'stat-calls'))}
+    if [ "$readback_stat_calls" -eq ${removeAfterStatCall} ]; then
+      command stat "$@"
+      result=$?
+      rm -f -- ${quote(racePath)}
+      return "$result"
+    fi
+  fi
+  command stat "$@"
+}` : ''}
 verify_installed_implementation() { ${implementationValid ? 'return 0' : 'return 1'}; }
 hostname() { printf 'mona\\n'; }
 ${unstablePath ? `eval "$(declare -f readback_file_identity | sed '1s/readback_file_identity/readback_file_identity_original/')"
@@ -63,7 +88,8 @@ readback_file_identity() {
 host_readback
 `;
     const result = spawnSync('bash', ['-c', script], { encoding: 'utf8' });
-    return { ...result, report: result.status === 0 ? JSON.parse(result.stdout) : null, unchanged: assert.deepEqual(tree(root), before) };
+    if (!removeOnValidationPath && !removeAfterStatPath) assert.deepEqual(tree(root), before);
+    return { ...result, report: result.status === 0 ? JSON.parse(result.stdout) : null };
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -129,6 +155,25 @@ for (const unstablePath of ['lane', 'state']) test(`host readback clears ${unsta
   assert.equal(result.report.result, 'unavailable');
   if (unstablePath === 'lane') assert.deepEqual(result.report.lane, { status: 'unavailable', state: 'unknown' });
   else assert.deepEqual(result.report.currentState, { status: 'unavailable', evidence: null });
+});
+
+test('host readback reports unavailable when the active marker disappears after validation', () => {
+  const result = readback({ lane: 'oci-production', state: stateFixture(), active: '123', removeOnValidationPath: 'active' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.report.result, 'unavailable');
+  assert.deepEqual(result.report.activeTransaction, { status: 'unavailable', id: null });
+  assertWorkflowAccepted(result.report);
+});
+
+test('host readback reports unavailable when the active marker disappears before its content read', () => {
+  const result = readback({
+    lane: 'oci-production', state: stateFixture(), active: '123',
+    removeAfterStatPath: 'active', removeAfterStatCall: 2,
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.report.result, 'unavailable');
+  assert.deepEqual(result.report.activeTransaction, { status: 'unavailable', id: null });
+  assertWorkflowAccepted(result.report);
 });
 
 test('host readback dispatch exits before transaction directories and lock and accepts no arguments', () => {

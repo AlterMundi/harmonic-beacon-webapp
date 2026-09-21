@@ -282,14 +282,20 @@ readback_file_identity() {
     printf '%s\n' invalid
     return 0
   fi
-  size="$(stat -c '%s' "$path")"
+  if ! size="$(stat -c '%s' "$path" 2>/dev/null)"; then
+    printf '%s\n' unstable
+    return 0
+  fi
   if ! [[ "$size" =~ ^[0-9]+$ ]] || [ "$size" -gt "$maximum" ]; then
     printf '%s\n' invalid
     return 0
   fi
-  before="$(stat -c '%d:%i:%s:%Y:%Z' "$path")"
-  digest="$(sha256sum "$path" | cut -d' ' -f1)"
-  after="$(stat -c '%d:%i:%s:%Y:%Z' "$path")"
+  if ! before="$(stat -c '%d:%i:%s:%Y:%Z' "$path" 2>/dev/null)" ||
+    ! digest="$(sha256sum "$path" 2>/dev/null | cut -d' ' -f1)" ||
+    ! after="$(stat -c '%d:%i:%s:%Y:%Z' "$path" 2>/dev/null)"; then
+    printf '%s\n' unstable
+    return 0
+  fi
   if [ "$before" != "$after" ]; then
     printf '%s\n' unstable
   else
@@ -319,25 +325,40 @@ host_readback() {
 
   if (verify_installed_implementation) >/dev/null 2>&1; then
     implementation_before_valid=true
-    implementation_status=verified
-    implementation_manifest_sha="\"sha256:$(sha256sum "$TRUSTED_IMPLEMENTATION" | cut -d' ' -f1)\""
-    value="$(awk '$2 == "/usr/local/sbin/hb-deploy" { print $1 }' "$TRUSTED_IMPLEMENTATION")"
-    if [[ "$value" =~ ^[0-9a-f]{64}$ ]]; then
-      helper_sha="\"sha256:$value\""
+    if implementation_manifest_sha="$(sha256sum "$TRUSTED_IMPLEMENTATION" 2>/dev/null | cut -d' ' -f1)" &&
+      value="$(awk '$2 == "/usr/local/sbin/hb-deploy" { print $1 }' "$TRUSTED_IMPLEMENTATION" 2>/dev/null)"; then
+      implementation_manifest_sha="\"sha256:$implementation_manifest_sha\""
+      implementation_status=verified
     else
+      implementation_status=unavailable
+      implementation_manifest_sha=null
+      value=
+      unstable=true
+    fi
+    if [ "$implementation_status" = verified ] && [[ "$value" =~ ^[0-9a-f]{64}$ ]]; then
+      helper_sha="\"sha256:$value\""
+    elif [ "$implementation_status" = verified ]; then
       implementation_status=invalid
       implementation_manifest_sha=null
     fi
   fi
 
   if [ -e "$RELEASE_LANE_STATE" ] || [ -L "$RELEASE_LANE_STATE" ]; then
-    if (require_secure_root_file "$RELEASE_LANE_STATE" 600) >/dev/null 2>&1 &&
-      [ "$(stat -c '%s' "$RELEASE_LANE_STATE")" -le 32 ]; then
-      value="$(<"$RELEASE_LANE_STATE")"
-      case "$value" in
-        legacy-shadow | oci-production) lane_status=verified; lane_value="$value" ;;
-        *) lane_status=invalid ;;
-      esac
+    if (require_secure_root_file "$RELEASE_LANE_STATE" 600) >/dev/null 2>&1; then
+      if ! value="$(stat -c '%s' "$RELEASE_LANE_STATE" 2>/dev/null)"; then
+        lane_status=unavailable
+        unstable=true
+      elif [ "$value" -gt 32 ]; then
+        lane_status=invalid
+      elif ! value="$(head -c 33 -- "$RELEASE_LANE_STATE" 2>/dev/null)"; then
+        lane_status=unavailable
+        unstable=true
+      else
+        case "$value" in
+          legacy-shadow | oci-production) lane_status=verified; lane_value="$value" ;;
+          *) lane_status=invalid ;;
+        esac
+      fi
     else
       lane_status=invalid
     fi
@@ -346,12 +367,20 @@ host_readback() {
   if [ -e "$CURRENT_STATE" ] || [ -L "$CURRENT_STATE" ]; then
     if [ "$implementation_status" != verified ]; then
       state_status=unavailable
-    elif (require_secure_root_file "$CURRENT_STATE" 600) >/dev/null 2>&1 &&
-      [ "$(stat -c '%s' "$CURRENT_STATE")" -le 1048576 ] &&
-      (node "$RELEASE_MANIFEST" validate-current-state --state "$CURRENT_STATE") >/dev/null 2>&1; then
-      impact_state="$(node "$RELEASE_MANIFEST" export-impact-state --state "$CURRENT_STATE" 2>/dev/null)" ||
-        die 'validated current state could not be summarized'
-      state_summary="$(jq -ce '
+    elif ! (require_secure_root_file "$CURRENT_STATE" 600) >/dev/null 2>&1; then
+      state_status=invalid
+    elif ! value="$(stat -c '%s' "$CURRENT_STATE" 2>/dev/null)"; then
+      state_status=unavailable
+      unstable=true
+    elif [ "$value" -gt 1048576 ]; then
+      state_status=invalid
+    elif ! (node "$RELEASE_MANIFEST" validate-current-state --state "$CURRENT_STATE") >/dev/null 2>&1; then
+      state_status=invalid
+    elif ! impact_state="$(node "$RELEASE_MANIFEST" export-impact-state --state "$CURRENT_STATE" 2>/dev/null)"; then
+        state_status=unavailable
+        state_summary=null
+        unstable=true
+    elif ! state_summary="$(jq -ce '
         {
           schemaVersion: "harmonic-beacon.current-state.v4",
           manifestSha256: .publication.manifestSha256,
@@ -364,18 +393,26 @@ host_readback() {
             })
           )
         }
-      ' <<<"$impact_state")" || die 'validated current state summary was not bounded'
-      state_status=verified
+      ' <<<"$impact_state")"; then
+      state_status=unavailable
+      state_summary=null
+      unstable=true
     else
-      state_status=invalid
+      state_status=verified
     fi
   fi
 
   if [ -e "$ACTIVE_TRANSACTION" ] || [ -L "$ACTIVE_TRANSACTION" ]; then
-    if (require_secure_root_file "$ACTIVE_TRANSACTION" 600) >/dev/null 2>&1 &&
-      [ "$(stat -c '%s' "$ACTIVE_TRANSACTION")" -le 21 ]; then
-      value="$(<"$ACTIVE_TRANSACTION")"
-      if [[ "$value" =~ ^[1-9][0-9]{0,19}$ ]]; then
+    if (require_secure_root_file "$ACTIVE_TRANSACTION" 600) >/dev/null 2>&1; then
+      if ! value="$(stat -c '%s' "$ACTIVE_TRANSACTION" 2>/dev/null)"; then
+        active_status=unavailable
+        unstable=true
+      elif [ "$value" -gt 21 ]; then
+        active_status=invalid
+      elif ! value="$(head -c 22 -- "$ACTIVE_TRANSACTION" 2>/dev/null)"; then
+        active_status=unavailable
+        unstable=true
+      elif [[ "$value" =~ ^[1-9][0-9]{0,19}$ ]]; then
         active_status=verified
         active_id="\"$value\""
       else
