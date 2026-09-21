@@ -72,6 +72,24 @@ services:
     read_only: true
     tmpfs: [/tmp:size=32m,mode=1777]
 
+  grant-drain:
+    image: ${HB_MIGRATION_BRIDGE_IMAGE:?immutable candidate image required}
+    command: [npx, tsx, scripts/stage-grant-forward-drain.ts]
+    restart: "no"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-beacon}:${POSTGRES_PASSWORD:?required}@postgres:5432/${POSTGRES_DB:-beacon}
+      LIVEKIT_INTERNAL_URL: http://beacon-livekit:7880
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:?required}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:?required}
+      LIVEKIT_IDENTITY_SECRET: ${LIVEKIT_IDENTITY_SECRET:?required}
+      LIVEKIT_ROOM_NAME: ${LIVEKIT_ROOM_NAME:-beacon}
+    networks: [beacon]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs: [/tmp:size=32m,mode=1777]
+
   preflight:
     image: ${HB_MIGRATION_BRIDGE_IMAGE:?immutable candidate image required}
     command: [npx, tsx, scripts/release-quiesce-preflight.ts]

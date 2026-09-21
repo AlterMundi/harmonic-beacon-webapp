@@ -60,6 +60,21 @@ test('fixed production composition preserves resource and runtime boundaries', a
   assert.match(compose, /^  preflight:/m);
 });
 
+test('forward grant drain receives only its bounded database and LiveKit environment', async () => {
+  const compose = await source('deploy/hb-migration-bridge-production.compose.yml');
+  const drain = compose.slice(compose.indexOf('  grant-drain:'), compose.indexOf('\n  preflight:'));
+  assert.ok(drain.startsWith('  grant-drain:'));
+  assert.doesNotMatch(drain, /env_file:/);
+  const environment = [...drain.matchAll(/^      ([A-Z][A-Z0-9_]+):/gm)].map((match) => match[1]).sort();
+  assert.deepEqual(environment, [
+    'DATABASE_URL', 'LIVEKIT_API_KEY', 'LIVEKIT_API_SECRET', 'LIVEKIT_IDENTITY_SECRET',
+    'LIVEKIT_INTERNAL_URL', 'LIVEKIT_ROOM_NAME', 'NODE_ENV',
+  ]);
+  const helper = await source('deploy/hb-migration-bridge-root');
+  assert.match(helper, /run --rm --no-deps grant-drain/);
+  assert.doesNotMatch(helper, /migrate npx tsx scripts\/stage-grant-forward-drain\.ts/);
+});
+
 test('isolated rehearsal has no production secret bundles, PMP, or LiveKit network', async () => {
   const compose = await source('deploy/hb-migration-bridge-rehearsal.compose.yml');
   assert.doesNotMatch(compose, /env_file|commerce\.env|account\.env|pmp_beacon_internal|beacon-livekit/);

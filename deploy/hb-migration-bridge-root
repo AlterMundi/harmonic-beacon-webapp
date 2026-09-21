@@ -469,7 +469,7 @@ apply_candidate() {
       "$ROOT/transactions/$(permit '.permitId')/backup-restore.json" >/dev/null || die 'backup/restore proof binding failed'
   jq '.migrationAttemptedToProduction=true|.phase="production-migration-attempted"' "$STATE" > "$ROOT/state.migration-attempted.json"; atomic_state "$ROOT/state.migration-attempted.json"
   prod_compose "$image" "$image" run --rm --no-deps migrate npx prisma migrate deploy
-  prod_compose "$image" "$image" run --rm --no-deps migrate npx tsx scripts/stage-grant-forward-drain.ts
+  prod_compose "$image" "$image" run --rm --no-deps grant-drain
   migration_state production "$image" "$state_path"; assert_expected_migrations "$state_path" applied
   jq '.migrationAppliedToProduction=true|.phase="production-migrated"' "$STATE" > "$ROOT/state.migrated.json"; atomic_state "$ROOT/state.migrated.json"; failpoint production-migrated
   prod_compose "$image" "$image" up -d --no-deps --force-recreate app commerce-reconciler
