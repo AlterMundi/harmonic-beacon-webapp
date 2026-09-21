@@ -182,6 +182,20 @@ test('CODEOWNERS never narrows mixed runtime, audio, auth, workflow or unknown c
   }
 });
 
+test('CODEOWNERS keeps specialized documentation checks in the governance profile', () => {
+  const skills = classifyChanges(['.github/CODEOWNERS', '.agents/skills/harmonic-beacon-operations/SKILL.md']);
+  assert.deepEqual(checkNames(skills), [
+    'diff-check', 'agent-skill-distributions', 'ownership-contract', 'governance-tooling',
+  ]);
+  assert.deepEqual(skills.requiredJobChecks, ['impact']);
+  assert.equal(skills.deployment.deploy, false);
+
+  const commerce = classifyChanges(['.github/CODEOWNERS', 'contracts/commerce-entitlement/README.md']);
+  assert.ok(checkNames(commerce).includes('commerce-contract'));
+  assert.deepEqual(commerce.requiredJobChecks, ['impact', 'commerce-contract']);
+  assert.equal(commerce.deployment.deploy, false);
+});
+
 test('bounded CSS selects the explicit UI matrix and only replaces app', () => {
   const report = classifyChanges(['src/app/landing.css']);
   assert.equal(report.risk, 'ui');

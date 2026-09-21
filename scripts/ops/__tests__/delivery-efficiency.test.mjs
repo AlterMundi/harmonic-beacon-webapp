@@ -54,6 +54,8 @@ test('governance-only impact uses local ownership and focused control-plane chec
   assert.match(ciWorkflow, /if: steps\.classify\.outputs\.ownership_changed == 'true'\n\s+run: node scripts\/ci\/validate-codeowners/u);
   assert.match(ciWorkflow, /if: steps\.classify\.outputs\.governance_only == 'true'[\s\S]*scripts\/ci\/__tests__\/validate-codeowners\.test\.mjs/u);
   assert.match(ciWorkflow, /if: steps\.classify\.outputs\.governance_only != 'true'\n\s+run: npm ci/u);
+  assert.match(ciWorkflow, /name: Verify generated agent skill distributions\n\s+run: python3 \.agents\/skills\/scripts\/render_distributions\.py --check/u);
+  assert.match(ciWorkflow, /commerce_contract:commerce-contract[\s\S]*if: needs\.impact\.outputs\.commerce_contract == 'true'/u);
   assert.doesNotMatch(e2eWorkflow, /^ {2}pull_request:/m);
 });
 

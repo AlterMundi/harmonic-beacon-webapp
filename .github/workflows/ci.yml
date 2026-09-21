@@ -119,7 +119,6 @@ jobs:
             "repos/$GITHUB_REPOSITORY/codeowners/errors?ref=$HEAD_SHA" > codeowners-errors.json
           jq -e '.errors | type == "array" and length == 0' codeowners-errors.json >/dev/null
       - name: Verify generated agent skill distributions
-        if: steps.classify.outputs.governance_only != 'true'
         run: python3 .agents/skills/scripts/render_distributions.py --check
       - if: steps.classify.outputs.governance_only != 'true'
         run: npm ci
