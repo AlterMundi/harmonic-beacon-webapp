@@ -5,6 +5,7 @@ import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { prisma } from '@/lib/db';
 import { accountProfileClaims } from '@/lib/account-profile-claims';
 import {
+    digestSessionToken,
     issueSessionToken,
     sessionCookieOptions,
     sessionCookieTtlSeconds,
@@ -431,6 +432,7 @@ export async function completeAccountAuthorization(input: {
     code: string;
     state: string;
     stateCookie: string | undefined;
+    currentSessionToken?: string;
     origin: string;
     now?: Date;
 }): Promise<{
@@ -478,17 +480,39 @@ export async function completeAccountAuthorization(input: {
         throw new Error('Beacon Account is not authorized for staff access');
     }
     await prisma.$transaction(async (tx) => {
-        await tx.webSession.updateMany({
-            where: {
-                accountIssuer: identity.issuer,
-                accountSessionId: identity.sessionId,
-                revokedAt: null,
-            },
-            data: { revokedAt: now, revocationReason: 'account_session_replaced' },
-        });
+        const currentSession = input.currentSessionToken
+            ? await tx.webSession.findUnique({
+                where: { tokenDigest: digestSessionToken(input.currentSessionToken) },
+                select: {
+                    id: true,
+                    displayName: true,
+                    displayNameConfirmedAt: true,
+                    ticketEntitlementId: true,
+                    accountIssuer: true,
+                    accountSubject: true,
+                    expiresAt: true,
+                    revokedAt: true,
+                },
+            })
+            : null;
+        const currentSessionClaim = currentSession && !currentSession.revokedAt && currentSession.expiresAt > now
+            ? await tx.webSession.updateMany({
+                where: { id: currentSession.id, revokedAt: null, expiresAt: { gt: now } },
+                data: { revokedAt: now, revocationReason: 'account_session_replaced' },
+            })
+            : { count: 0 };
+        const preserveParticipation = Boolean(
+            flow === 'attendee' &&
+            currentSessionClaim.count === 1 &&
+            currentSession?.accountIssuer === identity.issuer &&
+            currentSession.accountSubject === identity.subject,
+        );
         await tx.webSession.create({
             data: {
                 tokenDigest: issued.database.tokenDigest,
+                displayName: preserveParticipation ? currentSession?.displayName : null,
+                displayNameConfirmedAt: preserveParticipation ? currentSession?.displayNameConfirmedAt : null,
+                ticketEntitlementId: preserveParticipation ? currentSession?.ticketEntitlementId : null,
                 staffUserId: staffBinding?.staffUserId ?? null,
                 accountIssuer: identity.issuer,
                 accountSubject: identity.subject,

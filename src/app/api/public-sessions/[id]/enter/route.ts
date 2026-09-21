@@ -42,13 +42,21 @@ export async function GET(
 
     const currentCookie = request.cookies.get(SESSION_COOKIE_NAME)?.value;
     const currentAccount = await accountIdentityFromToken(currentCookie);
-    if (!currentAccount || !currentCookie || currentAccount.profileComplete !== true) {
+    if (!currentAccount || !currentCookie) {
         const login = new URL('/api/account/login', origin);
         login.searchParams.set('flow', 'attendee');
         login.searchParams.set('next', `/session/${id}`);
         return NextResponse.redirect(login, {
             status: 303,
             headers: { 'Cache-Control': 'private, no-store' },
+        });
+    }
+
+    if (currentAccount.profileComplete !== true) {
+        // The room entry boundary can distinguish a new entry from an active
+        // participation. Do not force an active attendee through onboarding.
+        return NextResponse.redirect(new URL(`/session/${id}`, origin), {
+            status: 303, headers: { 'Cache-Control': 'private, no-store' },
         });
     }
 

@@ -83,13 +83,13 @@ describe('GET /api/public-sessions/[id]/enter', () => {
         expect(attachPublicSessionAccess).not.toHaveBeenCalled();
     });
 
-    it('sends an incomplete authenticated profile to Account without creating access or replacing cookies', async () => {
+    it('delegates incomplete profiles to the active-aware room gate without creating access or replacing cookies', async () => {
         accountIdentityFromToken.mockResolvedValue({ subject: 'opaque-subject', profileComplete: false });
         const response = await enter(PUBLIC_ID, `/api/public-sessions/${PUBLIC_ID}/enter`, {
             host: 'localhost:3000', cookie: 'hb_session=account-cookie',
         });
         expect(response.status).toBe(303);
-        expect(response.headers.get('location')).toContain('/api/account/login?flow=attendee');
+        expect(new URL(response.headers.get('location')!).pathname).toBe(`/session/${PUBLIC_ID}`);
         expect(response.headers.get('set-cookie')).toBeNull();
         expect(attachPublicSessionAccess).not.toHaveBeenCalled();
     });

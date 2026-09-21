@@ -16,13 +16,14 @@ const createAttempt = vi.fn();
 const findAttempt = vi.fn();
 const claimAttempt = vi.fn();
 const findStaffBinding = vi.fn();
+const findSession = vi.fn();
 const updateSessions = vi.fn();
 const createSession = vi.fn();
 const createAudit = vi.fn();
 
 vi.mock('@/lib/db', () => {
     const transaction = vi.fn(async (work: (tx: unknown) => unknown) => work({
-        webSession: { updateMany: updateSessions, create: createSession },
+        webSession: { findUnique: findSession, updateMany: updateSessions, create: createSession },
         auditLog: { create: createAudit },
     }));
     return {
@@ -83,6 +84,38 @@ function stateDigest() {
     return createHash('sha256').update(STATE).digest('hex');
 }
 
+async function arrangeSuccessfulAuthorization(subject = SUBJECT) {
+    findAttempt.mockResolvedValue({
+        stateDigest: stateDigest(),
+        codeVerifier: 'pkce-verifier-value',
+        nonce: NONCE,
+        flow: 'attendee',
+        returnTo: '/',
+        expiresAt: new Date(NOW.getTime() + 60_000),
+        consumedAt: null,
+        pendingPromoDigest: null,
+        pendingDisplayName: null,
+        pendingTermsVersion: null,
+        pendingTermsAcceptedAt: null,
+    });
+    const signed = await idToken();
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request) => {
+        const url = String(input);
+        if (url.endsWith('/.well-known/openid-configuration')) return json(discovery());
+        if (url === `${ISSUER}/oauth2/token`) return json({
+            access_token: 'opaque-access-token', id_token: signed, token_type: 'Bearer',
+        });
+        if (url === `${ISSUER}/oauth2/jwks`) return json({ keys: [publicJwk] });
+        if (url === `${ISSUER}/oauth2/introspect`) return json({
+            active: true, client_id: CLIENT_ID, sub: SUBJECT,
+        });
+        if (url === `${ISSUER}/oauth2/userinfo`) return json({
+            sub: subject, name: 'Completed Account', profile_complete: true,
+        });
+        throw new Error(`unexpected fetch ${url}`);
+    }));
+}
+
 beforeAll(async () => {
     const pair = await generateKeyPair('RS256');
     privateKey = pair.privateKey;
@@ -105,6 +138,7 @@ beforeEach(async () => {
     createAttempt.mockResolvedValue({});
     claimAttempt.mockResolvedValue({ count: 1 });
     findStaffBinding.mockResolvedValue(null);
+    findSession.mockResolvedValue(null);
     updateSessions.mockResolvedValue({ count: 0 });
     createSession.mockResolvedValue({});
 });
@@ -385,6 +419,135 @@ describe('Beacon Account OAuth 2.1 RP', () => {
             now: NOW,
         })).rejects.toThrow();
         expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/oauth2/introspect'))).toBe(false);
+    });
+
+    it('rotates only the callback browser session and preserves its participation for the same Account', async () => {
+        await arrangeSuccessfulAuthorization();
+        updateSessions.mockResolvedValue({ count: 1 });
+        const currentToken = 'current-local-session-token';
+        findSession.mockResolvedValue({
+            id: 'active-participant-session',
+            displayName: 'Chosen room alias',
+            displayNameConfirmedAt: new Date(NOW.getTime() - 60_000),
+            ticketEntitlementId: 'entitlement-1',
+            accountIssuer: ISSUER,
+            accountSubject: SUBJECT,
+            expiresAt: new Date(NOW.getTime() + 60_000),
+            revokedAt: null,
+        });
+        const { completeAccountAuthorization } = await import('../account-rp');
+
+        await completeAccountAuthorization({
+            code: 'profile-completion-code',
+            state: STATE,
+            stateCookie: STATE,
+            currentSessionToken: currentToken,
+            origin: 'http://localhost:3000',
+            now: NOW,
+        });
+
+        expect(findSession).toHaveBeenCalledWith({
+            where: { tokenDigest: createHash('sha256').update(currentToken).digest('hex') },
+            select: expect.any(Object),
+        });
+        expect(createSession).toHaveBeenCalledWith({
+            data: expect.objectContaining({
+                displayName: 'Chosen room alias',
+                displayNameConfirmedAt: new Date(NOW.getTime() - 60_000),
+                ticketEntitlementId: 'entitlement-1',
+                accountIssuer: ISSUER,
+                accountSubject: SUBJECT,
+                accountSessionId: SID,
+                accountDisplayName: 'Completed Account',
+                accountProfileComplete: true,
+            }),
+        });
+        expect(updateSessions).toHaveBeenCalledTimes(1);
+        expect(updateSessions).toHaveBeenCalledWith({
+            where: {
+                id: 'active-participant-session',
+                revokedAt: null,
+                expiresAt: { gt: NOW },
+            },
+            data: { revokedAt: NOW, revocationReason: 'account_session_replaced' },
+        });
+        expect(updateSessions).not.toHaveBeenCalledWith(expect.objectContaining({
+            where: expect.objectContaining({ accountSessionId: SID }),
+        }));
+    });
+
+    it('does not transfer another Account identity participation during account change', async () => {
+        await arrangeSuccessfulAuthorization();
+        findSession.mockResolvedValue({
+            id: 'previous-account-session',
+            displayName: 'Previous alias',
+            displayNameConfirmedAt: new Date(NOW.getTime() - 60_000),
+            ticketEntitlementId: 'previous-account-entitlement',
+            accountIssuer: ISSUER,
+            accountSubject: 'different-account-subject',
+            expiresAt: new Date(NOW.getTime() + 60_000),
+            revokedAt: null,
+        });
+        const { completeAccountAuthorization } = await import('../account-rp');
+
+        await completeAccountAuthorization({
+            code: 'change-account-code',
+            state: STATE,
+            stateCookie: STATE,
+            currentSessionToken: 'previous-account-token',
+            origin: 'http://localhost:3000',
+            now: NOW,
+        });
+
+        expect(createSession).toHaveBeenCalledWith({
+            data: expect.objectContaining({
+                displayName: null,
+                displayNameConfirmedAt: null,
+                ticketEntitlementId: null,
+                accountSubject: SUBJECT,
+            }),
+        });
+        expect(updateSessions).toHaveBeenCalledWith({
+            where: {
+                id: 'previous-account-session',
+                revokedAt: null,
+                expiresAt: { gt: NOW },
+            },
+            data: { revokedAt: NOW, revocationReason: 'account_session_replaced' },
+        });
+    });
+
+    it('does not transfer participation when a concurrent revoke claims the current session first', async () => {
+        await arrangeSuccessfulAuthorization();
+        updateSessions.mockResolvedValue({ count: 0 });
+        findSession.mockResolvedValue({
+            id: 'concurrently-revoked-session',
+            displayName: 'Do not transfer',
+            displayNameConfirmedAt: NOW,
+            ticketEntitlementId: 'do-not-transfer-entitlement',
+            accountIssuer: ISSUER,
+            accountSubject: SUBJECT,
+            expiresAt: new Date(NOW.getTime() + 60_000),
+            revokedAt: null,
+        });
+        const { completeAccountAuthorization } = await import('../account-rp');
+
+        await completeAccountAuthorization({
+            code: 'racing-profile-completion-code',
+            state: STATE,
+            stateCookie: STATE,
+            currentSessionToken: 'concurrently-revoked-token',
+            origin: 'http://localhost:3000',
+            now: NOW,
+        });
+
+        expect(createSession).toHaveBeenCalledWith({
+            data: expect.objectContaining({
+                displayName: null,
+                displayNameConfirmedAt: null,
+                ticketEntitlementId: null,
+            }),
+        });
     });
 
     it('fails closed on state mismatch before consuming the authorization attempt', async () => {

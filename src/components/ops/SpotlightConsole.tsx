@@ -532,6 +532,7 @@ export default function SpotlightConsole({ sessionId, role, copy, staffRoles, on
                                     />
                                     <div className="min-w-0">
                                         <span className="font-medium text-[var(--cream)]">#{participant.queuePosition} — {participantLabel(participant)}</span>
+                                        {role === 'ADMIN' ? <ParticipantIdentity key={`${sessionId}:${participant.id}`} sessionId={sessionId} participantId={participant.id} /> : null}
                                         <div className="text-xs text-[var(--text-secondary)]">
                                             {copy.waiting} {participant.raisedAt ? formatQueueAge(participant.raisedAt, nowMs) : '…'}
                                             {' · '}{connectionBadge(participant, copy)}
@@ -575,6 +576,7 @@ export default function SpotlightConsole({ sessionId, role, copy, staffRoles, on
                             <li key={participant.id} className="operational-panel flex items-center justify-between gap-3">
                                 <div className="min-w-0">
                                     <span className="font-medium text-[var(--cream)]">{participantLabel(participant)}</span>
+                                    {role === 'ADMIN' ? <ParticipantIdentity key={`${sessionId}:${participant.id}`} sessionId={sessionId} participantId={participant.id} /> : null}
                                     <div className="text-xs text-[var(--text-secondary)]">
                                         {participant.stageState === 'RECONNECTING'
                                             ? copy.inviteAfterReentry
@@ -608,6 +610,7 @@ export default function SpotlightConsole({ sessionId, role, copy, staffRoles, on
                                 <div className="flex items-center justify-between gap-3">
                                     <div className="min-w-0">
                                         <span className="font-medium text-[var(--cream)]">{participantLabel(participant)}</span>
+                                        {role === 'ADMIN' ? <ParticipantIdentity key={`${sessionId}:${participant.id}`} sessionId={sessionId} participantId={participant.id} /> : null}
                                         {participant.staffRole ? (
                                             <span className="ml-2 text-xs uppercase text-[var(--text-muted)]">{roleLabel(participant.staffRole, staffRoles)}</span>
                                         ) : null}
