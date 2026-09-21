@@ -840,6 +840,8 @@ esac
         EVENT_ACTION: lifecycle[firstWake].action,
         INPUT_PR_NUMBER: '',
         WORKFLOW_HEAD: HEAD,
+        WORKFLOW_RUN_ID: '9002',
+        WORKFLOW_RUN_ATTEMPT: String(lifecycle[firstWake].run_attempt),
       },
     });
     assert.equal(dispatch.status, 0, dispatch.stderr);
