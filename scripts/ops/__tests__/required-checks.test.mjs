@@ -408,6 +408,58 @@ test('integrated audio requires both CI regressions and standalone label policy 
   }), 'integrated-v2'), 'pending', 'missing:frozen-audio-paths');
 });
 
+test('integrated audio ignores an unmapped old Audio attempt without trusting suite lineage', () => {
+  const audioSuiteId = 11_900;
+  const ci = integratedAppRuns({}, {
+    names: integratedAudioNames,
+    run_started_at: '2026-09-10T00:01:00.000Z',
+  });
+  const currentLabel = audioLabelRun({
+    id: 902,
+    created_at: null,
+    started_at: '2026-09-10T12:00:03.000Z',
+    check_suite: {
+      id: audioSuiteId,
+      head_sha: HEAD,
+      app: { id: ACTIONS_APP_ID, slug: 'github-actions' },
+    },
+    workflow_run: workflowIdentity('frozen-audio-paths', 902, {
+      id: 21_900,
+      check_suite_id: audioSuiteId,
+      run_attempt: 2,
+      run_started_at: '2026-09-10T12:00:00.000Z',
+    }),
+  });
+  // Exact production shape after a rerun: check-runs contains both attempts,
+  // but Actions runs/jobs only maps the current attempt. Its timestamp is
+  // later than the CI workflow start, so it previously displaced CI evidence.
+  const oldUnmappedLabel = checkRun('frozen-audio-paths', {
+    id: 901,
+    started_at: '2026-09-10T00:01:04.000Z',
+    check_suite: currentLabel.check_suite,
+    workflow_run: null,
+    workflow_job: null,
+  });
+  const evidence = input({
+    changedFiles: ['src/context/AudioContext.tsx'],
+    checkRuns: [...ci, oldUnmappedLabel, currentLabel],
+  });
+  assert.equal(
+    evaluateRequiredChecksForEvidenceForm(evidence, 'integrated-v2').state,
+    'success',
+  );
+
+  const unknownSuite = {
+    ...oldUnmappedLabel,
+    id: 903,
+    check_suite: { ...oldUnmappedLabel.check_suite, id: 11_903 },
+  };
+  assertState(evaluateRequiredChecksForEvidenceForm(input({
+    changedFiles: ['src/context/AudioContext.tsx'],
+    checkRuns: [...ci, unknownSuite, currentLabel],
+  }), 'integrated-v2'), 'failure', 'untrusted:frozen-audio-paths');
+});
+
 test('integrated form never fills a newer incomplete CI attempt with older green jobs', () => {
   const older = integratedAppRuns({}, {
     id: 21_100,
