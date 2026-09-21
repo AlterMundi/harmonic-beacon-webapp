@@ -14,10 +14,10 @@
 
 # Delivery authority and production mutation surfaces (OPS-C #534).
 /.github/CODEOWNERS @nicoechaniz
-/.github/workflows/ @nicoechaniz
-/scripts/ci/ @nicoechaniz
-/deploy/hb-deploy-root @nicoechaniz
-/deploy/beacon-runner.sudoers @nicoechaniz
-/docker-compose.yml @nicoechaniz
-/Dockerfile @nicoechaniz
-/scripts/live-production/ @nicoechaniz
+/.github/workflows/ @nicoechaniz @compaii
+/scripts/ci/ @nicoechaniz @compaii
+/deploy/hb-deploy-root @nicoechaniz @compaii
+/deploy/beacon-runner.sudoers @nicoechaniz @compaii
+/docker-compose.yml @nicoechaniz @compaii
+/Dockerfile @nicoechaniz @compaii
+/scripts/live-production/ @nicoechaniz @compaii
