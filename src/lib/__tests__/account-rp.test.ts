@@ -120,6 +120,29 @@ afterEach(() => {
 });
 
 describe('Beacon Account OAuth 2.1 RP', () => {
+    it('retains issuer/subject identity for legacy sessions without profile snapshots', async () => {
+        const { storedAccountIdentity } = await import('../account-rp');
+        const legacy = {
+            id: 'legacy-session', accountIssuer: ISSUER, accountSubject: SUBJECT,
+            accountSessionId: SID, accountDisplayName: 'Historical alias', accountValidatedAt: NOW,
+        };
+        expect(storedAccountIdentity(legacy)).toEqual({
+            issuer: ISSUER, subject: SUBJECT, sessionId: SID, displayName: 'Historical alias',
+            validatedAt: NOW, email: null, emailVerified: null, profileComplete: null,
+        });
+        expect(storedAccountIdentity({ ...legacy, accountProfileComplete: false })?.subject).toBe(SUBJECT);
+        expect(storedAccountIdentity({ ...legacy, accountSubject: null })).toBeNull();
+    });
+
+    it('preserves explicit unverified email without promoting it to authorization authority', async () => {
+        const { storedAccountIdentity } = await import('../account-rp');
+        expect(storedAccountIdentity({
+            id: 'session', accountIssuer: ISSUER, accountSubject: SUBJECT, accountSessionId: SID,
+            accountDisplayName: 'Preferred', accountValidatedAt: NOW,
+            accountEmail: 'synthetic@example.test', accountEmailVerified: false, accountProfileComplete: true,
+        })).toMatchObject({ subject: SUBJECT, email: 'synthetic@example.test', emailVerified: false, profileComplete: true });
+    });
+
     it('uses the pinned public origin behind a loopback proxy and ignores forwarded host input', async () => {
         process.env.TICKET_LOGIN_URL_PREFIX = 'https://live-staging.harmonicbeacon.com/';
         const { trustedLiveRequestOrigin } = await import('../account-rp');

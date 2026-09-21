@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server';
 import { Prisma } from '@prisma/client';
 
 import { prisma } from '@/lib/db';
+import { liveProfileEntryAllowed } from '@/lib/live-profile-entry';
 import { stableRoomIdentity } from '@/lib/livekit-server';
 import { isSceneCapacity, type SceneCapacity } from '@/lib/scene-capacity';
 import { eventStaffPolicy } from '@/lib/staff-capabilities';
@@ -222,6 +223,9 @@ async function resolveRoomAccess(
             accountSubject: true,
             accountSessionId: true,
             accountDisplayName: true,
+            accountEmail: true,
+            accountEmailVerified: true,
+            accountProfileComplete: true,
             accountValidatedAt: true,
             expiresAt: true,
             revokedAt: true,
@@ -334,6 +338,12 @@ async function resolveRoomAccess(
         if (!webSession.displayNameConfirmedAt) {
             return { ok: false, status: 403, error: 'Not authorized' };
         }
+        if (accountRequired && !await liveProfileEntryAllowed({
+            complete: account?.profileComplete,
+            scheduledSessionId: scheduledSession.id,
+            ticketEntitlementId: ticket.id,
+            now,
+        })) return { ok: false, status: 403, error: 'Not authorized' };
 
         principalId = ticket.commerceEntitlement
             ? `${ticket.id}:v${ticket.commerceEntitlement.livekitIdentityVersion}`

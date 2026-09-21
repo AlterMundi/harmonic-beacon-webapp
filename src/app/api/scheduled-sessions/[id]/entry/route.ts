@@ -6,6 +6,8 @@ import {
     readAttendeeDisplayName,
 } from '@/lib/attendee-display-name';
 import { prisma } from '@/lib/db';
+import { beaconAccountEnabled } from '@/lib/account-rp';
+import { liveProfileEntryAllowed } from '@/lib/live-profile-entry';
 import { accountIdentityFromToken, principalFromToken } from '@/lib/principal';
 import { attachPublicSessionAccess } from '@/lib/public-session-access';
 import { SESSION_COOKIE_NAME } from '@/lib/session-auth';
@@ -22,8 +24,11 @@ function response(body: unknown, status = 200) {
 async function resolveEntry(request: NextRequest, id: string) {
     const cookieValue = request.cookies.get(SESSION_COOKIE_NAME)?.value;
     let principal = await principalFromToken(cookieValue);
-    const account = principal ? null : await accountIdentityFromToken(cookieValue);
+    const account = principal?.kind === 'staff' ? null : await accountIdentityFromToken(cookieValue);
     if (!principal && !account) {
+        return { ok: false as const, error: response({ error: 'Authentication required' }, 401) };
+    }
+    if (beaconAccountEnabled() && principal?.kind !== 'staff' && !account) {
         return { ok: false as const, error: response({ error: 'Authentication required' }, 401) };
     }
 
@@ -41,6 +46,15 @@ async function resolveEntry(request: NextRequest, id: string) {
     });
     if (!session) {
         return { ok: false as const, error: response({ error: 'Session not found' }, 404) };
+    }
+
+    if (beaconAccountEnabled() && principal?.kind !== 'staff' && account &&
+        ['SCHEDULED', 'LIVE'].includes(session.status) && !await liveProfileEntryAllowed({
+            complete: account.profileComplete,
+            scheduledSessionId: id,
+            ticketEntitlementId: principal?.kind === 'attendee' ? principal.entitlementId : null,
+        })) {
+        return { ok: false as const, error: response({ error: 'profile_required' }, 428) };
     }
 
     if (!principal && account && cookieValue && session.publicAccess) {

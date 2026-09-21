@@ -184,7 +184,9 @@ export async function listAmplificationCreditEntries(input: {
                 "participant"."scheduled_session_id" AS "scheduled_session_id",
                 "participant"."ticket_entitlement_id" AS "ticket_entitlement_id",
                 "commerce"."registration_id" AS "registration_id",
-                "ticket"."bound_email" AS "email",
+                COALESCE("ticket"."bound_email", CASE
+                    WHEN "ticket"."account_email_verified" = TRUE
+                    THEN "ticket"."account_email" ELSE NULL END) AS "email",
                 "participant"."display_name" AS "display_name",
                 MIN("presence"."started_at") AS "entered_at"
             FROM "session_participants" AS "participant"
@@ -207,6 +209,8 @@ export async function listAmplificationCreditEntries(input: {
                 "participant"."ticket_entitlement_id",
                 "commerce"."registration_id",
                 "ticket"."bound_email",
+                "ticket"."account_email",
+                "ticket"."account_email_verified",
                 "participant"."display_name"
         )
         SELECT

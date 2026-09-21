@@ -47,11 +47,29 @@ export async function attachPublicSessionAccess(
                 state: 'BOUND',
                 accountId: account.subject,
                 accountIssuer: account.issuer,
+                accountEmail: account.email ?? null,
+                accountEmailVerified: account.email ? account.emailVerified ?? null : null,
                 boundAt: now,
                 expiresAt,
             },
             select: { id: true },
         });
+
+        const existing = await tx.webSession.findUnique({
+            where: { tokenDigest: digestSessionToken(cookieValue) },
+            select: { ticketEntitlementId: true, displayName: true, displayNameConfirmedAt: true },
+        });
+        const participant = await tx.sessionParticipant.findFirst({
+            where: { scheduledSessionId: session.id, ticketEntitlementId: entitlement.id },
+            select: { displayName: true },
+        });
+        const sameEvent = existing?.ticketEntitlementId === entitlement.id;
+        const retainedName = sameEvent && existing?.displayNameConfirmedAt
+            ? existing.displayName : participant?.displayName;
+        const displayName = retainedName?.trim() || account.displayName?.trim() || 'Participante';
+        const confirmedAt = retainedName?.trim()
+            ? (sameEvent ? existing?.displayNameConfirmedAt : null) ?? now
+            : account.profileComplete === true && account.displayName?.trim() ? now : null;
 
         const attached = await tx.webSession.updateMany({
             where: {
@@ -64,8 +82,8 @@ export async function attachPublicSessionAccess(
             },
             data: {
                 ticketEntitlementId: entitlement.id,
-                displayName: account.displayName?.trim() || 'Participante',
-                displayNameConfirmedAt: null,
+                displayName,
+                displayNameConfirmedAt: confirmedAt,
                 lastSeenAt: now,
             },
         });

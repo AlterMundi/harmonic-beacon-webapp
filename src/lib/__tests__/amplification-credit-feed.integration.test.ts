@@ -148,6 +148,28 @@ integration('amplification credit feed PostgreSQL eligibility contract', () => {
         await prisma.$disconnect();
     });
 
+    it('uses only verified Account email for free access and preserves provider email', async () => {
+        const original = await prisma.ticketEntitlement.findUniqueOrThrow({ where: { id: FREE_TICKET_ID },
+            select: { accountIssuer: true, accountId: true, accountEmail: true, accountEmailVerified: true } });
+        try {
+            await prisma.ticketEntitlement.update({ where: { id: FREE_TICKET_ID }, data: {
+                accountIssuer: 'https://account.example.test', accountId: 'synthetic-subject',
+                accountEmail: 'free-account@example.test', accountEmailVerified: true,
+            } });
+            let page = await listAmplificationCreditEntries({ cursor: null, limit: 100 });
+            expect(page.entries.find((entry) => entry.entry_id === FREE_PARTICIPANT_ID)?.email).toBe('free-account@example.test');
+            expect(page.entries.find((entry) => entry.entry_id === PAID_PARTICIPANT_ID)?.email).toBe('paid@example.com');
+            for (const verified of [false, null]) {
+                await prisma.ticketEntitlement.update({ where: { id: FREE_TICKET_ID }, data: { accountEmailVerified: verified } });
+                page = await listAmplificationCreditEntries({ cursor: null, limit: 100 });
+                expect(page.entries.find((entry) => entry.entry_id === FREE_PARTICIPANT_ID)?.email).toBeNull();
+                expect(page.entries).toHaveLength(2);
+            }
+        } finally {
+            await prisma.ticketEntitlement.update({ where: { id: FREE_TICKET_ID }, data: original });
+        }
+    });
+
     it('filters ineligible rows, includes paid/free, deduplicates reconnects and paginates durably', async () => {
         const first = await listAmplificationCreditEntries({ cursor: null, limit: 1 });
         expect(first.entries).toEqual([{

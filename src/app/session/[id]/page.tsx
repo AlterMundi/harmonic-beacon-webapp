@@ -1685,6 +1685,7 @@ function SessionEntryGate({ sessionId }: { sessionId: string }) {
     const { locale, copy, seedLocale } = useLocale();
     const [entry, setEntry] = useState<EntryResponse | null>(null);
     const [entryError, setEntryError] = useState<string | null>(null);
+    const [profileRequired, setProfileRequired] = useState(false);
     const [retryEntry, setRetryEntry] = useState(0);
     const entryRequestGenerationRef = useRef(0);
     const entryAbortRef = useRef<AbortController | null>(null);
@@ -1715,10 +1716,31 @@ function SessionEntryGate({ sessionId }: { sessionId: string }) {
                     return;
                 }
                 const data = await response.json().catch(() => ({})) as Partial<EntryResponse> & { error?: string };
+                if (response.status === 428 && data.error === 'profile_required') {
+                    // One automatic round trip per event/tab. Failure must not
+                    // bounce indefinitely between Account and this page.
+                    const key = `hb-profile-handoff:${sessionId}`;
+                    let automatic = false;
+                    try {
+                        automatic = window.sessionStorage.getItem(key) !== 'started';
+                        window.sessionStorage.setItem(key, 'started');
+                    } catch { automatic = false; }
+                    if (cancelled || requestGeneration !== entryRequestGenerationRef.current) return;
+                    if (automatic) {
+                        window.location.replace(`/api/account/login?flow=attendee&next=${encodeURIComponent(`/session/${sessionId}`)}`);
+                        return;
+                    }
+                    setProfileRequired(true);
+                    setEntry(null);
+                    setEntryError(null);
+                    return;
+                }
                 if (!response.ok || !data.state || !data.session) {
                     throw new Error(data.error || `Entry status unavailable (HTTP ${response.status})`);
                 }
                 if (!cancelled && requestGeneration === entryRequestGenerationRef.current) {
+                    try { window.sessionStorage.removeItem(`hb-profile-handoff:${sessionId}`); } catch { /* Optional storage. */ }
+                    setProfileRequired(false);
                     seedLocale(localeForEventLanguage(data.session.language));
                     setEntry(data as EntryResponse);
                     setEntryError(null);
@@ -1762,10 +1784,18 @@ function SessionEntryGate({ sessionId }: { sessionId: string }) {
                 <div className="relative z-10 flex min-h-screen items-center justify-center px-4">
                     <div className="terminal-state">
                         <div className="terminal-state__icon">&#10022;</div>
-                        <h1 className="terminal-state__title">{copy.session.preparingRoom}</h1>
+                        <h1 className="terminal-state__title">{profileRequired
+                            ? (locale === 'es' ? 'Completá tu perfil' : 'Complete your profile')
+                            : copy.session.preparingRoom}</h1>
                         <p className="terminal-state__body">
-                            {entryError || copy.session.confirmingEntry}
+                            {profileRequired
+                                ? (locale === 'es' ? 'Agregá tu nombre real y tu nombre preferido para entrar.' : 'Add your real name and preferred name to enter.')
+                                : entryError || copy.session.confirmingEntry}
                         </p>
+                        {profileRequired ? <a
+                            href={`/api/account/login?flow=attendee&next=${encodeURIComponent(`/session/${sessionId}`)}`}
+                            className="event-button event-button--primary mt-4"
+                        >{locale === 'es' ? 'Continuar con Beacon Account' : 'Continue with Beacon Account'}</a> : null}
                         {entryError ? (
                             <button
                                 type="button"

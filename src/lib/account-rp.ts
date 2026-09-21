@@ -3,6 +3,7 @@ import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypt
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 
 import { prisma } from '@/lib/db';
+import { accountProfileClaims } from '@/lib/account-profile-claims';
 import {
     issueSessionToken,
     sessionCookieOptions,
@@ -24,6 +25,9 @@ export type AccountIdentity = {
     subject: string;
     sessionId: string;
     displayName: string | null;
+    email?: string | null;
+    emailVerified?: boolean | null;
+    profileComplete?: boolean | null;
     validatedAt: Date;
 };
 
@@ -299,7 +303,7 @@ export async function startAccountAuthorization(input: {
     authorizationUrl.searchParams.set('response_type', 'code');
     authorizationUrl.searchParams.set('client_id', config.clientId);
     authorizationUrl.searchParams.set('redirect_uri', accountCallbackUrl(input.origin));
-    authorizationUrl.searchParams.set('scope', 'openid profile');
+    authorizationUrl.searchParams.set('scope', 'openid profile email');
     authorizationUrl.searchParams.set('state', state);
     authorizationUrl.searchParams.set('nonce', nonce);
     authorizationUrl.searchParams.set('code_challenge', pkceChallenge(verifier));
@@ -326,13 +330,7 @@ function boundedCredential(value: unknown, label: string): string {
 }
 
 function profileDisplayName(payload: Record<string, unknown>): string | null {
-    const raw = typeof payload.name === 'string'
-        ? payload.name
-        : typeof payload.preferred_username === 'string'
-            ? payload.preferred_username
-            : '';
-    const name = raw.trim().replace(/\s+/g, ' ').slice(0, 60);
-    return name.length > 0 ? name : null;
+    return accountProfileClaims(payload).preferredName;
 }
 
 async function exchangeAuthorizationCode(input: {
@@ -422,6 +420,9 @@ async function exchangeAuthorizationCode(input: {
         subject,
         sessionId,
         displayName: profileDisplayName(userInfo),
+        email: accountProfileClaims(userInfo).email,
+        emailVerified: accountProfileClaims(userInfo).emailVerified,
+        profileComplete: accountProfileClaims(userInfo).profileComplete,
         validatedAt: new Date(),
     };
 }
@@ -493,6 +494,9 @@ export async function completeAccountAuthorization(input: {
                 accountSubject: identity.subject,
                 accountSessionId: identity.sessionId,
                 accountDisplayName: identity.displayName,
+                accountEmail: identity.email ?? null,
+                accountEmailVerified: identity.emailVerified ?? null,
+                accountProfileComplete: identity.profileComplete ?? null,
                 accountValidatedAt: identity.validatedAt,
                 expiresAt: new Date(now.getTime() + sessionCookieTtlSeconds() * 1000),
                 lastSeenAt: now,
@@ -548,6 +552,9 @@ export type AccountSessionCandidate = {
     accountSubject: string | null;
     accountSessionId: string | null;
     accountDisplayName: string | null;
+    accountEmail?: string | null;
+    accountEmailVerified?: boolean | null;
+    accountProfileComplete?: boolean | null;
     accountValidatedAt: Date | null;
 };
 
@@ -566,6 +573,9 @@ function identityFromCandidate(row: AccountSessionCandidate): AccountIdentity | 
         subject: row.accountSubject,
         sessionId: row.accountSessionId,
         displayName: row.accountDisplayName,
+        email: row.accountEmail ?? null,
+        emailVerified: row.accountEmailVerified ?? null,
+        profileComplete: row.accountProfileComplete ?? null,
         validatedAt: row.accountValidatedAt,
     };
 }
@@ -674,6 +684,9 @@ export async function validatedAccountIdentity(
             accountSubject: true,
             accountSessionId: true,
             accountDisplayName: true,
+            accountEmail: true,
+            accountEmailVerified: true,
+            accountProfileComplete: true,
             accountValidatedAt: true,
             revokedAt: true,
         },
