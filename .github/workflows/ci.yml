@@ -61,8 +61,6 @@ jobs:
       data_recovery: ${{ steps.classify.outputs.data_recovery }}
       workflow_review: ${{ steps.classify.outputs.workflow_review }}
       release_qualification: ${{ steps.classify.outputs.release_qualification }}
-      governance_only: ${{ steps.classify.outputs.governance_only }}
-      ownership_changed: ${{ steps.classify.outputs.ownership_changed }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
