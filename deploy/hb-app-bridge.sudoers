@@ -1,0 +1,12 @@
+Defaults:beacon-runner env_reset
+Defaults:beacon-runner !setenv
+
+Cmnd_Alias HARMONIC_BEACON_APP_BRIDGE = \
+  /usr/local/sbin/hb-app-bridge stage, \
+  /usr/local/sbin/hb-app-bridge stage-rollback, \
+  /usr/local/sbin/hb-app-bridge stage-reapply, \
+  /usr/local/sbin/hb-app-bridge apply, \
+  /usr/local/sbin/hb-app-bridge rollback, \
+  /usr/local/sbin/hb-app-bridge recover, \
+  /usr/local/sbin/hb-app-bridge status
+beacon-runner ALL=(root) NOPASSWD: HARMONIC_BEACON_APP_BRIDGE
