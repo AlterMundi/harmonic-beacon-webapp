@@ -249,6 +249,27 @@ build_candidate() {
   atomic_state "$state_tmp"
 }
 
+validate_staged_candidate() {
+  local tx source image image_id bridge_label revision
+  tx="$ROOT/transactions/$(permit '.permitId')"; source="$tx/source"; image="$(candidate_image)"
+  root_file "$tx/candidate.tar" 600
+  [ "$(stat -c '%s' "$tx/candidate.tar")" = "$(permit '.archiveBytes')" ] || die 'staged archive size mismatch'
+  [ "$(sha256 "$tx/candidate.tar")" = "$(permit '.archiveSha256')" ] || die 'staged archive digest mismatch'
+  [ "$(git get-tar-commit-id < "$tx/candidate.tar")" = "$(permit '.sourceSha')" ] || die 'staged archive revision mismatch'
+  [ "$(jq -er '.sourceSha' "$STATE")" = "$(permit '.sourceSha')" ] || die 'staged source state mismatch'
+  while IFS=$'\t' read -r migration expected; do
+    [ -f "$source/prisma/migrations/$migration/migration.sql" ] && [ ! -L "$source/prisma/migrations/$migration/migration.sql" ] || die "staged migration is missing or unsafe: $migration"
+    [ "$(sha256 "$source/prisma/migrations/$migration/migration.sql")" = "$expected" ] || die "staged migration bytes changed: $migration"
+  done < <(jq -r '.expectedMigrations[]|[.name,.sha256]|@tsv' "$PERMIT")
+  image_id="$(docker image inspect "$image" --format '{{.Id}}')" || die 'staged candidate image is missing'
+  bridge_label="$(docker image inspect "$image" --format '{{index .Config.Labels "com.harmonicbeacon.migration-bridge"}}')" || die 'cannot inspect staged candidate permit'
+  revision="$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" || die 'cannot inspect staged candidate revision'
+  [ "$image_id" = "$image" ] && [ "$bridge_label" = "$(permit '.permitId')" ] && [ "$revision" = "$(permit '.sourceSha')" ] || die 'staged candidate provenance mismatch'
+  [ "$(container_image beacon-app)" = "$(permit '.productionBaseAppImageId')" ] || die 'production app changed during staging interruption'
+  [ "$(container_image beacon-commerce-reconciler)" = "$(permit '.productionBaseWorkerImageId')" ] || die 'production worker changed during staging interruption'
+  [ "$(container_image beacon-postgres)" = "$(permit '.productionPostgresImageId')" ] || die 'production PostgreSQL changed during staging interruption'
+}
+
 create_stage_restore() {
   local database="$1" dump="$BACKUP_ROOT/staging-$(permit '.permitId' | cut -c1-24).dump" container_dump="/tmp/$database.dump"
   if [ "$TEST_MODE" = false ]; then mountpoint -q /mnt/beacon-data || die 'backup filesystem is not mounted'; fi
@@ -263,9 +284,10 @@ create_stage_restore() {
   docker exec hb-migration-rehearsal-postgres rm -f -- "$container_dump"
 }
 
-stage_candidate() {
+run_stage_rehearsal() {
   local image database state_path="$ROOT/staging-migration-state.json"
-  validate_permit; build_candidate; image="$(candidate_image)"; database="hb_restore_stage_$(permit '.permitId' | cut -c1-16)"
+  image="$(candidate_image)"; database="hb_restore_stage_$(permit '.permitId' | cut -c1-16)"
+  docker rm -f hb-migration-rehearsal-app hb-migration-rehearsal-worker >/dev/null 2>&1 || true
   create_stage_restore "$database"
   rehearsal_compose "$image" "$image" "$database" run --rm --no-deps migrate npx tsx scripts/release-migration-state.ts > "$state_path"
   assert_expected_migrations "$state_path" pending
@@ -276,6 +298,16 @@ stage_candidate() {
   wait_candidate_inside hb-migration-rehearsal-app "$(permit '.sourceSha')" "$STAGING_PROFILE" || die 'candidate rehearsal app failed'
   wait_worker hb-migration-rehearsal-worker || die 'candidate rehearsal worker failed'
   jq --arg database "$database" '.rehearsalDatabase=$database|.phase="staged"' "$STATE" > "$ROOT/state.stage.json"; atomic_state "$ROOT/state.stage.json"
+}
+stage_candidate() { validate_permit; build_candidate; run_stage_rehearsal; }
+stage_resume() {
+  validate_permit
+  phase_is staging
+  [ "$(jq -r '.fenceState' "$STATE")" = absent ] || die 'staging resume found a production fence'
+  [ "$(jq -r '.migrationAttemptedToProduction' "$STATE")" = false ] || die 'staging resume found a production migration attempt'
+  [ "$(jq -r '.migrationAppliedToProduction' "$STATE")" = false ] || die 'staging resume found an applied production migration'
+  validate_staged_candidate
+  run_stage_rehearsal
 }
 stage_rollback() {
   validate_permit; phase_is staged
@@ -498,7 +530,7 @@ rollback_candidate() {
 }
 status() { validate_permit false; root_file "$STATE" 600; jq '{permitId,phase,sourceSha,candidateImageId,migrationAttemptedToProduction,migrationAppliedToProduction,fenceState}' "$STATE"; }
 
-usage() { printf '%s\n' 'usage: hb-migration-bridge {stage|stage-rollback|stage-reapply|apply|rollback|recover|status}' >&2; exit 2; }
+usage() { printf '%s\n' 'usage: hb-migration-bridge {stage|stage-resume|stage-rollback|stage-reapply|apply|rollback|recover|status}' >&2; exit 2; }
 if [ "$TEST_MODE" = true ] && [ "${HB_MIGRATION_BRIDGE_SOURCE_ONLY:-}" = 1 ]; then return 0 2>/dev/null || exit 0; fi
 [ "$#" -eq 1 ] || usage
 if [ "$EUID" -eq 0 ]; then root_file "$0" 755; elif [ "$TEST_MODE" = false ]; then die 'must run as root through restricted sudo'; fi
@@ -508,6 +540,6 @@ safe_parents "$SHARED_LOCK"
 install -d -o root -g root -m 0700 "$ROOT" "$ROOT/inbox" "$ROOT/transactions"
 exec 9>"$SHARED_LOCK"; flock -n 9 || die 'another bridge operation is active'
 case "$1" in
-  stage) stage_candidate;; stage-rollback) stage_rollback;; stage-reapply) stage_reapply;;
+  stage) stage_candidate;; stage-resume) stage_resume;; stage-rollback) stage_rollback;; stage-reapply) stage_reapply;;
   apply) apply_candidate;; rollback) rollback_candidate;; recover) recover;; status) status;; *) usage;;
 esac

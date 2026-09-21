@@ -20,7 +20,7 @@ test('migration bridge is separate from the still-recoverable v1 transaction', a
 test('sudo authority is a closed argument-free verb set', async () => {
   const sudoers = await source('deploy/hb-migration-bridge.sudoers');
   assert.doesNotMatch(sudoers, /hb-migration-bridge \*/);
-  for (const verb of ['stage','stage-rollback','stage-reapply','apply','rollback','recover','status']) {
+  for (const verb of ['stage','stage-resume','stage-rollback','stage-reapply','apply','rollback','recover','status']) {
     assert.match(sudoers, new RegExp(`/usr/local/sbin/hb-migration-bridge ${verb}`));
   }
   assert.doesNotMatch(sudoers, /\bdocker\b|\b(?:ba)?sh\b/);
@@ -90,6 +90,22 @@ test('forward grant drain Compose preserves the optional identity-secret fallbac
   assert.match(rendered.stdout, /LIVEKIT_API_KEY: test-key/);
   assert.match(rendered.stdout, /LIVEKIT_API_SECRET: test-secret/);
   assert.match(rendered.stdout, /LIVEKIT_IDENTITY_SECRET: ""/);
+});
+
+test('every Compose tmpfs declaration renders as exactly one mount path', async () => {
+  for (const file of ['deploy/hb-migration-bridge-production.compose.yml','deploy/hb-migration-bridge-rehearsal.compose.yml']) {
+    const compose = await source(file); const declarations = [...compose.matchAll(/^\s+tmpfs: (.+)$/gm)];
+    assert.ok(declarations.length > 0, `${file} must exercise tmpfs parsing`);
+    for (const [, declaration] of declarations) {
+      const rendered = spawnSync('docker', ['compose', '-f', '-', 'config', '--format', 'json'], {
+        input:`services:\n  probe:\n    image: scratch\n    tmpfs: ${declaration}\n`, encoding:'utf8',
+      });
+      assert.equal(rendered.status, 0, `${file}: ${rendered.stderr}`);
+      const mounts = JSON.parse(rendered.stdout).services.probe.tmpfs;
+      assert.equal(mounts.length, 1, `${file}: ${declaration}`);
+      assert.match(mounts[0], /^\/tmp:size=(32|64)m,mode=1777$/);
+    }
+  }
 });
 
 test('isolated rehearsal has no production secret bundles, PMP, or LiveKit network', async () => {
@@ -252,4 +268,42 @@ test('runtime profile forwards supported false feature flags without jq truthine
   await rm(sandbox, {recursive:true, force:true});
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout.trim(), 'false false');
+});
+
+async function stageResumeScenario(phase) {
+  const sandbox = await mkdtemp(join(tmpdir(), 'hb-migration-stage-resume-'));
+  const stateDir = join(sandbox, 'var/lib/harmonic-beacon/migration-bridge-v2');
+  await mkdir(stateDir, {recursive:true});
+  for (const path of [join(sandbox,'var'),join(sandbox,'var/lib'),join(sandbox,'var/lib/harmonic-beacon'),stateDir]) await chmod(path, 0o700);
+  const permitId = 'a'.repeat(64); const logPath = join(sandbox, 'operations.log');
+  await writeFile(join(stateDir, 'state.json'), JSON.stringify({permitId,phase,
+    candidateImageId:`sha256:${'b'.repeat(64)}`,fenceState:'absent',
+    migrationAttemptedToProduction:false,migrationAppliedToProduction:false}), {mode:0o600});
+  const helper = join(root, 'deploy/hb-migration-bridge-root');
+  const shell = String.raw`
+    source "$HELPER"
+    log() { printf '%s\n' "$1" >> "$HB_LOG"; }
+    validate_permit() { :; }
+    permit() { printf '%s\n' '${permitId}'; }
+    build_candidate() { log build; }
+    validate_staged_candidate() { log validate-staged; }
+    run_stage_rehearsal() { log rehearse; }
+    stage_resume
+  `;
+  const result = spawnSync('bash', ['-c', shell], {encoding:'utf8', env:{...process.env,
+    HELPER:helper, HB_LOG:logPath, HB_MIGRATION_BRIDGE_TEST_ROOT:sandbox, HB_MIGRATION_BRIDGE_SOURCE_ONLY:'1'}});
+  const operations = (await readFile(logPath, 'utf8').catch(() => '')).trim().split('\n').filter(Boolean);
+  await rm(sandbox, {recursive:true, force:true}); return {result,operations};
+}
+
+test('stage resume revalidates and rehearses the existing candidate without rebuilding', async () => {
+  const {result,operations} = await stageResumeScenario('staging');
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(operations, ['validate-staged','rehearse']);
+});
+
+test('stage resume rejects every non-staging phase before candidate reuse', async () => {
+  const {result,operations} = await stageResumeScenario('staged');
+  assert.notEqual(result.status, 0, result.stderr);
+  assert.deepEqual(operations, []);
 });

@@ -3,6 +3,7 @@ Defaults:beacon-runner !setenv
 
 Cmnd_Alias HARMONIC_BEACON_MIGRATION_BRIDGE = \
   /usr/local/sbin/hb-migration-bridge stage, \
+  /usr/local/sbin/hb-migration-bridge stage-resume, \
   /usr/local/sbin/hb-migration-bridge stage-rollback, \
   /usr/local/sbin/hb-migration-bridge stage-reapply, \
   /usr/local/sbin/hb-migration-bridge apply, \

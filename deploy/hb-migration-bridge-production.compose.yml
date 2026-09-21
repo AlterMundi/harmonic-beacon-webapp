@@ -70,7 +70,7 @@ services:
     security_opt: [no-new-privileges:true]
     cap_drop: [ALL]
     read_only: true
-    tmpfs: [/tmp:size=32m,mode=1777]
+    tmpfs: ["/tmp:size=32m,mode=1777"]
 
   grant-drain:
     image: ${HB_MIGRATION_BRIDGE_IMAGE:?immutable candidate image required}
@@ -88,7 +88,7 @@ services:
     security_opt: [no-new-privileges:true]
     cap_drop: [ALL]
     read_only: true
-    tmpfs: [/tmp:size=32m,mode=1777]
+    tmpfs: ["/tmp:size=32m,mode=1777"]
 
   preflight:
     image: ${HB_MIGRATION_BRIDGE_IMAGE:?immutable candidate image required}
@@ -103,7 +103,7 @@ services:
     security_opt: [no-new-privileges:true]
     cap_drop: [ALL]
     read_only: true
-    tmpfs: [/tmp:size=32m,mode=1777]
+    tmpfs: ["/tmp:size=32m,mode=1777"]
 
 networks:
   beacon:

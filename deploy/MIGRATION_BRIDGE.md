@@ -64,6 +64,16 @@ sudo -u beacon-runner sudo -n /usr/local/sbin/hb-migration-bridge stage-reapply
 sudo -u beacon-runner sudo -n /usr/local/sbin/hb-migration-bridge status
 ```
 
+If `stage` is interrupted after its immutable candidate image and `staging`
+state were persisted, `stage-resume` is the only reuse path. It accepts only
+that same permit and phase, rechecks the copied archive, migration bytes,
+candidate image labels and unchanged production app/worker endpoints, then
+recreates the isolated restore and rehearsal without rebuilding the image.
+
+```bash
+sudo -u beacon-runner sudo -n /usr/local/sbin/hb-migration-bridge stage-resume
+```
+
 Record the external candidate acceptance as the root-owned rehearsal receipt,
 then install a fresh, short-lived v2 activation binding its digest, candidate
 image and both production base images. Repository tests prove the helper's
