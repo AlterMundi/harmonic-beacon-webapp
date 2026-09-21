@@ -117,12 +117,15 @@ The #567 rollout has two phases; neither invalidates sessions. Phase one adds
 the nullable column and defers profile fallback until commit, preserving the
 existing two-scope DB constraint and provisioning. Its readiness accepts exactly
 `openid profile` or `openid profile email`, so it can later serve as rollback.
-Prove this image in staging and production, including recovery to the prior
-image, before a second migration expands clients to three scopes. Only then
-deploy the new Live consumer requesting email. After phase two, rollback uses
-the phase-one runtime without rerunning its two-scope provisioner; never
-redeploy that older provisioning command against the three-scope constraint.
-Retain the additive schema and declared private names on runtime rollback.
+The exact phase-one image `3bca8a0fd9261e25c6001686c5f65bd153cf4f3a`
+must first be proven in production as the working rollback target. That
+production proof is still pending, so phase two remains inactive and must not
+deploy. The second migration then changes enabled clients to three scopes in
+the same transaction that replaces the constraint. After phase two, rollback
+uses the phase-one runtime without rerunning its two-scope provisioner; never
+run that old provisioner against the three-scope constraint. Retain the
+additive schema and declared private names on runtime rollback. Only then deploy
+the new Live consumer requesting email.
 
 Current-device logout revokes its central session and OAuth tokens, then emits
 signed two-minute front-channel URLs to every RP for that environment.
