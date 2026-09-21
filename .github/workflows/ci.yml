@@ -48,6 +48,7 @@ jobs:
     name: impact
     runs-on: ubuntu-latest
     outputs:
+      artifact_name: ${{ steps.classify.outputs.artifact_name }}
       lint_and_build: ${{ steps.classify.outputs.lint_and_build }}
       test: ${{ steps.classify.outputs.test }}
       analytics: ${{ steps.classify.outputs.analytics }}
@@ -77,6 +78,7 @@ jobs:
           FORCE_ALL: ${{ inputs.force_all }}
         run: |
           set -euo pipefail
+          printf 'artifact_name=change-impact-%s-%s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
           base="$BASE_SHA"
           head="$HEAD_SHA"
           [[ "$head" =~ ^[0-9a-f]{40}$ ]]
@@ -136,7 +138,7 @@ jobs:
           scripts/ops/__tests__/required-checks.test.mjs
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: change-impact-${{ github.run_id }}-${{ github.run_attempt }}
+          name: ${{ steps.classify.outputs.artifact_name }}
           path: impact-plan.json
           if-no-files-found: error
 
@@ -435,9 +437,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      # A failed-jobs rerun retains the successful producer's original outputs.
+      # Bind to that artifact, not the consumer's newer run_attempt.
+      - name: Require the producing impact job's artifact
+        env:
+          IMPACT_ARTIFACT: ${{ needs.impact.outputs.artifact_name }}
+        run: '[[ "$IMPACT_ARTIFACT" =~ ^change-impact-${GITHUB_RUN_ID}-[1-9][0-9]*$ ]]'
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          name: change-impact-${{ github.run_id }}-${{ github.run_attempt }}
+          name: ${{ needs.impact.outputs.artifact_name }}
       - name: Reject a result set other than the exact derived hosted jobs
         env:
           IMPACT_RESULT: ${{ needs.impact.result }}
