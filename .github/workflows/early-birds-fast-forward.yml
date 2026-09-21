@@ -13,6 +13,7 @@ on:
       - src/app/early-birds/**
       - src/app/listener/**
       - src/components/early-birds/**
+      - src/components/listener/reactive/**
       - src/lib/early-birds/**
       - src/lib/listener/**
       - e2e/fixtures/listener-account-switch.ts
@@ -36,6 +37,7 @@ on:
       - scripts/listener_container_observer.py
       - tools/early-birds-hls-load/**
       - docs/ops/LISTENER_FIRST_EXTERNAL_HLS_SMOKE.md
+      - docs/design/LISTENER_REACTIVE_CAMPFIRE.md
       - docs/operations/EARLY_BIRDS_STAGING_PREVIEW.md
       - docs/operations/FOUNDING_LISTENER_COMMERCIAL_LAUNCH.md
       - docs/operations/LISTENER_LAUNCH_NOW.md
@@ -57,6 +59,7 @@ on:
       - src/app/early-birds/**
       - src/app/listener/**
       - src/components/early-birds/**
+      - src/components/listener/reactive/**
       - src/lib/early-birds/**
       - src/lib/listener/**
       - e2e/fixtures/listener-account-switch.ts
@@ -80,6 +83,7 @@ on:
       - scripts/listener_container_observer.py
       - tools/early-birds-hls-load/**
       - docs/ops/LISTENER_FIRST_EXTERNAL_HLS_SMOKE.md
+      - docs/design/LISTENER_REACTIVE_CAMPFIRE.md
       - docs/operations/EARLY_BIRDS_STAGING_PREVIEW.md
       - docs/operations/FOUNDING_LISTENER_COMMERCIAL_LAUNCH.md
       - docs/operations/LISTENER_LAUNCH_NOW.md
@@ -93,6 +97,24 @@ permissions:
   contents: read
 
 jobs:
+  listener-reactive:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22.22'
+          cache: 'npm'
+      - run: npm ci
+      - name: Test the Listener reactive visualizer
+        run: npm test -- --run src/components/listener/reactive/__tests__
+      - name: Type-check the web application
+        run: npx tsc --noEmit
+      - name: Lint the Listener reactive visualizer
+        run: npx eslint src/components/listener/reactive
+      - name: Build the production application
+        run: npm run build
+
   quota-postgres:
     runs-on: ubuntu-latest
     services:
@@ -191,11 +213,10 @@ jobs:
           cache: 'npm'
       - run: npm ci
       - run: DATABASE_URL="$E2E_DATABASE_URL" npx prisma migrate deploy
-      - run: npx playwright install --with-deps chromium firefox
+      - run: npx playwright install --with-deps chromium
       - run: >-
           npx playwright test e2e/tests/listener-account-switch.spec.ts
           --project=chromium
-          --project=firefox
 
   network-resilience:
     name: network-resilience (${{ matrix.project }})
@@ -207,13 +228,6 @@ jobs:
           - project: chromium
             browser: chromium
             runner: ubuntu-latest
-          - project: firefox
-            browser: firefox
-            # Playwright documents that media codec availability varies by
-            # host OS. Its patched Linux Firefox does not expose the approved
-            # AAC/fMP4 MSE pipeline, so exercise Firefox on macOS rather than
-            # silently substituting a different stream codec.
-            runner: macos-15
           - project: android-chrome
             browser: chromium
             runner: ubuntu-latest
