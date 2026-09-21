@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import test from 'node:test';
+import { parse } from 'yaml';
 
 const ROOT = process.cwd();
 const read = (path) => readFileSync(path, 'utf8');
@@ -159,13 +160,13 @@ test('repair: every external action is immutable with explicit minimal workflow 
 });
 
 test('repair: impact installs locked dependencies before shared operations tooling', () => {
-  const workflow = read('.github/workflows/ci.yml');
-  const impact = section(workflow, '  impact:\n', '\n  lint-and-build:\n');
-  const installIndex = impact.indexOf('- run: npm ci');
-  const testIndex = impact.indexOf('run: npm run test:ops-tooling');
+  const steps = parse(read('.github/workflows/ci.yml')).jobs.impact.steps;
+  const installIndex = steps.findIndex(step => step.run === 'npm ci');
+  const testIndex = steps.findIndex(step => step.run === 'npm run test:ops-tooling');
   assert.notEqual(installIndex, -1, 'impact npm ci is missing');
   assert.notEqual(testIndex, -1, 'impact operations-tooling test is missing');
   assert.ok(installIndex < testIndex);
+  assert.equal(steps[installIndex].if, steps[testIndex].if, 'dependency install and dependent tooling share the same execution condition');
 });
 
 test('repair: hosted jobs install and address only locked dependency trees', () => {
