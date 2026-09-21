@@ -186,19 +186,25 @@ test.describe('live continuity without capture', () => {
         expect(await expectDeniedThumbnailCapture(page, 1)).toEqual(captureBefore);
         const failed = await receipt(page, testInfo, 'native-failure');
         const rejected = await nativeOutput();
-        // WebKit may advance currentTime briefly before pause takes effect. The
-        // rejection contract is the same two live sources, still paused and
-        // without autoplay; an exact clock equality would be fixture timing.
-        const withoutClock = (outputs: Awaited<ReturnType<typeof nativeOutput>>) => outputs.map(
-            ({ paused, autoplay, tracks }) => ({ paused, autoplay, tracks }),
+        // WebKit may dispatch another native play event between two reads and
+        // pause it asynchronously. Compare durable source identity separately
+        // from the instantaneous paused flag, then poll the real native state.
+        const sourceShape = (outputs: Awaited<ReturnType<typeof nativeOutput>>) => outputs.map(
+            ({ autoplay, tracks }) => ({ autoplay, tracks }),
         );
-        const blockedShape = withoutClock(blocked);
-        expect(withoutClock(rejected)).toEqual(blockedShape);
+        const blockedShape = sourceShape(blocked);
+        expect(sourceShape(rejected)).toEqual(blockedShape);
+        await expect.poll(async () => (await nativeOutput()).every(output => output.paused), {
+            message: 'failed activation must leave both native outputs paused',
+        }).toBe(true);
         // Release in the retry click's capture phase. Releasing before locator
         // actionability allows a late LiveKit play() to recover legitimately,
         // remove the CTA, and turn this assertion into a race against success.
         await page.evaluate(() => window.allowFixturePlaybackOnNextClick());
-        expect(withoutClock(await nativeOutput())).toEqual(blockedShape);
+        expect(sourceShape(await nativeOutput())).toEqual(blockedShape);
+        await expect.poll(async () => (await nativeOutput()).every(output => output.paused), {
+            message: 'arming the retry click must not release native playback early',
+        }).toBe(true);
         await page.getByRole('button', { name: START_AUDIO }).click();
         await expectNativeAudioAdvancing(page, 2);
         await expectEffectiveAudioReady(page);
