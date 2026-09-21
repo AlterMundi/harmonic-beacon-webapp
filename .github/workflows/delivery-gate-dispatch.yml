@@ -93,26 +93,27 @@ jobs:
           }
 
           reconcile_pr() {
-            local pr_number="$1" pr merge_sha head_sha gate_pages workflow_pages
+            local pr_number="$1" pr base_ref head_sha gate_context gate_pages workflow_pages
             local gate gate_created gate_state gate_run_id gate_run_state
             local latest_workflow_update active_workflow_count
             pr="$(api "repos/$REPOSITORY/pulls/$pr_number")" || return 1
             [ "$(jq -r '.state' <<<"$pr")" = open ] || return 0
-            case "$(jq -r '.base.ref' <<<"$pr")" in main|release) ;; *) return 0 ;; esac
-            merge_sha="$(jq -r '.merge_commit_sha' <<<"$pr")"
+            base_ref="$(jq -r '.base.ref' <<<"$pr")"
+            case "$base_ref" in main|release) ;; *) return 0 ;; esac
             head_sha="$(jq -r '.head.sha' <<<"$pr")"
-            [[ "$merge_sha" =~ ^[0-9a-f]{40}$ ]] || return 1
             [[ "$head_sha" =~ ^[0-9a-f]{40}$ ]] || return 1
+            gate_context="delivery-gate-$base_ref"
 
             gate_pages="$(api --paginate --slurp \
               -H 'Accept: application/vnd.github+json' \
-              "repos/$REPOSITORY/commits/$merge_sha/statuses?per_page=100")" || return 1
+              "repos/$REPOSITORY/commits/$head_sha/statuses?per_page=100")" || return 1
             workflow_pages="$(api --paginate --slurp \
               -H 'Accept: application/vnd.github+json' \
               "repos/$REPOSITORY/actions/runs?head_sha=$head_sha&event=pull_request&per_page=100")" || return 1
             gate="$(jq -c \
               --arg prefix "https://github.com/$REPOSITORY/actions/runs/" \
-              '[.[][] | select(.context == "delivery-gate"
+              --arg context "$gate_context" \
+              '[.[][] | select(.context == $context
                 and (.id | type) == "number"
                 and .creator.login == "github-actions[bot]"
                 and ((.target_url // "") | startswith($prefix))
@@ -141,8 +142,8 @@ jobs:
                 || printf unavailable)"
             fi
 
-            # A missing merge status, a regenerated merge, or constituent
-            # evidence newer than the aggregate needs one fresh exact-base read.
+            # A missing branch-qualified head status or constituent evidence
+            # newer than the aggregate needs one fresh exact-base read.
             # A completed evaluator that left pending after every constituent
             # stopped is also stale (including a crash after its first write).
             if [ -z "$gate_created" ] \

@@ -895,14 +895,15 @@ test('privileged delivery authority is never loaded by workflow_run from the def
   assert.doesNotMatch(workflow, /checkout[^\n]*event_head|node[^\n]*event_head/);
   assert.match(workflow, /id: target/);
   assert.match(workflow, /base_sha=.*\.base\.sha/);
-  assert.match(workflow, /merge_sha=.*\.merge_commit_sha/);
+  assert.doesNotMatch(workflow, /merge_sha=.*\.merge_commit_sha/);
   assert.match(workflow, /ref: \$\{\{ steps\.target\.outputs\.base_sha \}\}/);
   assert.match(workflow, /evaluator_base=.*git rev-parse HEAD/);
   assert.match(workflow, /evaluatorBaseSha.*evaluator_base/);
   assert.match(workflow, /currentMergeSha.*current_merge/);
   assert.match(workflow, /final_pr=.*repos\/\$REPOSITORY\/pulls\/\$pr_number/);
-  assert.match(workflow, /final_merge=.*\.merge_commit_sha/);
-  assert.match(workflow, /post_status success "\$description" "\$final_merge"/);
+  assert.doesNotMatch(workflow, /final_merge=.*\.merge_commit_sha/);
+  assert.match(workflow, /context="delivery-gate-\$expected_base"/);
+  assert.match(workflow, /post_status success "\$description" "\$final_head"/);
   assert.doesNotMatch(workflow, /post_status success "\$description" "\$event_head"/);
   assert.doesNotMatch(workflow, /ref:.*github\.sha/);
   assert.match(workflow, /previous_filename/);
@@ -1024,30 +1025,12 @@ esac
     assert.match(readFileSync(ghLog, 'utf8'),
       /--method POST repos\/AlterMundi\/harmonic-beacon-webapp\/actions\/workflows\/delivery-gate\.yml\/dispatches -f ref=main -f inputs\[pr_number\]=534 -f inputs\[status_context\]=delivery-gate/);
 
-    const statusStart = authority.indexOf('          post_status() {');
-    const statusEnd = authority.indexOf('\n          initial_pr=', statusStart);
-    assert.ok(statusStart >= 0 && statusEnd > statusStart, 'initial authority status transition must be present');
-    const initialStatusScript = authority.slice(statusStart, statusEnd)
-      .split('\n').map((line) => line.replace(/^ {10}/, '')).join('\n');
-    const pending = spawnSync('bash', ['-c', initialStatusScript], {
-      encoding: 'utf8',
-      env: {
-        ...process.env,
-        PATH: `${temp}:${process.env.PATH}`,
-        GH_LOG: ghLog,
-        REPOSITORY: 'AlterMundi/harmonic-beacon-webapp',
-        RUN_URL: 'https://github.com/AlterMundi/harmonic-beacon-webapp/actions/runs/9002',
-        context: 'delivery-gate',
-        current_merge: MERGE,
-      },
-    });
-    assert.equal(pending.status, 0, pending.stderr);
-    const statusPosts = readFileSync(ghLog, 'utf8').split('\n')
-      .filter((line) => line.includes(`/statuses/${MERGE}`));
-    assert.equal(statusPosts.length, 1);
-    assert.match(statusPosts[0], /-f state=pending -f context=delivery-gate/);
-    assert.deepEqual(['success', ...statusPosts.map((line) => line.match(/-f state=([^ ]+)/)?.[1])],
-      ['success', 'pending']);
+    const identityBound = authority.indexOf('[ "$initial_base_ref" = "$expected_base" ]');
+    const firstPending = authority.indexOf("post_status pending 'evaluating exact current-base required checks' \"$initial_head\"");
+    assert.ok(identityBound >= 0 && firstPending > identityBound,
+      'rerun pending must be written to the rebound current head');
+    assert.match(authority, /context="delivery-gate-\$expected_base"/);
+    assert.doesNotMatch(authority, /post_status pending[^\n]+\$current_merge/);
   } finally {
     rmSync(temp, { recursive: true, force: true });
   }

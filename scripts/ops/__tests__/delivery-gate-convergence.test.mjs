@@ -27,7 +27,10 @@ function authorityScript(baseSha) {
     .replaceAll('${{ steps.target.outputs.base_sha }}', baseSha);
 }
 
-function evaluateAuthority({ state, drift = false, partial = false, compareFailure = false }) {
+function evaluateAuthority({
+  state, headDrift = false, retarget = false, mergeDrift = false,
+  partial = false, compareFailure = false,
+}) {
   const temp = mkdtempSync(join(tmpdir(), 'delivery-gate-authority-'));
   const fakeGh = join(temp, 'gh');
   const fakeNode = join(temp, 'node');
@@ -36,6 +39,8 @@ function evaluateAuthority({ state, drift = false, partial = false, compareFailu
   const summary = join(temp, 'summary');
   const base = spawnSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8', cwd: ROOT }).stdout.trim();
   const changedMerge = '5555555555555555555555555555555555555555';
+  const changedHead = '6666666666666666666666666666666666666666';
+  const changedBase = '7777777777777777777777777777777777777777';
   writeFileSync(fakeGh, `#!/usr/bin/env bash
 set -euo pipefail
 case "$*" in
@@ -50,8 +55,11 @@ case "$*" in
     ;;
   *"pulls/534"*)
     reads=0; [ ! -f "$PR_READS" ] || reads="$(cat "$PR_READS")"; reads=$((reads + 1)); printf '%s' "$reads" > "$PR_READS"
-    merge='${MERGE}'; if [ "${drift ? 'yes' : 'no'}" = yes ] && [ "$reads" -ge 3 ]; then merge='${changedMerge}'; fi
-    printf '{"number":534,"state":"open","created_at":"2026-09-20T10:00:00Z","changed_files":1,"merge_commit_sha":"%s","head":{"sha":"${HEAD}"},"base":{"ref":"main","sha":"${base}"}}\\n' "$merge"
+    merge='${MERGE}'; head='${HEAD}'; base_ref=main; base_sha='${base}'
+    if [ "${mergeDrift ? 'yes' : 'no'}" = yes ] && [ "$reads" -ge 3 ]; then merge='${changedMerge}'; fi
+    if [ "${headDrift ? 'yes' : 'no'}" = yes ] && [ "$reads" -ge 3 ]; then head='${changedHead}'; fi
+    if [ "${retarget ? 'yes' : 'no'}" = yes ] && [ "$reads" -ge 3 ]; then base_ref=release; base_sha='${changedBase}'; fi
+    printf '{"number":534,"state":"open","created_at":"2026-09-20T10:00:00Z","changed_files":1,"merge_commit_sha":"%s","head":{"sha":"%s"},"base":{"ref":"%s","sha":"%s"}}\\n' "$merge" "$head" "$base_ref" "$base_sha"
     ;;
   *"issues/534/timeline"*) printf '%s\\n' '[[]]' ;;
   *"commits/${HEAD}/check-runs"*)
@@ -85,13 +93,13 @@ esac
         ...process.env, PATH: `${temp}:${process.env.PATH}`,
         GH_LOG: log, PR_READS: prReads, EVALUATION_STATE: state,
         REPOSITORY: 'AlterMundi/harmonic-beacon-webapp', PR_NUMBER: '534', EXPECTED_BASE: 'main',
-        EVENT_HEAD: HEAD, EVENT_BASE: base, INITIAL_MERGE: MERGE, CONTEXT: 'delivery-gate',
+        EVENT_HEAD: HEAD, EVENT_BASE: base, INITIAL_MERGE: MERGE, CONTEXT: 'delivery-gate-main',
         RUN_URL: 'https://github.com/AlterMundi/harmonic-beacon-webapp/actions/runs/9002',
         GITHUB_STEP_SUMMARY: summary,
       },
     });
     const statuses = readFileSync(log, { encoding: 'utf8', flag: 'a+' }).split('\n').filter(Boolean);
-    return { result, statuses, changedMerge };
+    return { result, statuses, changedMerge, changedHead, changedBase };
   } finally {
     rmSync(temp, { recursive: true, force: true });
   }
@@ -107,7 +115,7 @@ function reconcile({
   const log = join(temp, 'gh.log');
   const defaultGate = gateCreated ? [{
     id: 9001,
-    context: 'delivery-gate', state: gateState, created_at: gateCreated,
+    context: 'delivery-gate-main', state: gateState, created_at: gateCreated,
     creator: { login: trustedGate ? 'github-actions[bot]' : 'untrusted' },
     target_url: 'https://github.com/AlterMundi/harmonic-beacon-webapp/actions/runs/9001',
   }] : [];
@@ -121,7 +129,7 @@ case "$*" in
   *"pulls/534"*)
     printf '%s\\n' '{"number":534,"state":"open","merge_commit_sha":"${MERGE}","head":{"sha":"${HEAD}"},"base":{"ref":"main","sha":"${BASE}"}}'
     ;;
-  *"commits/${MERGE}/statuses"*)
+  *"commits/${HEAD}/statuses"*)
     printf '%s\\n' '${statusPages}'
     ;;
   *"actions/runs?head_sha=${HEAD}"*)
@@ -171,17 +179,19 @@ test('authority is a short one-shot evaluation with bounded API retry', () => {
   assert.match(workflow, /for attempt in 0; do/);
   assert.doesNotMatch(workflow, /seq 0 95|sleep 60|timeout-minutes: 100/);
   assert.match(workflow, /for attempt in 1 2 3; do/);
-  assert.match(workflow, /post_status failure "\$description" "\$current_merge"\n\s+exit 1/);
-  assert.match(workflow, /post_status pending "\$description" "\$current_merge"\n\s+exit 0/);
+  assert.match(workflow, /post_status failure "\$description" "\$current_head"\n\s+exit 1/);
+  assert.match(workflow, /post_status pending "\$description" "\$current_head"\n\s+exit 0/);
   assert.match(workflow, /final_evidence="\$\(fetch_evidence_snapshot\)"/);
 });
 
-test('authority green publishes success on the unchanged current merge and exits', () => {
+test('authority derives protected contexts and publishes success on the stable head', () => {
+  const workflow = readFileSync(AUTHORITY_PATH, 'utf8');
+  assert.match(workflow, /context="delivery-gate-\$expected_base"/);
   const { result, statuses } = evaluateAuthority({ state: 'success' });
   assert.equal(result.status, 0, result.stderr);
   assert.equal(statuses.length, 2);
-  assert.match(statuses[0], new RegExp(`statuses/${MERGE}.*state=pending`));
-  assert.match(statuses[1], new RegExp(`statuses/${MERGE}.*state=success`));
+  assert.match(statuses[0], new RegExp(`statuses/${HEAD}.*state=pending.*context=delivery-gate-main`));
+  assert.match(statuses[1], new RegExp(`statuses/${HEAD}.*state=success.*context=delivery-gate-main`));
 });
 
 test('authority terminal failure publishes failure and exits without monitoring', () => {
@@ -198,10 +208,26 @@ test('authority pending publishes pending and terminates successfully', () => {
   assert.ok(statuses.every((line) => line.includes('state=pending')));
 });
 
-test('authority identity drift cannot publish success', () => {
-  const { result, statuses } = evaluateAuthority({ state: 'success', drift: true });
+test('authority current-head drift cannot publish success', () => {
+  const { result, statuses, changedHead } = evaluateAuthority({ state: 'success', headDrift: true });
   assert.equal(result.status, 1);
   assert.equal(statuses.some((line) => line.includes('state=success')), false);
+  assert.match(statuses.at(-1), new RegExp(`statuses/${changedHead}.*state=pending`));
+});
+
+test('authority retarget drift cannot publish success under either branch context', () => {
+  const { result, statuses } = evaluateAuthority({ state: 'success', retarget: true });
+  assert.equal(result.status, 1);
+  assert.equal(statuses.some((line) => line.includes('state=success')), false);
+  assert.ok(statuses.every((line) => line.includes('context=delivery-gate-main')));
+});
+
+test('synthetic merge regeneration does not strand a head-qualified success', () => {
+  const { result, statuses } = evaluateAuthority({ state: 'success', mergeDrift: true });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(statuses.length, 2);
+  assert.ok(statuses.every((line) => line.includes(`statuses/${HEAD}`)));
+  assert.match(statuses[1], /state=success/);
 });
 
 test('partial API evidence leaves pending and cannot publish success', () => {
@@ -220,9 +246,10 @@ test('compare API exhaustion leaves pending instead of publishing obsolete-base 
 
 test('every result is rebound to the live PR identity before its status write', () => {
   const workflow = readFileSync(AUTHORITY_PATH, 'utf8');
-  assert.match(workflow, /post_status pending[^\n]+\$current_merge[\s\S]+initial_merge=.*\.merge_commit_sha[\s\S]+\[ "\$initial_merge" = "\$current_merge" \]/);
-  assert.match(workflow, /if \[ "\$state" = failure \]; then[\s\S]+final_pr=.*pulls\/\$pr_number[\s\S]+\.merge_commit_sha[\s\S]+post_status failure/);
+  assert.match(workflow, /\[ "\$initial_base_ref" = "\$expected_base" \][\s\S]+post_status pending[^\n]+\$initial_head/);
+  assert.match(workflow, /if \[ "\$state" = failure \]; then[\s\S]+final_pr=.*pulls\/\$pr_number[\s\S]+\.head\.sha[\s\S]+post_status failure/);
   assert.match(workflow, /final_evidence_not_before[\s\S]+canonical_evidence_snapshot[\s\S]+post_status success/);
+  assert.doesNotMatch(workflow, /post_status (?:pending|failure|success)[^\n]+\$(?:current|final)_merge/);
 });
 
 test('rerun starts, completions, and PR identity changes all wake the bounded evaluator', () => {
@@ -239,7 +266,7 @@ test('rerun starts, completions, and PR identity changes all wake the bounded ev
   assert.match(dispatcher, /actions\/runs\/"/);
 });
 
-test('reconciliation dispatches when the regenerated merge has no aggregate status', () => {
+test('reconciliation dispatches when the branch-qualified head has no aggregate status', () => {
   const { result, calls } = reconcile();
   assert.equal(result.status, 0, result.stderr);
   assert.equal(calls.length, 1);
@@ -265,7 +292,7 @@ test('reconciliation leaves a current aggregate alone', () => {
 test('reconciliation selects the greatest status id when transitions share one timestamp', () => {
   const timestamp = '2026-09-20T13:00:00Z';
   const status = (id, state) => ({
-    id, context: 'delivery-gate', state, created_at: timestamp,
+    id, context: 'delivery-gate-main', state, created_at: timestamp,
     creator: { login: 'github-actions[bot]' },
     target_url: 'https://github.com/AlterMundi/harmonic-beacon-webapp/actions/runs/9001',
   });
@@ -311,6 +338,22 @@ test('reconciliation does not accept a same-name status from an untrusted writer
   assert.equal(calls.length, 1);
 });
 
+test('reconciliation ignores a successful gate for the other protected branch', () => {
+  const { result, calls } = reconcile({
+    gateStatuses: [{
+      id: 9001,
+      context: 'delivery-gate-release',
+      state: 'success',
+      created_at: '2026-09-20T13:00:00Z',
+      creator: { login: 'github-actions[bot]' },
+      target_url: 'https://github.com/AlterMundi/harmonic-beacon-webapp/actions/runs/9001',
+    }],
+    workflowUpdated: '2026-09-20T12:00:00Z',
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(calls.length, 1);
+});
+
 test('one malformed PR is reported without starving later reconciliation', () => {
   const temp = mkdtempSync(join(tmpdir(), 'delivery-gate-isolation-'));
   const fakeGh = join(temp, 'gh');
@@ -322,12 +365,12 @@ case "$*" in
     printf '%s\\n' '[[{"number":533,"base":{"ref":"main"}},{"number":534,"base":{"ref":"main"}}]]'
     ;;
   *"pulls/533"*)
-    printf '%s\\n' '{"number":533,"state":"open","merge_commit_sha":null,"head":{"sha":"${HEAD}"},"base":{"ref":"main","sha":"${BASE}"}}'
+    printf '%s\\n' '{"number":533,"state":"open","merge_commit_sha":null,"head":{"sha":null},"base":{"ref":"main","sha":"${BASE}"}}'
     ;;
   *"pulls/534"*)
     printf '%s\\n' '{"number":534,"state":"open","merge_commit_sha":"${MERGE}","head":{"sha":"${HEAD}"},"base":{"ref":"main","sha":"${BASE}"}}'
     ;;
-  *"commits/${MERGE}/statuses"*) printf '%s\\n' '[[]]' ;;
+  *"commits/${HEAD}/statuses"*) printf '%s\\n' '[[]]' ;;
   *"actions/runs?head_sha=${HEAD}"*) printf '%s\\n' '[{"total_count":0,"workflow_runs":[]}]' ;;
   *"actions/workflows/delivery-gate.yml/dispatches"*) printf '%s\\n' "$*" >> "$GH_LOG" ;;
   *) printf 'unexpected gh invocation: %s\\n' "$*" >&2; exit 1 ;;
