@@ -38,15 +38,32 @@ function evidenceRequirements(changedFiles, evidenceForm) {
   const impact = classifyChanges(changedFiles);
   if (evidenceForm === 'legacy-v1') {
     return impact.requiredContexts.map((context) => ({
+      key: context,
       context,
       expected: LEGACY_EXPECTED_WORKFLOWS[context],
     }));
   }
   if (evidenceForm !== 'integrated-v2') throw new Error('unknown evidence form');
-  const contexts = ['diff-check'];
-  for (const job of impact.requiredJobChecks) contexts.push(...(INTEGRATED_JOB_NAMES[job] ?? [job]));
-  contexts.push('required-impact-checks');
-  return [...new Set(contexts)].map((context) => ({ context, expected: CI_WORKFLOW }));
+  const requirements = [{ key: 'diff-check', context: 'diff-check', expected: CI_WORKFLOW }];
+  for (const job of impact.requiredJobChecks) {
+    for (const context of INTEGRATED_JOB_NAMES[job] ?? [job]) {
+      requirements.push({ key: context, context, expected: CI_WORKFLOW });
+    }
+    if (job === 'frozen-audio-paths') {
+      requirements.push({
+        key: 'audio-label-policy',
+        context: 'frozen-audio-paths',
+        expected: AUDIO_WORKFLOW,
+      });
+    }
+  }
+  requirements.push({
+    key: 'required-impact-checks',
+    context: 'required-impact-checks',
+    expected: CI_WORKFLOW,
+  });
+  return requirements.filter((requirement, index) =>
+    requirements.findIndex(({ key }) => key === requirement.key) === index);
 }
 
 function knownAlternativeWorkflow(run, requirement) {
@@ -264,8 +281,8 @@ function latestExactRuns(checkRuns, requirements, headSha, evidenceNotBefore) {
           && newestAttempt && !sameWorkflowAttempt(run, newestAttempt)) continue;
       const started = Date.parse(run.workflow_run?.run_started_at ?? run.started_at ?? run.created_at ?? '');
       if (run.status === 'completed' && run.conclusion === 'success' && started < cutoff) continue;
-      const prior = latest.get(requirement.context);
-      if (!prior || compareRuns(run, prior) > 0) latest.set(requirement.context, run);
+      const prior = latest.get(requirement.key);
+      if (!prior || compareRuns(run, prior) > 0) latest.set(requirement.key, run);
     }
   }
   return latest;
@@ -274,7 +291,7 @@ function latestExactRuns(checkRuns, requirements, headSha, evidenceNotBefore) {
 export function evaluateRequiredChecksForEvidenceForm(input, evidenceForm) {
   validateInput(input);
   const requirements = evidenceRequirements(input.changedFiles, evidenceForm);
-  const requiredContexts = requirements.map(({ context }) => context);
+  const requiredContexts = requirements.map(({ key }) => key);
 
   if (input.prNumber !== input.currentPrNumber) return fail(requiredContexts, 'wrong-pr');
   if (input.eventHeadSha !== input.currentHeadSha) return fail(requiredContexts, 'obsolete-head');
@@ -306,25 +323,25 @@ export function evaluateRequiredChecksForEvidenceForm(input, evidenceForm) {
   const failed = [];
 
   for (const requirement of requirements) {
-    const { context } = requirement;
-    const run = latest.get(context);
+    const { context, key } = requirement;
+    const run = latest.get(key);
     if (!run) {
-      missing.push(`missing:${context}`);
+      missing.push(`missing:${key}`);
       continue;
     }
     if (!isTrustedRun(run, requirement, input)) {
-      failed.push(`untrusted:${context}`);
+      failed.push(`untrusted:${key}`);
       continue;
     }
     if (PENDING_STATUSES.has(run.status)) {
-      pending.push(`pending:${context}:${run.status}`);
+      pending.push(`pending:${key}:${run.status}`);
       continue;
     }
     if (run.status !== 'completed') {
-      failed.push(`status:${context}:${String(run.status ?? 'missing')}`);
+      failed.push(`status:${key}:${String(run.status ?? 'missing')}`);
       continue;
     }
-    if (run.conclusion !== 'success') failed.push(`conclusion:${context}:${String(run.conclusion ?? 'missing')}`);
+    if (run.conclusion !== 'success') failed.push(`conclusion:${key}:${String(run.conclusion ?? 'missing')}`);
   }
 
   if (failed.length) return fail(requiredContexts, ...failed, ...pending, ...missing);

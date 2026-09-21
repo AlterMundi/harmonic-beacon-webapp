@@ -127,10 +127,10 @@ function integratedAppRuns(overrides = {}, run = {}) {
   const runAttempt = run.run_attempt ?? 1;
   const runStartedAt = run.run_started_at ?? '2026-09-10T00:01:00.000Z';
   const suiteId = run.check_suite_id ?? 11_001;
-  return [
+  return (run.names ?? [
     'diff-check', 'impact', 'lint-and-build', 'test',
     'e2e / e2e', 'e2e / account', 'required-impact-checks',
-  ].map((name, index) => {
+  ]).map((name, index) => {
     const id = (run.check_id_base ?? 100) + index;
     return checkRun(name, {
       id,
@@ -142,9 +142,28 @@ function integratedAppRuns(overrides = {}, run = {}) {
         check_suite_id: suiteId,
         run_attempt: runAttempt,
         run_started_at: runStartedAt,
+        name: 'CI',
+        path: '.github/workflows/ci.yml',
       }),
       ...(overrides[name] ?? {}),
     });
+  });
+}
+
+const integratedAudioNames = [
+  'diff-check', 'impact', 'lint-and-build', 'test', 'tapestry', 'playlist', 'analytics',
+  'e2e / e2e', 'e2e / account', 'frozen-audio-paths', 'data-recovery',
+  'release-qualification', 'required-impact-checks',
+];
+
+function audioLabelRun(overrides = {}) {
+  const id = overrides.id ?? 900;
+  const suiteId = 11_900;
+  return checkRun('frozen-audio-paths', {
+    id,
+    check_suite: { id: suiteId, head_sha: HEAD, app: { id: ACTIONS_APP_ID, slug: 'github-actions' } },
+    workflow_run: workflowIdentity('frozen-audio-paths', id, { id: 21_900, check_suite_id: suiteId }),
+    ...overrides,
   });
 }
 
@@ -360,6 +379,33 @@ test('integrated form requires its exact aggregate in addition to every selected
     changedFiles: ['src/app/page.tsx'],
     checkRuns: integratedAppRuns({ 'required-impact-checks': { conclusion: 'skipped' } }),
   }), 'integrated-v2'), 'failure', 'conclusion:required-impact-checks:skipped');
+});
+
+test('integrated audio requires both CI regressions and standalone label policy proof', () => {
+  const ci = integratedAppRuns({}, { names: integratedAudioNames });
+  const label = audioLabelRun();
+  const accepted = evaluateRequiredChecksForEvidenceForm(input({
+    changedFiles: ['src/context/AudioContext.tsx'],
+    checkRuns: [...ci, label],
+  }), 'integrated-v2');
+  assert.equal(accepted.state, 'success', JSON.stringify(accepted));
+  assert.ok(accepted.requiredContexts.includes('frozen-audio-paths'));
+  assert.ok(accepted.requiredContexts.includes('audio-label-policy'));
+
+  assertState(evaluateRequiredChecksForEvidenceForm(input({
+    changedFiles: ['src/context/AudioContext.tsx'],
+    checkRuns: ci,
+  }), 'integrated-v2'), 'pending', 'missing:audio-label-policy');
+
+  assertState(evaluateRequiredChecksForEvidenceForm(input({
+    changedFiles: ['src/context/AudioContext.tsx'],
+    checkRuns: [...ci, audioLabelRun({ conclusion: 'failure' })],
+  }), 'integrated-v2'), 'failure', 'conclusion:audio-label-policy:failure');
+
+  assertState(evaluateRequiredChecksForEvidenceForm(input({
+    changedFiles: ['src/context/AudioContext.tsx'],
+    checkRuns: [...ci.filter(({ name }) => name !== 'frozen-audio-paths'), label],
+  }), 'integrated-v2'), 'pending', 'missing:frozen-audio-paths');
 });
 
 test('integrated form never fills a newer incomplete CI attempt with older green jobs', () => {
