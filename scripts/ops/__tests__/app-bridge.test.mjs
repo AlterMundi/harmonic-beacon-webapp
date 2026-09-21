@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { chmod, copyFile, mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
+import { chmod, copyFile, mkdir, readFile, symlink, unlink, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -198,6 +198,14 @@ exec /usr/bin/install "${'$'}{args[@]}"
   const invoke = (verb) => spawnSync(helperPath, [verb], {
     cwd: root, encoding: 'utf8', env: { ...process.env, HB_APP_BRIDGE_TEST_ROOT: area },
   });
+  const lockTarget = join(state, 'must-not-truncate');
+  await writeFile(lockTarget, 'preserved');
+  await symlink(lockTarget, join(bridgeRoot, 'operation.lock'));
+  const unsafeLock = invoke('stage');
+  assert.notEqual(unsafeLock.status, 0);
+  assert.match(unsafeLock.stderr, /lock must not be a symbolic link/);
+  assert.equal(await source(lockTarget), 'preserved');
+  await unlink(join(bridgeRoot, 'operation.lock'));
   for (const verb of ['stage', 'stage-rollback', 'stage-reapply']) {
     const result = invoke(verb);
     assert.equal(result.status, 0, `${verb}: ${result.stderr}`);
