@@ -234,8 +234,12 @@ function selectedMatrices(risk, domains) {
   const ui = RISK_ORDER[risk] >= RISK_ORDER.ui ? [...COVERAGE_MATRICES.ui] : [];
   const functional = new Set();
   if (RISK_ORDER[risk] >= RISK_ORDER.functional) {
-    for (const domain of domains) addAll(functional, COVERAGE_MATRICES.functional[domain] ?? []);
-    if (!functional.size) addAll(functional, Object.values(COVERAGE_MATRICES.functional).flat());
+    if (domains.includes('infrastructure')) {
+      addAll(functional, Object.values(COVERAGE_MATRICES.functional).flat());
+    } else {
+      for (const domain of domains) addAll(functional, COVERAGE_MATRICES.functional[domain] ?? []);
+      if (!functional.size) addAll(functional, Object.values(COVERAGE_MATRICES.functional).flat());
+    }
   }
   const critical = new Set();
   if (risk === 'critical') {
