@@ -18,6 +18,7 @@ const ARTIFACT_FOR_SERVICE = {
 const RISK_ORDER = { documentation: 0, ui: 1, functional: 2, critical: 3 };
 const CONTEXT_ORDER = [
   'diff-check',
+  'impact',
   'lint-and-build',
   'test',
   'tapestry',
@@ -183,6 +184,15 @@ function pathFacts(path) {
     set('critical', ['data'], ['app', 'commerce-reconciler'], ['data-recovery']);
   }
 
+  // This allowlist is deliberately exact. These files implement and test one
+  // GET-only diagnostic, have no runtime or privileged-operation callers, and
+  // are exercised by the impact job's ops-tooling suite. Other scripts/ops
+  // paths keep the critical infrastructure profile below.
+  if (path === 'scripts/ops/delivery-status.mjs'
+      || path === 'scripts/ops/__tests__/delivery-status.test.mjs') {
+    set('functional', ['observation-tooling'], [], ['ops-tooling']);
+    return facts;
+  }
   if (/^scripts\/(ops|ci)\//u.test(path) || path === 'scripts/hb.mjs' || path === 'AGENTS.md') {
     set('critical', ['infrastructure'], [], ['ops-tooling', 'workflow-review']);
   }
@@ -217,11 +227,16 @@ function artifactList(services) {
 }
 
 function selectedMatrices(risk, domains) {
+  if (domains.length === 1 && domains[0] === 'observation-tooling') {
+    return { ui: [], functional: [], critical: [], crossDomain: [] };
+  }
   const ui = RISK_ORDER[risk] >= RISK_ORDER.ui ? [...COVERAGE_MATRICES.ui] : [];
   const functional = new Set();
   if (RISK_ORDER[risk] >= RISK_ORDER.functional) {
     for (const domain of domains) addAll(functional, COVERAGE_MATRICES.functional[domain] ?? []);
-    if (!functional.size) addAll(functional, Object.values(COVERAGE_MATRICES.functional).flat());
+    if (!functional.size && !domains.includes('observation-tooling')) {
+      addAll(functional, Object.values(COVERAGE_MATRICES.functional).flat());
+    }
   }
   const critical = new Set();
   if (risk === 'critical') {
@@ -255,7 +270,9 @@ function requiredContextsFor(risk, domains, requiredChecks, requiredJobChecks) {
   if (risk === 'critical' && domains.includes('infrastructure')) return [...CONTEXT_ORDER];
   const checks = new Set(requiredChecks.map(({ check }) => check));
   const contexts = new Set(['diff-check']);
+  if (checks.has('ops-tooling') || checks.has('agent-skill-distributions')) contexts.add('impact');
   for (const name of requiredJobChecks) {
+    if (name === 'impact') continue;
     contexts.add(name);
   }
   if (checks.has('commerce-contract')) contexts.add('test');

@@ -183,6 +183,43 @@ test('audio auth grants payments and data retain explicit critical matrices', ()
   assert.ok(data.deployment.servicesToReplace.includes('commerce-reconciler'));
 });
 
+test('the exact GET-only delivery diagnostic selects observation tooling without runtime qualification', () => {
+  for (const path of [
+    'scripts/ops/delivery-status.mjs',
+    'scripts/ops/__tests__/delivery-status.test.mjs',
+  ]) {
+    const report = classifyChanges([path]);
+    assert.equal(report.risk, 'functional', path);
+    assert.deepEqual(report.domains, ['observation-tooling'], path);
+    assert.deepEqual(report.requiredJobChecks, ['impact'], path);
+    assert.deepEqual(report.requiredContexts, ['diff-check', 'impact'], path);
+    assert.deepEqual(report.deployment, {
+      deploy: false,
+      artifactsToPull: [],
+      servicesToReplace: [],
+      reusePriorImages: [],
+      migration: 'never',
+      recovery: 'none',
+    }, path);
+    assert.deepEqual(report.matrices, { ui: [], functional: [], critical: [], crossDomain: [] }, path);
+  }
+});
+
+test('observation classification is exact and shared or privileged scripts stay critical', () => {
+  for (const path of [
+    'scripts/hb.mjs',
+    'scripts/ops/hb-doctor.mjs',
+    'scripts/ops/delivery-status-helper.mjs',
+    'scripts/ci/required-checks.mjs',
+  ]) {
+    const report = classifyChanges([path]);
+    assert.equal(report.risk, 'critical', path);
+    assert.ok(report.domains.includes('infrastructure'), path);
+    assert.ok(report.requiredJobChecks.includes('workflow-review'), path);
+    assert.ok(report.requiredJobChecks.includes('release-qualification'), path);
+  }
+});
+
 test('shared dependencies affect every first-party artifact and service role', () => {
   const report = classifyChanges(['package-lock.json']);
   assert.deepEqual(report.deployment.artifactsToPull, ['app', 'playlist-bot', 'tapestry']);
@@ -377,7 +414,7 @@ test('protected delivery contexts stay bound to the selected impact matrix', () 
 
 test('delivery-control changes conservatively require every protected context', () => {
   assert.deepEqual(classifyChanges(['.github/workflows/oci-promote.yml']).requiredContexts, [
-    'diff-check', 'lint-and-build', 'test', 'tapestry', 'playlist', 'analytics',
+    'diff-check', 'impact', 'lint-and-build', 'test', 'tapestry', 'playlist', 'analytics',
     'e2e', 'account', 'frozen-audio-paths',
   ]);
 });
@@ -389,10 +426,10 @@ test('hashed commerce contract markdown keeps contract validation without app ex
   assert.deepEqual(report.requiredContexts, ['diff-check', 'test']);
 });
 
-test('agent skill distributions execute inside the always-run impact job while delivery keeps stable contexts', () => {
+test('agent skill distributions execute inside the impact job and that evidence is required', () => {
   const report = classifyChanges(['.agents/skills/github-workflows/SKILL.md']);
   assert.deepEqual(checkNames(report), ['diff-check', 'agent-skill-distributions']);
-  assert.deepEqual(report.requiredContexts, ['diff-check']);
+  assert.deepEqual(report.requiredContexts, ['diff-check', 'impact']);
 });
 
 test('rename detection remains disabled so both paths are classified', () => {
