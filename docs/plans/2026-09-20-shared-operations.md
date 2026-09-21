@@ -1,7 +1,10 @@
 # Operación compartida: decisiones y ejecución
 
-Fecha: 2026-09-20. Estado: procedimiento, skill y diagnóstico implementados en
-este lote; cambios de autoridad CI y despliegue propuestos, todavía no activos.
+Fecha: 2026-09-20. Estado: ejecución en curso en
+[PR #555](https://github.com/AlterMundi/harmonic-beacon-webapp/pull/555).
+Procedimiento, skill y diagnóstico implementados; los cambios de autoridad
+requieren integración en la base protegida antes de activarse. El registro de
+continuidad está en ese PR, no en otro diario paralelo.
 
 ## Decisión
 
@@ -140,6 +143,13 @@ verificar la nueva forma; luego cambiar el emisor; finalmente retirar la vieja.
 Cada forma debe probar todos sus checks, sin mezclar verde viejo con rojo nuevo.
 La política de la base protegida elige la forma, no el candidato.
 
+Secuencia ejecutable: C1 agrega el verificador de evidencia integrada y mantiene
+la política `legacy-v1`; C2 selecciona `integrated-v2` conservando los emisores
+existentes; sólo después C3 retira los disparadores duplicados. Cada etapa tiene
+su propio commit y debe integrarse antes de activar la siguiente. La evidencia
+integrada exige los jobs seleccionados del mismo run/attempt de CI; no completa
+un intento nuevo incompleto con jobs verdes de una ejecución anterior.
+
 Construir Next una vez por entorno de calificación y reutilizarlo entre browsers
 si configuración/dependencias lo permiten. Mantener fixtures aislados antes de
 paralelizar. Caché no equivale a calificación. El clasificador evita E2E/audio
@@ -157,6 +167,15 @@ reutilizar imágenes sin comprobar cómo se incorpora al bundle.
 Resolver #552/#553 y consultar el estado privado mediante diagnóstico aprobado:
 consumidor instalado, manifest v4, runtime, config, autorizaciones y transición
 pendiente. No inferirlo del README ni fabricar current-state para pasar un gate.
+
+La auditoría de ejecución encontró dos dependencias adicionales: la política
+sudo del runner omite `artifact-impact-state` y `artifact-impact`, llamados por
+`oci-promote.yml`; y no hay un diagnóstico privado independiente del flujo de
+mutación. Corregir la correspondencia workflow/helper/sudo con una prueba de
+contrato y agregar un readback acotado que no cree directorios ni locks. Leer
+configuración instalada tampoco demuestra salud del runtime ni habilita deploy.
+#553 sólo aporta el contrato/productor de genesis: no instala su consumidor ni
+reconcilia Mona, por lo que su merge no cierra ese bootstrap.
 
 Revisar #554 primero como arreglo base y recomponer #550 sobre main actualizado
 con sus dos fallas resueltas. No exigir rebase por estética: merge normal sirve
