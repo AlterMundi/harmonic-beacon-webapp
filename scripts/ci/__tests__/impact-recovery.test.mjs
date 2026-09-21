@@ -110,8 +110,26 @@ test('verified database state skips migration without quiescing when none are pe
     duplicateRecords: [],
     conflictingRecords: [],
     migrationChecksums: [],
+    historicalChecksumMatches: [],
   };
   assert.equal(validateMigrationState(state), state);
+  const priorV1 = {...state}; delete priorV1.historicalChecksumMatches;
+  assert.equal(validateMigrationState(priorV1), priorV1);
+  assert.throws(
+    () => validateMigrationState({...state,historicalChecksumMatches:null}),
+    /historical migration checksum matches must be an array/u,
+  );
+  const currentChecksum = 'a'.repeat(64);
+  const historicalState = {...state,
+    applied:['legacy'], migrationChecksums:[{migrationName:'legacy',checksum:currentChecksum}],
+    historicalChecksumMatches:[{migrationName:'legacy',checksum:'b'.repeat(64),
+      currentChecksum,historicalSourceCommit:'c'.repeat(40)}]};
+  assert.equal(validateMigrationState(historicalState), historicalState);
+  for (const invalid of [
+    {...historicalState,historicalChecksumMatches:[{...historicalState.historicalChecksumMatches[0],migrationName:'orphan'}]},
+    {...historicalState,historicalChecksumMatches:[{...historicalState.historicalChecksumMatches[0],currentChecksum:'d'.repeat(64)}]},
+    {...historicalState,historicalChecksumMatches:[{...historicalState.historicalChecksumMatches[0],checksum:currentChecksum}]},
+  ]) assert.throws(() => validateMigrationState(invalid), /historical migration checksum/u);
   const result = planDatabaseAction(impact(), state);
   assert.deepEqual(result, { action: 'skip', requiresQuiesce: false, requiresBackupRestore: false });
   assert.throws(() => planDatabaseAction(impact(), state, { result: 'success' }, '42'), /backup\/restore proof/u);
@@ -130,6 +148,7 @@ test('pending migrations require fresh same-run backup and isolated restore proo
     duplicateRecords: [],
     conflictingRecords: [],
     migrationChecksums: [{ migrationName: '20260910120000_example', checksum: 'a'.repeat(64) }],
+    historicalChecksumMatches: [],
     pending: ['20260910120000_example'],
   };
   assert.throws(() => planDatabaseAction(dataImpact, state), /backup.*restore/u);
@@ -198,7 +217,7 @@ test('failed or unverified migration state always fails closed', () => {
     assert.throws(() => planDatabaseAction(impact(), {
       schemaVersion: 'harmonic-beacon.migration-state.v1', databaseStateVerified: true,
       applied: [], failed: [], unexpected: [], unsafe: [], checksumErrors: [], duplicateRecords: [],
-      conflictingRecords: [], migrationChecksums: [], pending: [], ...mutation,
+      conflictingRecords: [], migrationChecksums: [], historicalChecksumMatches: [], pending: [], ...mutation,
     }), /checksum|duplicate|conflicting/u);
   }
 });

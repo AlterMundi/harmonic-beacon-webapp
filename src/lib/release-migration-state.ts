@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
 
+import { HISTORICAL_MIGRATION_CHECKSUMS } from '@/lib/migration-history';
+
 export type MigrationRecord = {
   migrationName: string;
   checksum: string | null;
@@ -10,6 +12,13 @@ export type MigrationRecord = {
 export type MigrationChecksum = {
   migrationName: string;
   checksum: string;
+};
+
+export type HistoricalChecksumMatch = {
+  migrationName: string;
+  checksum: string;
+  currentChecksum: string;
+  historicalSourceCommit: string;
 };
 
 export type MigrationState = {
@@ -24,6 +33,7 @@ export type MigrationState = {
   duplicateRecords: string[];
   conflictingRecords: string[];
   migrationChecksums: MigrationChecksum[];
+  historicalChecksumMatches: HistoricalChecksumMatch[];
 };
 
 const SHA256 = /^[0-9a-f]{64}$/u;
@@ -161,14 +171,6 @@ export function validateForwardOnlyMigration(input: string | Buffer): { safe: bo
   return { safe: violations.length === 0, violations };
 }
 
-function recordFingerprint(record: MigrationRecord): string {
-  return JSON.stringify([
-    record.checksum,
-    record.finishedAt !== null,
-    record.rolledBackAt !== null,
-  ]);
-}
-
 export function classifyMigrationState(
   candidateMigrations: string[],
   records: MigrationRecord[],
@@ -189,6 +191,7 @@ export function classifyMigrationState(
   const applied: string[] = [];
   const failed: string[] = [];
   const migrationChecksums: MigrationChecksum[] = [];
+  const historicalChecksumMatches: HistoricalChecksumMatch[] = [];
 
   for (const migrationName of candidate) {
     const sql = migrationSql.get(migrationName);
@@ -197,17 +200,35 @@ export function classifyMigrationState(
     else checksumErrors.push(`${migrationName}:MISSING MIGRATION SQL`);
 
     const matching = byName.get(migrationName) ?? [];
-    if (matching.length > 1) {
+    const effective = matching.filter((record) => record.rolledBackAt === null);
+    if (effective.length > 1) {
       duplicateRecords.push(migrationName);
-      if (new Set(matching.map(recordFingerprint)).size > 1) conflictingRecords.push(migrationName);
+      if (new Set(effective.map((record) => JSON.stringify([record.checksum, record.finishedAt !== null]))).size > 1) {
+        conflictingRecords.push(migrationName);
+      }
     }
     for (const record of matching) {
+      if (record.finishedAt && record.rolledBackAt) conflictingRecords.push(migrationName);
       if (!record.checksum) checksumErrors.push(`${migrationName}:MISSING CHECKSUM`);
-      else if (!SHA256.test(record.checksum) || expectedChecksum === null || record.checksum !== expectedChecksum) {
-        checksumErrors.push(`${migrationName}:CHECKSUM MISMATCH`);
+      else if (!SHA256.test(record.checksum) || expectedChecksum === null) checksumErrors.push(`${migrationName}:CHECKSUM MISMATCH`);
+      else if (record.checksum !== expectedChecksum) {
+        const evidence = HISTORICAL_MIGRATION_CHECKSUMS.find((entry) =>
+          entry.migrationName === migrationName &&
+          entry.currentChecksum === expectedChecksum &&
+          entry.historicalChecksum === record.checksum);
+        if (evidence) {
+          historicalChecksumMatches.push({
+            migrationName,
+            checksum: record.checksum,
+            currentChecksum: expectedChecksum,
+            historicalSourceCommit: evidence.historicalSourceCommit,
+          });
+        } else checksumErrors.push(`${migrationName}:CHECKSUM MISMATCH`);
       }
-      if (record.finishedAt && !record.rolledBackAt) applied.push(migrationName);
-      if (!record.finishedAt && !record.rolledBackAt) failed.push(migrationName);
+    }
+    for (const record of effective) {
+      if (record.finishedAt) applied.push(migrationName);
+      else failed.push(migrationName);
     }
   }
 
@@ -234,6 +255,9 @@ export function classifyMigrationState(
     duplicateRecords: uniqueSorted(duplicateRecords),
     conflictingRecords: uniqueSorted(conflictingRecords),
     migrationChecksums,
+    historicalChecksumMatches: [...new Map(historicalChecksumMatches.map((entry) =>
+      [`${entry.migrationName}:${entry.checksum}`, entry])).values()].sort((left, right) =>
+        left.migrationName.localeCompare(right.migrationName) || left.checksum.localeCompare(right.checksum)),
   };
   return {
     schemaVersion: 'harmonic-beacon.migration-state.v1',

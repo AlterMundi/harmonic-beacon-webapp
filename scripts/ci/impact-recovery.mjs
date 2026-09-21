@@ -130,6 +130,23 @@ export function validateMigrationState(state) {
     }
     checksums.set(entry.migrationName, entry.checksum);
   }
+  const historicalChecksumMatches = state.historicalChecksumMatches === undefined
+    ? []
+    : state.historicalChecksumMatches;
+  if (!Array.isArray(historicalChecksumMatches)) fail('historical migration checksum matches must be an array');
+  const historicalMatches = new Set();
+  const classifiedNames = new Set([...state.applied, ...state.pending]);
+  for (const entry of historicalChecksumMatches) {
+    if (!entry || Object.keys(entry).sort().join(',') !== 'checksum,currentChecksum,historicalSourceCommit,migrationName' ||
+        typeof entry.migrationName !== 'string' || !SHA256.test(entry.checksum ?? '') ||
+        !SHA256.test(entry.currentChecksum ?? '') || !GIT_SHA.test(entry.historicalSourceCommit ?? '') ||
+        entry.checksum === entry.currentChecksum || !classifiedNames.has(entry.migrationName) ||
+        checksums.get(entry.migrationName) !== entry.currentChecksum ||
+        historicalMatches.has(`${entry.migrationName}:${entry.checksum}`)) {
+      fail('historical migration checksum match inventory is malformed or duplicated');
+    }
+    historicalMatches.add(`${entry.migrationName}:${entry.checksum}`);
+  }
   for (const name of [...state.applied, ...state.pending]) {
     if (!checksums.has(name)) fail(`migration checksum inventory is missing ${name}`);
   }

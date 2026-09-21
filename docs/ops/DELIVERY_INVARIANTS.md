@@ -27,9 +27,15 @@ authority. Moving them does not change authorization or implementation.
   fence; an operation-order receipt is validated before the phase advances.
 - Migration paths trigger a read-only comparison of candidate migration
   directories with `_prisma_migrations`. Each database record must carry the
-  lowercase SHA-256 Prisma stores for the exact raw `migration.sql` bytes;
-  missing, mismatched, duplicate, conflicting, failed, or unexpected records
-  fail closed. No pending migration means no quiesce and no migration. Pending
+  lowercase SHA-256 Prisma stores. It must match the current raw `migration.sql`
+  bytes or one exact reviewed historical checksum that is bound to both its
+  migration name and the unchanged current-file checksum; accepted historical
+  matches remain explicit in the state report. Explicitly rolled-back,
+  unfinished Prisma attempts remain checksum-validated but are not effective
+  records; multiple non-rolled-back rows, an unresolved unfinished row, or an
+  impossible finished-and-rolled-back row fail closed, as do missing,
+  mismatched, conflicting, failed, or unexpected records. No pending migration
+  means no quiesce and no migration. Pending
   migration first establishes the entry/writer fence and repeats continuity,
   then creates a new attempt-specific dump. SQL comments, dynamic execution,
   destructive DDL/DML, and statements outside the explicit additive allowlist
