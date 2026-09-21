@@ -75,6 +75,23 @@ test('forward grant drain receives only its bounded database and LiveKit environ
   assert.doesNotMatch(helper, /migrate npx tsx scripts\/stage-grant-forward-drain\.ts/);
 });
 
+test('forward grant drain Compose preserves the optional identity-secret fallback', async () => {
+  const compose = await source('deploy/hb-migration-bridge-production.compose.yml');
+  const drain = compose.slice(compose.indexOf('  grant-drain:'), compose.indexOf('\n  preflight:'));
+  const fragment = `services:\n${drain}\nnetworks:\n  beacon:\n    external: true\n`;
+  const rendered = spawnSync('docker', ['compose', '-f', '-', 'config'], {
+    input: fragment, encoding:'utf8', env:{...process.env,
+      HB_MIGRATION_BRIDGE_IMAGE:`sha256:${'a'.repeat(64)}`,
+      POSTGRES_PASSWORD:'isolated-test-password',
+      LIVEKIT_API_KEY:'test-key', LIVEKIT_API_SECRET:'test-secret',
+    },
+  });
+  assert.equal(rendered.status, 0, rendered.stderr);
+  assert.match(rendered.stdout, /LIVEKIT_API_KEY: test-key/);
+  assert.match(rendered.stdout, /LIVEKIT_API_SECRET: test-secret/);
+  assert.match(rendered.stdout, /LIVEKIT_IDENTITY_SECRET: ""/);
+});
+
 test('isolated rehearsal has no production secret bundles, PMP, or LiveKit network', async () => {
   const compose = await source('deploy/hb-migration-bridge-rehearsal.compose.yml');
   assert.doesNotMatch(compose, /env_file|commerce\.env|account\.env|pmp_beacon_internal|beacon-livekit/);

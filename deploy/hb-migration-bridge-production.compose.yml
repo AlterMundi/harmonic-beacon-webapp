@@ -82,7 +82,7 @@ services:
       LIVEKIT_INTERNAL_URL: http://beacon-livekit:7880
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:?required}
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:?required}
-      LIVEKIT_IDENTITY_SECRET: ${LIVEKIT_IDENTITY_SECRET:?required}
+      LIVEKIT_IDENTITY_SECRET: ${LIVEKIT_IDENTITY_SECRET:-}
       LIVEKIT_ROOM_NAME: ${LIVEKIT_ROOM_NAME:-beacon}
     networks: [beacon]
     security_opt: [no-new-privileges:true]
