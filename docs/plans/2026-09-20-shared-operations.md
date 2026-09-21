@@ -143,12 +143,16 @@ verificar la nueva forma; luego cambiar el emisor; finalmente retirar la vieja.
 Cada forma debe probar todos sus checks, sin mezclar verde viejo con rojo nuevo.
 La política de la base protegida elige la forma, no el candidato.
 
-Secuencia ejecutable: C1 agrega el verificador de evidencia integrada y mantiene
-la política `legacy-v1`; C2 selecciona `integrated-v2` conservando los emisores
-existentes; sólo después C3 retira los disparadores duplicados. Cada etapa tiene
-su propio commit y debe integrarse antes de activar la siguiente. La evidencia
-integrada exige los jobs seleccionados del mismo run/attempt de CI; no completa
-un intento nuevo incompleto con jobs verdes de una ejecución anterior.
+Secuencia ejecutable simplificada a **dos merges**: C1 agrega el verificador y
+C2 selecciona `integrated-v2` en el primer lote, conservando ambos emisores
+existentes. El gate de la base anterior puede calificar ese lote con su evidencia
+legacy; no es necesario mover la base una vez más sólo para alojar código
+inactivo. Después de integrar la nueva política, C3 retira el disparador E2E
+duplicado. No retirar ese emisor en el primer lote: el gate anterior todavía lo
+necesita. La evidencia integrada exige los jobs seleccionados del mismo
+run/attempt de CI; no completa un intento nuevo incompleto con jobs verdes de
+una ejecución anterior. Mantener además la prueba de etiqueta de Audio boundary,
+distinta de las regresiones de audio de CI aunque compartan nombre visible.
 
 Construir Next una vez por entorno de calificación y reutilizarlo entre browsers
 si configuración/dependencias lo permiten. Mantener fixtures aislados antes de

@@ -29,9 +29,10 @@ const INTEGRATED_JOB_NAMES = Object.freeze({
   e2e: ['e2e / e2e', 'e2e / account'],
 });
 
-// C2 policy selection: this commit is safe only after C1 is present on the
-// protected base. Keep the legacy verifier available for rollback diagnosis,
-// but never combine checks from the two forms in one decision.
+// Consumer-first activation: qualify this policy with BOTH current emitters
+// still present, so the old protected evaluator can use its legacy evidence.
+// Retire the duplicate E2E emitter only after this policy is protected.
+// Keep the legacy verifier for diagnosis, never for mixing evidence forms.
 export const ACTIVE_EVIDENCE_FORM = 'integrated-v2';
 
 function evidenceRequirements(changedFiles, evidenceForm) {
