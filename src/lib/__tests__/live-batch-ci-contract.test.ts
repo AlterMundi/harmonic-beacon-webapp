@@ -9,6 +9,35 @@ type Job = { steps: Step[]; env?: Record<string, string>; services?: unknown; if
 const workflow = () => parse(readFileSync('.github/workflows/e2e.yml', 'utf8')) as { jobs: Record<string, Job> };
 const helperConfig = 'e2e/helpers/playwright.config.ts';
 
+describe('job-local PostgreSQL allocation', () => {
+    it('uses the service-assigned port and rejects absent or malformed coordinates', () => {
+        const job = workflow().jobs.e2e;
+        const services = job.services as { postgres: { ports: number[] } };
+        expect(services.postgres.ports).toEqual([5432]);
+        expect(job.env?.E2E_DATABASE_URL).toBeUndefined();
+        const step = job.steps[0];
+        expect(step.name).toBe('Resolve isolated PostgreSQL port');
+        expect(step.env?.FIXTURE_POSTGRES_PORT).toBe('${{ job.services.postgres.ports[5432] }}');
+        const root = mkdtempSync('/tmp/hb-ci-port-');
+        try {
+            const envFile = path.join(root, 'env');
+            for (const port of ['32123', '55499', '', '0', '65536', '123;echo unsafe']) {
+                writeFileSync(envFile, '');
+                const result = spawnSync('bash', ['-c', step.run!], {
+                    env: { ...process.env, GITHUB_ENV: envFile, FIXTURE_POSTGRES_PORT: port },
+                });
+                const valid = ['32123', '55499'].includes(port);
+                expect(result.status === 0, port).toBe(valid);
+                expect(readFileSync(envFile, 'utf8')).toBe(valid
+                    ? `E2E_DATABASE_URL=postgresql://postgres:e2e@127.0.0.1:${port}/beacon_test\n`
+                    : '');
+            }
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+});
+
 function assertHelperBrowserInstallOrder(steps: Step[]) {
     const chromiumInstall = steps.find((entry) => entry.name === 'Install Chromium browser');
     const chromium = steps.find((entry) => entry.name === 'Run isolated Chromium room-exit helper regressions');

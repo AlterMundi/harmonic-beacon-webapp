@@ -47,14 +47,13 @@ jobs:
           POSTGRES_PASSWORD: e2e
           POSTGRES_DB: beacon_test
         ports:
-          - 55432:5432
+          - 5432
         options: >-
           --health-cmd "pg_isready -U postgres -d beacon_test"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 12
     env:
-      E2E_DATABASE_URL: postgresql://postgres:e2e@localhost:55432/beacon_test
       E2E_LIVEKIT_URL: ws://localhost:7880
       # The production-mode application must expose secure signaling even
       # against the job-local fixture. The load CLI keeps using plain loopback;
@@ -64,6 +63,15 @@ jobs:
       E2E_LIVEKIT_API_SECRET: secret
       NEXT_PUBLIC_E2E_CONTINUITY_OBSERVER: '1'
     steps:
+      - name: Resolve isolated PostgreSQL port
+        env:
+          FIXTURE_POSTGRES_PORT: ${{ job.services.postgres.ports[5432] }}
+        run: |
+          set -euo pipefail
+          [[ "$FIXTURE_POSTGRES_PORT" =~ ^[1-9][0-9]{0,4}$ ]]
+          (( FIXTURE_POSTGRES_PORT <= 65535 ))
+          printf 'E2E_DATABASE_URL=postgresql://postgres:e2e@127.0.0.1:%s/beacon_test\n' \
+            "$FIXTURE_POSTGRES_PORT" >> "$GITHUB_ENV"
       - name: Prepare private short socket root
         # Never nest socket-bearing TMPDIR under RUNNER_TEMP (unbounded UTF-8).
         # run.ts nests navigation-account-XXXXXX and makes that child TMPDIR.
