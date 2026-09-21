@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     authorize: vi.fn(),
@@ -100,10 +100,16 @@ const params = { params: Promise.resolve({ accountId: ACCOUNT }) };
 
 describe('private EarlyBird membership projection v2 route', () => {
     beforeEach(() => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-08-07T12:00:00Z'));
         vi.clearAllMocks();
         mocks.authorize.mockReturnValue(true);
         mocks.apply.mockResolvedValue({ projection, outcome: 'APPLIED' });
         mocks.findUnique.mockResolvedValue(projection);
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
     });
 
     it.each(['APPLIED', 'REPLAYED', 'STALE'] as const)('returns the canonical %s outcome', async (outcome) => {
@@ -120,6 +126,18 @@ describe('private EarlyBird membership projection v2 route', () => {
             effective_state: 'ACTIVE',
             access_allowed: true,
             reconciliation_required: false,
+        });
+    });
+
+    it('reports access closed after the controlled paid-through boundary', async () => {
+        vi.setSystemTime(new Date('2026-09-07T12:00:00Z'));
+
+        const response = await PUT(put(), params);
+
+        expect(response.status).toBe(200);
+        await expect(response.json()).resolves.toMatchObject({
+            effective_state: 'ACTIVE',
+            access_allowed: false,
         });
     });
 
