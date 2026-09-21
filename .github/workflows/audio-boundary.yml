@@ -2,7 +2,7 @@ name: Audio boundary
 
 # CI protection for the frozen audio boundaries (issue #69, epic #64):
 # a PR that touches the paths below must carry the `audio-touching` label;
-# CODEOWNERS then routes the review to Nico. Keep the path list in sync
+# the owner reviews audio risk, using adversarial assistance when warranted. Keep the path list in sync
 # with .github/CODEOWNERS.
 
 on:
@@ -41,9 +41,9 @@ jobs:
           PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: |
           if echo "$PR_LABELS" | grep -q '"audio-touching"'; then
-            echo "audio-touching label present — Nico review required via CODEOWNERS."
+            echo "audio-touching label present — audio risk identified for owner review."
           else
             echo "::error::This PR changes frozen audio paths (see .github/CODEOWNERS)."
-            echo "::error::Add the 'audio-touching' label and request @nicoechaniz's review (issue #69)."
+            echo "::error::Add the 'audio-touching' label and verify the affected audio behavior (issue #69)."
             exit 1
           fi

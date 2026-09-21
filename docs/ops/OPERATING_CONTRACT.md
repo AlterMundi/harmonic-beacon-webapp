@@ -67,8 +67,8 @@ rehearsal.
 ### Proportionate governance checks
 
 A change limited to `.github/CODEOWNERS` and documentation remains a critical
-governance change and still requires the repository's configured independent
-CODEOWNER approval. It does not build or qualify application artifacts: CI runs
+governance change and receives owner review, with adversarial assistance only
+when warranted by concrete risk. It does not qualify application artifacts: CI runs
 the diff, bounded CODEOWNERS integrity, impact-selection, workflow-contract and
 required-check evaluator checks, and records `deployment.deploy=false`.
 

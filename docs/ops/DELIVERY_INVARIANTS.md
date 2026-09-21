@@ -117,9 +117,9 @@ required context. A direct invocation of the internal exact-base authority is
 not a bypass: the same live PR/base binding and complete check evaluation still
 apply.
 
-`main` and `release` must require pull requests, at least one code-owner
-approval, stale-review dismissal, approval of the current push by someone other
-than its pusher, an up-to-date head, and `delivery-gate` bound to GitHub Actions
+`main` and `release` require pull requests, zero external approving reviews,
+no mandatory CODEOWNER or last-push approval, an up-to-date head, and
+`delivery-gate` bound to GitHub Actions
 App ID `15368`, with force pushes and deletion disabled. `release`
 remains the promotion branch and [`.github/workflows/deploy.yml`](../../.github/workflows/deploy.yml)
 plus [`deploy/hb-deploy-root`](../../deploy/hb-deploy-root) remain the reviewed

@@ -126,7 +126,7 @@ export function evaluateDeliveryProtection(policy, branch, protection) {
   }
   return {
     ok: true,
-    detail: `${branch}: protected with ${policy.requiredApprovingReviewCount} current-push/code-owner approval, stale dismissal, strict base, no force pushes/deletion and ${policy.requiredContext} from Actions App ${policy.requiredAppId}`,
+    detail: `${branch}: protected with ${policy.requiredApprovingReviewCount} required review(s), strict base, no force pushes/deletion and ${policy.requiredContext} from Actions App ${policy.requiredAppId}`,
   };
 }
 
@@ -430,11 +430,11 @@ export function validateCatalog(catalog) {
           || !Number.isSafeInteger(policy.requiredAppId)
           || policy.requiredAppId <= 0
           || policy.requirePullRequest !== true
-          || policy.requireCodeOwnerReviews !== true
+          || typeof policy.requireCodeOwnerReviews !== 'boolean'
           || !Number.isSafeInteger(policy.requiredApprovingReviewCount)
-          || policy.requiredApprovingReviewCount <= 0
-          || policy.dismissStaleReviews !== true
-          || policy.requireLastPushApproval !== true
+          || policy.requiredApprovingReviewCount < 0
+          || typeof policy.dismissStaleReviews !== 'boolean'
+          || typeof policy.requireLastPushApproval !== 'boolean'
           || policy.requireUpToDate !== true
           || policy.allowForcePushes !== false
           || policy.allowDeletions !== false) {

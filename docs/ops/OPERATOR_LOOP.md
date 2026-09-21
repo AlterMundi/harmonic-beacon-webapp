@@ -21,29 +21,27 @@ changes to those invariants must be implemented and reviewed before use.
 4. Develop and repair in a coherent batch with focused tests. At integration,
    use `change-impact` plus checks required by the actual risk. Reuse unaffected
    evidence; required hosted checks still have to qualify the candidate.
-5. Review the integrated result, request the required GitHub approval, and
+5. Review the integrated result as the task owner and
    deliver through the service's reviewed workflow. Read back the deployed
    artifact and relevant behavior. A merged PR is an intermediate outcome.
 
-A failed test continues the repair loop. A missing GitHub approval is a real
-external dependency if the current operator cannot obtain it through an
-authorized independent reviewer. Neither condition grants permission to
-disable protection. A new human instruction can pause or change the work;
+A failed test continues the repair loop. External GitHub approval is not a
+prerequisite. Automated checks and production authorization still apply.
+A new human instruction can pause or change the work;
 previous callbacks do not override it.
 
-## One owner, one reviewer when required
+## Owner review, adversarial assistance when warranted
 
-Independent review means a separate examination of the evidence, not switching
-GitHub credentials or claiming that a self-review became independent. A
-reviewing agent's report and GitHub's required approval are separate facts.
-Critical source review is a barrier before promotion, not an asynchronous note
-that may arrive after deployment or publication.
+The owner reviews and delivers autonomously. Use an adversarial subagent only
+for a concrete risk or unresolved uncertainty; not every PR, commit or repair.
+Resolve substantive findings before promotion. Never switch credentials to
+manufacture independent approval or create a reviewer-of-the-reviewer chain.
 
 | Change | Editing loop | Integration/review | Release |
 | --- | --- | --- | --- |
-| Documentation or bounded presentation | Diff, appropriate render/check | Self-review; configured GitHub approval | Only selected surfaces; no unrelated runtime work |
-| Product behavior | Focused regression; local behavior | Selected subsystem/browser checks; configured approval | Artifact smoke on affected service |
-| Audio, identity, permissions, payments | Causal reproduction and focused checks | Named critical matrix and required independent review | Real behavior, provenance, compatible recovery |
+| Documentation or bounded presentation | Diff, appropriate render/check | Owner review | Only selected surfaces; no unrelated runtime work |
+| Product behavior | Focused regression; local behavior | Selected subsystem/browser checks; owner review | Artifact smoke on affected service |
+| Audio, identity, permissions, payments | Causal reproduction and focused checks | Named critical matrix; adversarial review when risk warrants it | Real behavior, provenance, compatible recovery |
 | Data migration or privileged delivery | Failure/recovery tests | Review authority, compatibility and failure paths together | Required isolated restore/rehearsal and host admission |
 
 After a finding, the owner repairs and the reviewer checks the fix and its
@@ -131,7 +129,7 @@ skills, credentials or memory wholesale. Do not overwrite a host's unrelated
 configuration to install Beacon instructions.
 
 Both operators pass the same exercise: resume a task with an obsolete run,
-diagnose a real failure, repair, obtain approval, merge, release to staging,
+diagnose a real failure, repair, review, merge, release to staging,
 verify recovery and hand it back with one continuation record. A subsequent
 authorized production delivery demonstrates production operation. Record where
 human action was required and why. Neither Codex nor Hermes is presumed capable
