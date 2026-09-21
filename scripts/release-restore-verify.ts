@@ -37,11 +37,13 @@ function main(): void {
     duplicateRecords?: unknown[];
     conflictingRecords?: unknown[];
     migrationChecksums?: unknown[];
+    historicalChecksumMatches?: unknown[];
   };
   if (state.schemaVersion !== 'harmonic-beacon.migration-state.v1' || state.databaseStateVerified !== true ||
       state.pending?.length !== 0 || state.failed?.length !== 0 || state.unexpected?.length !== 0 ||
       state.unsafe?.length !== 0 || state.checksumErrors?.length !== 0 || state.duplicateRecords?.length !== 0 ||
-      state.conflictingRecords?.length !== 0 || !Array.isArray(state.migrationChecksums)) {
+      state.conflictingRecords?.length !== 0 || !Array.isArray(state.migrationChecksums) ||
+      (state.historicalChecksumMatches !== undefined && !Array.isArray(state.historicalChecksumMatches))) {
     throw new Error('candidate migration did not verify on the isolated restored database');
   }
   console.log(JSON.stringify({
