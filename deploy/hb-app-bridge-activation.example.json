@@ -1,0 +1,8 @@
+{
+  "candidateImageId": "sha256:REPLACE_WITH_STAGED_64_LOWERCASE_HEX",
+  "expiresAt": "2026-09-22T00:00:00Z",
+  "permitId": "REPLACE_WITH_PERMIT_64_LOWERCASE_HEX",
+  "productionBaseImageId": "sha256:REPLACE_WITH_64_LOWERCASE_HEX",
+  "rehearsalReceiptSha256": "REPLACE_WITH_64_LOWERCASE_HEX",
+  "schemaVersion": "hb-app-bridge.activation.v1"
+}

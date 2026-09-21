@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render as rtlRender, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render as rtlRender, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -83,6 +83,112 @@ describe('HandRaiseButton', () => {
             method: 'POST',
         });
         expect(screen.getByRole('button', { name: /Lower hand/i })).toBeInTheDocument();
+    });
+
+    it('does not let a poll started before POST overwrite the raised state', async () => {
+        let resolveStalePoll!: (response: {
+            ok: boolean;
+            status: number;
+            json: () => Promise<HandState>;
+        }) => void;
+        const stalePoll = new Promise<{
+            ok: boolean;
+            status: number;
+            json: () => Promise<HandState>;
+        }>((resolve) => {
+            resolveStalePoll = resolve;
+        });
+        let getCalls = 0;
+        const fetchMock = vi.fn().mockImplementation(async (_url: string, init?: RequestInit) => {
+            const method = init?.method ?? 'GET';
+            if (method === 'POST') {
+                return {
+                    ok: true,
+                    status: 200,
+                    json: async () => state({
+                        raised: true,
+                        raisedAt: '2026-08-01T15:10:00.000Z',
+                        queuePosition: 1,
+                    }),
+                };
+            }
+            getCalls += 1;
+            if (getCalls === 1) return stalePoll;
+            return {
+                ok: true,
+                status: 200,
+                json: async () => state({
+                    raised: true,
+                    raisedAt: '2026-08-01T15:10:00.000Z',
+                    queuePosition: 1,
+                }),
+            };
+        });
+        vi.stubGlobal('fetch', fetchMock);
+        render(<HandRaiseButton sessionId="event-1" />);
+
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+        await userEvent.click(screen.getByRole('button', { name: /Raise hand/i }));
+        expect(await screen.findByRole('button', { name: /Lower hand/i })).toBeInTheDocument();
+
+        await act(async () => {
+            resolveStalePoll({
+                ok: true,
+                status: 200,
+                json: async () => state(),
+            });
+            await stalePoll;
+        });
+        await waitFor(() => expect(getCalls).toBe(2));
+        expect(screen.getByRole('button', { name: /Lower hand/i })).toBeInTheDocument();
+    });
+
+    it('does not let an obsolete 403 poll block actions after a successful POST', async () => {
+        let resolveStalePoll!: (response: {
+            ok: boolean;
+            status: number;
+            json: () => Promise<Record<string, unknown>>;
+        }) => void;
+        const stalePoll = new Promise<{
+            ok: boolean;
+            status: number;
+            json: () => Promise<Record<string, unknown>>;
+        }>((resolve) => {
+            resolveStalePoll = resolve;
+        });
+        let getCalls = 0;
+        const raised = state({
+            raised: true,
+            raisedAt: '2026-08-01T15:10:00.000Z',
+            queuePosition: 1,
+        });
+        const fetchMock = vi.fn().mockImplementation(async (_url: string, init?: RequestInit) => {
+            const method = init?.method ?? 'GET';
+            if (method === 'POST') {
+                return { ok: true, status: 200, json: async () => raised };
+            }
+            getCalls += 1;
+            if (getCalls === 1) return stalePoll;
+            return { ok: true, status: 200, json: async () => raised };
+        });
+        vi.stubGlobal('fetch', fetchMock);
+        render(<HandRaiseButton sessionId="event-1" />);
+
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+        await userEvent.click(screen.getByRole('button', { name: /Raise hand/i }));
+        expect(await screen.findByRole('button', { name: /Lower hand/i })).toBeEnabled();
+
+        await act(async () => {
+            resolveStalePoll({
+                ok: false,
+                status: 403,
+                json: async () => ({ error: 'Insufficient permissions' }),
+            });
+            await stalePoll;
+        });
+        await waitFor(() => expect(getCalls).toBe(2));
+        expect(screen.getByRole('button', { name: /Lower hand/i })).toBeEnabled();
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     });
 
     it('lowers a raised hand with DELETE', async () => {

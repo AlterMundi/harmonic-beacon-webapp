@@ -89,11 +89,18 @@ export async function activateAudioAtMostOnce(surface: Page | Frame): Promise<0 
     await expect(state).toHaveAttribute('data-state', 'connected', { timeout: 20_000 });
     const button = surface.getByRole('button', { name: START_AUDIO });
     if (!await button.isVisible()) {
-        await expectEffectiveAudioReady(surface);
-        return 0;
+        try {
+            await expectEffectiveAudioReady(surface);
+            return 0;
+        } catch (automaticReadinessError) {
+            // Readiness may regress after the zero-click sample when a late
+            // source or SDK status makes an activation gesture necessary.
+            // Continue only when the still-unused CTA actually appeared.
+            if (!await button.isVisible()) throw automaticReadinessError;
+        }
     }
     try {
-        await button.click({ timeout: 5_000 });
+        await button.click({ timeout: 20_000 });
     } catch (clickError) {
         // Autoplay can become effective between isVisible() and click(). That
         // race is success only when native and app readiness both prove it;
@@ -115,20 +122,60 @@ export async function activateAudioAtMostOnce(surface: Page | Frame): Promise<0 
 export async function expectNativeAudioAdvancing(surface: Page | Frame, count: number): Promise<void> {
     await expect(surface.locator(RECEIVED_AUDIO)).toHaveCount(count, { timeout: 20_000 });
     const before = await surface.locator(RECEIVED_AUDIO).evaluateAll((elements) =>
-        elements.map((element) => ({
-            time: (element as HTMLAudioElement).currentTime,
-            tracks: ((element as HTMLAudioElement).srcObject as MediaStream)?.getAudioTracks().map((track) => track.id),
-        })),
+        elements.map((element, index) => {
+            const audio = element as HTMLAudioElement;
+            return {
+                index,
+                time: audio.currentTime,
+                paused: audio.paused,
+                muted: audio.muted,
+                volume: audio.volume,
+                readyState: audio.readyState,
+                ended: audio.ended,
+                error: audio.error?.code ?? null,
+                tracks: (audio.srcObject as MediaStream)?.getAudioTracks().map((track) => ({
+                    id: track.id,
+                    state: track.readyState,
+                })),
+            };
+        }),
     );
     expect(before.every((source) => source.tracks?.length === 1)).toBe(true);
-    expect(new Set(before.flatMap((source) => source.tracks)).size).toBe(count);
-    await expect.poll(() => surface.locator(RECEIVED_AUDIO).evaluateAll((elements, previous) =>
-        elements.length === previous.length && elements.every((element, index) => {
-            const audio = element as HTMLAudioElement;
-            const stream = audio.srcObject as MediaStream | null;
-            return !audio.paused && !audio.ended && !audio.error &&
-                stream?.getAudioTracks()[0]?.id === previous[index].tracks?.[0] &&
-                audio.currentTime > previous[index].time;
-        }), before,
-    ), { timeout: 20_000, message: 'received native audio did not advance' }).toBe(true);
+    expect(new Set(before.flatMap((source) => source.tracks?.map((track) => track.id))).size).toBe(count);
+    const samples: unknown[] = [];
+    try {
+        await expect.poll(async () => {
+            const sample = await surface.locator(RECEIVED_AUDIO).evaluateAll((elements) =>
+                elements.map((element, index) => {
+                    const audio = element as HTMLAudioElement;
+                    return {
+                        index,
+                        time: audio.currentTime,
+                        paused: audio.paused,
+                        muted: audio.muted,
+                        volume: audio.volume,
+                        readyState: audio.readyState,
+                        ended: audio.ended,
+                        error: audio.error?.code ?? null,
+                        tracks: (audio.srcObject as MediaStream | null)?.getAudioTracks().map((track) => ({
+                            id: track.id,
+                            state: track.readyState,
+                        })) ?? [],
+                    };
+                }),
+            );
+            samples.push(sample);
+            if (samples.length > 12) samples.shift();
+            return sample.length === before.length && sample.every((audio, index) =>
+                !audio.paused && !audio.ended && audio.error === null &&
+                audio.tracks[0]?.id === before[index].tracks?.[0]?.id &&
+                audio.time > before[index].time,
+            );
+        }, { timeout: 20_000, message: 'received native audio did not advance' }).toBe(true);
+    } catch (error) {
+        throw new Error(`received native audio did not advance; diagnostics=${JSON.stringify({
+            before,
+            samples,
+        })}`, { cause: error });
+    }
 }

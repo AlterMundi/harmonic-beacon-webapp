@@ -34,9 +34,9 @@ function roster(count = 6): StagePublisher[] {
 }
 
 describe('stage scene constants', () => {
-    it('keeps the six-decoder cap and one high/five standard dimensions', () => {
-        expect(STAGE_MAX_PUBLISHERS).toBe(6);
-        expect(MAX_AUXILIARY_TILES).toBe(5);
+    it('supports the twelve-publisher ceiling and one high/eleven standard dimensions', () => {
+        expect(STAGE_MAX_PUBLISHERS).toBe(12);
+        expect(MAX_AUXILIARY_TILES).toBe(11);
         expect(SPOTLIGHT_DIMENSIONS).toEqual({ width: 1280, height: 720 });
         expect(AUXILIARY_DIMENSIONS).toEqual({ width: 640, height: 360 });
     });
@@ -53,6 +53,13 @@ describe('composeStageScene — composition grammar', () => {
         [6, 'chorus'],
     ] as const)('maps %i members to %s', (count, kind) => {
         expect(composeStageScene(roster(count)).kind).toBe(kind);
+    });
+
+    it.each([6, 9, 12] as const)('renders the configured %i-member capacity without overflow', (maxPublishers) => {
+        const composition = composeStageScene(roster(maxPublishers), { maxPublishers });
+        expect(composition.placements).toHaveLength(maxPublishers);
+        expect(composition.overflow).toEqual([]);
+        expect(composition.kind).toBe('chorus');
     });
 
     it('collapses duplicate identities before applying the cap and keeps the first record', () => {

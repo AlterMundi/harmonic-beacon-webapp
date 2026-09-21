@@ -1,0 +1,27 @@
+{
+  "archiveBytes": 1,
+  "archiveEntries": 1,
+  "archiveSha256": "REPLACE_WITH_64_LOWERCASE_HEX",
+  "archiveValidatorSha256": "REPLACE_WITH_64_LOWERCASE_HEX",
+  "buildTime": "2026-09-21T00:00:00Z",
+  "databaseSchemaVersion": "20260917211500_default_scene_capacity_12",
+  "expiresAt": "2026-09-22T00:00:00Z",
+  "expectedMigrations": [
+    {"name":"20260916010000_configurable_scene_capacity","sha256":"REPLACE_WITH_64_LOWERCASE_HEX"},
+    {"name":"20260917211500_default_scene_capacity_12","sha256":"REPLACE_WITH_64_LOWERCASE_HEX"}
+  ],
+  "livekitProbeSha256": "REPLACE_WITH_64_LOWERCASE_HEX",
+  "permitId": "REPLACE_WITH_RANDOM_64_LOWERCASE_HEX",
+  "productionBaseAppGitSha": "REPLACE_WITH_40_LOWERCASE_HEX",
+  "productionBaseAppImageId": "sha256:REPLACE_WITH_64_LOWERCASE_HEX",
+  "productionBaseWorkerGitSha": "REPLACE_WITH_40_LOWERCASE_HEX",
+  "productionBaseWorkerImageId": "sha256:REPLACE_WITH_64_LOWERCASE_HEX",
+  "productionPostgresImageId": "sha256:REPLACE_WITH_64_LOWERCASE_HEX",
+  "productionComposeSha256": "REPLACE_WITH_64_LOWERCASE_HEX",
+  "productionProfileSha256": "REPLACE_WITH_64_LOWERCASE_HEX",
+  "rehearsalComposeSha256": "REPLACE_WITH_64_LOWERCASE_HEX",
+  "schemaVersion": "hb-migration-bridge.permit.v2",
+  "sourceSha": "REPLACE_WITH_40_LOWERCASE_HEX",
+  "sourceTree": "REPLACE_WITH_40_LOWERCASE_HEX",
+  "stagingProfileSha256": "REPLACE_WITH_64_LOWERCASE_HEX"
+}

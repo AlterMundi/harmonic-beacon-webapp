@@ -52,6 +52,7 @@ describe('collectOperatorHealth', () => {
             id: 'session-1',
             title: 'Saturday EN session',
             status: 'LIVE',
+            maxPublishers: 6,
         });
         for (const check of Object.values(report.checks)) {
             expect(check.status).toBe('green');
@@ -60,7 +61,18 @@ describe('collectOperatorHealth', () => {
         expect(report.checks.publisherGrants.detail).toContain('6/6');
     });
 
-    it('raises the red invariant alarm when publish grants exceed the six-publisher cap', async () => {
+    it('reports the configured twelve-publisher capacity as health truth', async () => {
+        const report = await collectOperatorHealth(healthyDeps({
+            getWatchedSession: async () => ({ ...LIVE_SESSION, maxPublishers: 12 }),
+            countActivePublishGrants: async () => 10,
+        }));
+
+        expect(report.status).toBe('green');
+        expect(report.session).toMatchObject({ maxPublishers: 12 });
+        expect(report.checks.publisherGrants.detail).toContain('10/12');
+    });
+
+    it('raises the red invariant alarm when publish grants exceed configured capacity', async () => {
         const report = await collectOperatorHealth(
             healthyDeps({ countActivePublishGrants: async () => 7 }),
         );

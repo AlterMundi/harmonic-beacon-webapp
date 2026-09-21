@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { StaffRole } from '@prisma/client';
 import type { Messages, UiLocale } from '@/lib/i18n';
+import { advanceLifecycleStatus } from '@/lib/lifecycle-status';
 import { hasStaffCapability } from '@/lib/staff-capabilities';
 
 type Props = {
@@ -44,7 +45,9 @@ export default function SessionLifecycleControl({
 
     useEffect(() => {
         if (!observedStatus || observedStatus === status) return;
-        setStatus(observedStatus);
+        const nextStatus = advanceLifecycleStatus(status, observedStatus);
+        if (nextStatus === status) return;
+        setStatus(nextStatus);
         setConfirmClose(false);
         setNotice(null);
         setError(null);

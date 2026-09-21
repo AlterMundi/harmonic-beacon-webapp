@@ -18,6 +18,7 @@ import { effectiveStageState, type EffectiveStageState } from '@/lib/stage-prese
 import type { Messages } from '@/lib/i18n';
 
 const POLL_INTERVAL_MS = 2_000;
+const SCENE_CAPACITIES = [6, 9, 12] as const;
 
 type LiveTrack = {
     trackSid: string;
@@ -386,6 +387,31 @@ export default function SpotlightConsole({ sessionId, role, copy, staffRoles, on
             copy.reconciliationFinished,
         );
 
+    async function changeCapacity(maxPublishers: number) {
+        setBusyKey('capacity');
+        setActionError(null);
+        setNotice(null);
+        try {
+            const response = await fetch(`/api/ops/sessions/${sessionId}/capacity`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ maxPublishers }),
+            });
+            const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+            if (!response.ok) {
+                setActionError(describeActionError(response.status, data, copy));
+                return;
+            }
+            setSnapshot((current) => current ? { ...current, maxPublishers } : current);
+            setNotice(fill(copy.capacityChanged, { count: maxPublishers }));
+        } catch {
+            setActionError({ code: 'request_failed', message: copy.endpointUnavailable });
+        } finally {
+            setBusyKey(null);
+            void refresh();
+        }
+    }
+
     const all = snapshot?.participants ?? [];
     const onStage = all.filter((participant) => participant.stageState === 'ON_STAGE');
     const invited = all.filter(
@@ -440,7 +466,7 @@ export default function SpotlightConsole({ sessionId, role, copy, staffRoles, on
                 </div>
             ) : null}
 
-            <div className="flex items-center justify-between text-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
                 <span className="text-[var(--text-secondary)]">
                     {fill(copy.stageSummary, {
                         active: snapshot?.activePublishers ?? '…',
@@ -454,14 +480,34 @@ export default function SpotlightConsole({ sessionId, role, copy, staffRoles, on
                         : ''} ·{' '}
                     {fill(copy.handsRaised, { count: queue.length })}
                 </span>
-                <button
-                    type="button"
-                    onClick={() => void reconcile()}
-                    disabled={busyKey === 'reconcile'}
-                    className="min-h-11 rounded border border-[var(--border-subtle)] px-3 py-2 text-xs hover:bg-white/5 disabled:opacity-50"
-                >
-                    {copy.reconcile}
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                    {(role === 'ADMIN' || role === 'FACILITATOR_OP') && snapshot ? (
+                        <label className="flex items-center gap-2 text-xs text-[var(--text-secondary)]">
+                            <span>{copy.capacityLabel}</span>
+                            <select
+                                aria-label={copy.capacityLabel}
+                                value={snapshot.maxPublishers}
+                                disabled={busyKey === 'capacity'}
+                                onChange={(event) => void changeCapacity(Number(event.target.value))}
+                                className="min-h-11 rounded border border-[var(--border-subtle)] bg-[var(--surface-alt)] px-3 py-2 text-[var(--cream)] disabled:opacity-50"
+                            >
+                                {SCENE_CAPACITIES.map((capacity) => (
+                                    <option key={capacity} value={capacity}>
+                                        {fill(copy.capacityOption, { count: capacity })}
+                                    </option>
+                                ))}
+                            </select>
+                        </label>
+                    ) : null}
+                    <button
+                        type="button"
+                        onClick={() => void reconcile()}
+                        disabled={busyKey === 'reconcile'}
+                        className="min-h-11 rounded border border-[var(--border-subtle)] px-3 py-2 text-xs hover:bg-white/5 disabled:opacity-50"
+                    >
+                        {copy.reconcile}
+                    </button>
+                </div>
             </div>
 
             {/* Hand queue comes first so a facilitator never has to hunt below the stage. */}

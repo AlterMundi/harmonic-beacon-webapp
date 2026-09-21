@@ -1,7 +1,11 @@
 import { expect, stackTest } from '../fixtures/stack';
 import { loginViaDashboard } from '../fixtures/auth';
 import { ROUTES, SESSION_ES } from '../fixtures/test-data';
-import { requireDirectDb, withSessionStatus } from '../fixtures/db';
+import {
+    requireDirectDb,
+    withReconciledPublicationGrant,
+    withSessionStatus,
+} from '../fixtures/db';
 import { assertSafeFixtureDatabaseUrl } from '../fixtures/database-url';
 import { activateAudioAtMostOnce, expectEffectiveAudioReady, leaveConnectedRoom } from '../helpers/audio-readiness';
 import {
@@ -85,6 +89,7 @@ stackTest.describe('media continuity', () => {
         // stage tokens for LIVE sessions (src/lib/room-entitlement.ts).
         const db = requireDirectDb(testInfo);
         await withSessionStatus(db, SESSION_ES.id, 'LIVE', async () => {
+        await withReconciledPublicationGrant(db, SESSION_ES.id, async () => {
         // --- Facilitator publishes mic + camera into the stage room. ---
         const facilitatorContext = await browser.newContext();
         const facilitator = await facilitatorContext.newPage();
@@ -183,6 +188,7 @@ stackTest.describe('media continuity', () => {
         await attendeeContext.close();
         await facilitatorContext.close();
         });
+        });
     });
 
     stackTest('attendee controls without capture preserve the connected rooms', async ({ page }, testInfo) => {
@@ -277,6 +283,7 @@ stackTest.describe('media continuity', () => {
         stackTest.slow();
         const db = requireDirectDb(testInfo);
         await withSessionStatus(db, SESSION_ES.id, 'LIVE', async () => {
+            await withReconciledPublicationGrant(db, SESSION_ES.id, async () => {
             await loginViaDashboard(
                 page,
                 'FACILITATOR',
@@ -316,6 +323,7 @@ stackTest.describe('media continuity', () => {
             await expect(roomFrame.getByText(/access is open elsewhere|entrada está abierta en otro lugar/i))
                 .toHaveCount(0);
             await leaveConnectedRoom(roomFrame);
+            });
         });
     });
 });

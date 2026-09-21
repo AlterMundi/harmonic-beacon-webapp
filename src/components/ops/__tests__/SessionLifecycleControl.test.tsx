@@ -38,6 +38,86 @@ describe('SessionLifecycleControl', () => {
         );
     });
 
+    it('keeps a successful local transition ahead of a stale observed snapshot', async () => {
+        const onStatusChange = vi.fn();
+        const { rerender } = render(<SessionLifecycleControl
+            {...localized}
+            sessionId="event-1"
+            initialStatus="SCHEDULED"
+            scheduledAt="2026-08-01T18:00:00Z"
+            role="FACILITATOR"
+            onStatusChange={onStatusChange}
+        />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Open doors' }));
+        expect(await screen.findByRole('status')).toHaveTextContent(
+            'Doors are open. Attendees are entering now.',
+        );
+
+        rerender(<SessionLifecycleControl
+            {...localized}
+            sessionId="event-1"
+            initialStatus="SCHEDULED"
+            observedStatus="SCHEDULED"
+            scheduledAt="2026-08-01T18:00:00Z"
+            role="FACILITATOR"
+            onStatusChange={onStatusChange}
+        />);
+
+        await waitFor(() => {
+            expect(screen.getByRole('status')).toHaveTextContent(
+                'Doors are open. Attendees are entering now.',
+            );
+            expect(screen.getByRole('button', { name: 'Close event' })).toBeInTheDocument();
+        });
+        expect(onStatusChange).toHaveBeenCalledWith('LIVE');
+    });
+
+    it('adopts forward observed transitions without reviving a terminal event', async () => {
+        const { rerender } = render(<SessionLifecycleControl
+            {...localized}
+            sessionId="event-1"
+            initialStatus="SCHEDULED"
+            observedStatus="LIVE"
+            scheduledAt="2026-08-01T18:00:00Z"
+            role="FACILITATOR"
+        />);
+
+        await waitFor(() => {
+            expect(screen.getByText(/Status:/)).toHaveTextContent('Live');
+            expect(screen.getByRole('button', { name: 'Close event' })).toBeInTheDocument();
+        });
+
+        rerender(<SessionLifecycleControl
+            {...localized}
+            sessionId="event-1"
+            initialStatus="SCHEDULED"
+            observedStatus="ENDED"
+            scheduledAt="2026-08-01T18:00:00Z"
+            role="FACILITATOR"
+        />);
+
+        await waitFor(() => {
+            expect(screen.getByText(/Status:/)).toHaveTextContent('Ended');
+            expect(screen.queryByRole('button', { name: 'Open doors' })).not.toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: 'Close event' })).not.toBeInTheDocument();
+        });
+
+        rerender(<SessionLifecycleControl
+            {...localized}
+            sessionId="event-1"
+            initialStatus="SCHEDULED"
+            observedStatus="SCHEDULED"
+            scheduledAt="2026-08-01T18:00:00Z"
+            role="FACILITATOR"
+        />);
+
+        await waitFor(() => {
+            expect(screen.getByText(/Status:/)).toHaveTextContent('Ended');
+            expect(screen.queryByRole('button', { name: 'Open doors' })).not.toBeInTheDocument();
+        });
+    });
+
     it('renders the complete lifecycle control in Spanish from the typed dictionary', async () => {
         render(<SessionLifecycleControl
             locale="es"

@@ -4,7 +4,9 @@ import { Prisma } from '@prisma/client';
 
 import { prisma } from '@/lib/db';
 import { stableRoomIdentity } from '@/lib/livekit-server';
+import { isSceneCapacity, type SceneCapacity } from '@/lib/scene-capacity';
 import { eventStaffPolicy } from '@/lib/staff-capabilities';
+import { lockGrantSession, lockGrantStaff } from '@/lib/stage-grant-locks';
 import {
     beaconAccountEnabled,
     validatedAccountIdentity,
@@ -21,6 +23,7 @@ export type RoomPrincipal = {
         roomName: string;
         status: 'SCHEDULED' | 'LIVE';
         startedAt: Date | null;
+        maxPublishers: SceneCapacity;
     };
     identity: string;
     displayName: string;
@@ -71,6 +74,87 @@ type ParticipantGrantState = {
     publishRevokedAt: Date | null;
     grantReconcileNeeded: boolean;
 };
+
+async function createRoomParticipant(
+    access: RoomAccessBase,
+    scheduledSessionId: string,
+    now: Date,
+): Promise<ParticipantGrantState> {
+    if (!access.canPublishInitially || !access.staffUserId) {
+        return prisma.sessionParticipant.upsert({
+            where: {
+                scheduledSessionId_participantIdentity: {
+                    scheduledSessionId,
+                    participantIdentity: access.identity,
+                },
+            },
+            create: {
+                scheduledSessionId,
+                participantIdentity: access.identity,
+                displayName: access.displayName,
+                ticketEntitlementId: access.ticketEntitlementId,
+                staffUserId: access.staffUserId,
+                publishGrantedAt: null,
+                grantVersion: 0,
+                grantReason: null,
+            },
+            update: { leftAt: null },
+            select: {
+                publishGrantedAt: true,
+                publishRevokedAt: true,
+                grantReconcileNeeded: true,
+            },
+        });
+    }
+
+    return prisma.$transaction(async (tx) => {
+        await lockGrantSession(tx, scheduledSessionId);
+        await lockGrantStaff(tx, [access.staffUserId!]);
+        const session = await tx.scheduledSession.findUnique({
+            where: { id: scheduledSessionId },
+            select: { facilitatorId: true, maxPublishers: true },
+        });
+        const assignedFacilitator = session?.facilitatorId === access.staffUserId;
+        let grantAt: Date | null = null;
+        if (assignedFacilitator && session && isSceneCapacity(session.maxPublishers)) {
+            const activePublisherGrants = await tx.sessionParticipant.count({
+                where: {
+                    scheduledSessionId,
+                    publishGrantedAt: { not: null },
+                    publishRevokedAt: null,
+                },
+            });
+            if (activePublisherGrants < session.maxPublishers) grantAt = now;
+        }
+
+        return tx.sessionParticipant.upsert({
+            where: {
+                scheduledSessionId_participantIdentity: {
+                    scheduledSessionId,
+                    participantIdentity: access.identity,
+                },
+            },
+            create: {
+                scheduledSessionId,
+                participantIdentity: access.identity,
+                displayName: access.displayName,
+                ticketEntitlementId: access.ticketEntitlementId,
+                staffUserId: access.staffUserId,
+                publishGrantedAt: grantAt,
+                grantVersion: grantAt ? 1 : 0,
+                grantReason: grantAt ? 'Facilitator preflight grant' : null,
+            },
+            // Never re-grant an existing facilitator row here: an explicit
+            // revocation remains durable authority across token refreshes.
+            update: { leftAt: null },
+            select: {
+                publishGrantedAt: true,
+                publishRevokedAt: true,
+                grantReconcileNeeded: true,
+            },
+        });
+    });
+}
 
 async function recoverConcurrentParticipant(
     access: RoomAccessBase,
@@ -203,11 +287,15 @@ async function resolveRoomAccess(
             status: true,
             startedAt: true,
             facilitatorId: true,
+            maxPublishers: true,
         },
     });
 
     if (!scheduledSession) {
         return { ok: false, status: 404, error: 'Session not found' };
+    }
+    if (!isSceneCapacity(scheduledSession.maxPublishers)) {
+        return { ok: false, status: 403, error: 'Not authorized' };
     }
 
     const ticket = webSession.ticketEntitlement;
@@ -328,6 +416,7 @@ async function resolveRoomAccess(
                 roomName: scheduledSession.roomName,
                 status: scheduledSession.status,
                 startedAt: scheduledSession.startedAt,
+                maxPublishers: scheduledSession.maxPublishers,
             },
             // Once materialized, the participant row is the durable authority.
             // Revocations rotate this identity so stale JWTs and late RPCs are
@@ -426,34 +515,7 @@ export async function resolveRoomPrincipal(
                     grantReconcileNeeded: true,
                 },
             })
-            : await prisma.sessionParticipant.upsert({
-                where: {
-                    scheduledSessionId_participantIdentity: {
-                        scheduledSessionId: scheduledSessionId,
-                        participantIdentity: access.identity,
-                    },
-                },
-                create: {
-                    scheduledSessionId: scheduledSessionId,
-                    participantIdentity: access.identity,
-                    displayName: access.displayName,
-                    ticketEntitlementId: access.ticketEntitlementId,
-                    staffUserId: access.staffUserId,
-                    publishGrantedAt: access.canPublishInitially ? now : null,
-                    grantVersion: access.canPublishInitially ? 1 : 0,
-                    grantReason: access.canPublishInitially
-                        ? 'Facilitator preflight grant'
-                        : null,
-                },
-                update: {
-                    leftAt: null,
-                },
-                select: {
-                    publishGrantedAt: true,
-                    publishRevokedAt: true,
-                    grantReconcileNeeded: true,
-                },
-            });
+            : await createRoomParticipant(access, scheduledSessionId, now);
     } catch (error) {
         participant = await recoverConcurrentParticipant(access, error);
     }

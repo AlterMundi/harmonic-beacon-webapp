@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
 
+import { HISTORICAL_MIGRATION_CHECKSUMS } from '@/lib/migration-history';
+
 export type MigrationRecord = {
   migrationName: string;
   checksum: string | null;
@@ -10,6 +12,13 @@ export type MigrationRecord = {
 export type MigrationChecksum = {
   migrationName: string;
   checksum: string;
+};
+
+export type HistoricalChecksumMatch = {
+  migrationName: string;
+  checksum: string;
+  currentChecksum: string;
+  historicalSourceCommit: string;
 };
 
 export type MigrationState = {
@@ -24,6 +33,7 @@ export type MigrationState = {
   duplicateRecords: string[];
   conflictingRecords: string[];
   migrationChecksums: MigrationChecksum[];
+  historicalChecksumMatches: HistoricalChecksumMatch[];
 };
 
 const SHA256 = /^[0-9a-f]{64}$/u;
@@ -139,6 +149,7 @@ function statementViolation(statement: ScannedStatement): string | null {
     new RegExp(String.raw`^CREATE\s+SCHEMA\s+(?:IF\s+NOT\s+EXISTS\s+)?${IDENTIFIER}$`, 'iu'),
     new RegExp(String.raw`^ALTER\s+TABLE\s+(?:ONLY\s+)?${IDENTIFIER}\s+ADD\s+COLUMN\s+(?:IF\s+NOT\s+EXISTS\s+)?.+$`, 'iu'),
     new RegExp(String.raw`^ALTER\s+TABLE\s+(?:ONLY\s+)?${IDENTIFIER}\s+ADD\s+CONSTRAINT\s+${IDENTIFIER}\s+.+$`, 'iu'),
+    /^ALTER\s+TABLE\s+"scheduled_sessions"\s+ALTER\s+COLUMN\s+"scene_capacity"\s+SET\s+DEFAULT\s+12$/u,
     new RegExp(String.raw`^ALTER\s+TYPE\s+${IDENTIFIER}\s+ADD\s+VALUE\s+(?:IF\s+NOT\s+EXISTS\s+)?${STRING}(?:\s+(?:BEFORE|AFTER)\s+${STRING})?$`, 'iu'),
     new RegExp(String.raw`^INSERT\s+INTO\s+${IDENTIFIER}(?:\s*\([^)]*\))?\s+VALUES\s*\(.+\)(?:\s*,\s*\(.+\))*(?:\s+ON\s+CONFLICT(?:\s*\([^)]*\))?\s+DO\s+NOTHING)?$`, 'iu'),
   ];
@@ -158,14 +169,6 @@ export function validateForwardOnlyMigration(input: string | Buffer): { safe: bo
   if (scanned.statements.length === 0) return { safe: false, violations: ['EMPTY SQL'] };
   const violations = uniqueSorted(scanned.statements.map(statementViolation).filter((value): value is string => value !== null));
   return { safe: violations.length === 0, violations };
-}
-
-function recordFingerprint(record: MigrationRecord): string {
-  return JSON.stringify([
-    record.checksum,
-    record.finishedAt !== null,
-    record.rolledBackAt !== null,
-  ]);
 }
 
 export function classifyMigrationState(
@@ -188,6 +191,7 @@ export function classifyMigrationState(
   const applied: string[] = [];
   const failed: string[] = [];
   const migrationChecksums: MigrationChecksum[] = [];
+  const historicalChecksumMatches: HistoricalChecksumMatch[] = [];
 
   for (const migrationName of candidate) {
     const sql = migrationSql.get(migrationName);
@@ -196,17 +200,35 @@ export function classifyMigrationState(
     else checksumErrors.push(`${migrationName}:MISSING MIGRATION SQL`);
 
     const matching = byName.get(migrationName) ?? [];
-    if (matching.length > 1) {
+    const effective = matching.filter((record) => record.rolledBackAt === null);
+    if (effective.length > 1) {
       duplicateRecords.push(migrationName);
-      if (new Set(matching.map(recordFingerprint)).size > 1) conflictingRecords.push(migrationName);
+      if (new Set(effective.map((record) => JSON.stringify([record.checksum, record.finishedAt !== null]))).size > 1) {
+        conflictingRecords.push(migrationName);
+      }
     }
     for (const record of matching) {
+      if (record.finishedAt && record.rolledBackAt) conflictingRecords.push(migrationName);
       if (!record.checksum) checksumErrors.push(`${migrationName}:MISSING CHECKSUM`);
-      else if (!SHA256.test(record.checksum) || expectedChecksum === null || record.checksum !== expectedChecksum) {
-        checksumErrors.push(`${migrationName}:CHECKSUM MISMATCH`);
+      else if (!SHA256.test(record.checksum) || expectedChecksum === null) checksumErrors.push(`${migrationName}:CHECKSUM MISMATCH`);
+      else if (record.checksum !== expectedChecksum) {
+        const evidence = HISTORICAL_MIGRATION_CHECKSUMS.find((entry) =>
+          entry.migrationName === migrationName &&
+          entry.currentChecksum === expectedChecksum &&
+          entry.historicalChecksum === record.checksum);
+        if (evidence) {
+          historicalChecksumMatches.push({
+            migrationName,
+            checksum: record.checksum,
+            currentChecksum: expectedChecksum,
+            historicalSourceCommit: evidence.historicalSourceCommit,
+          });
+        } else checksumErrors.push(`${migrationName}:CHECKSUM MISMATCH`);
       }
-      if (record.finishedAt && !record.rolledBackAt) applied.push(migrationName);
-      if (!record.finishedAt && !record.rolledBackAt) failed.push(migrationName);
+    }
+    for (const record of effective) {
+      if (record.finishedAt) applied.push(migrationName);
+      else failed.push(migrationName);
     }
   }
 
@@ -233,6 +255,9 @@ export function classifyMigrationState(
     duplicateRecords: uniqueSorted(duplicateRecords),
     conflictingRecords: uniqueSorted(conflictingRecords),
     migrationChecksums,
+    historicalChecksumMatches: [...new Map(historicalChecksumMatches.map((entry) =>
+      [`${entry.migrationName}:${entry.checksum}`, entry])).values()].sort((left, right) =>
+        left.migrationName.localeCompare(right.migrationName) || left.checksum.localeCompare(right.checksum)),
   };
   return {
     schemaVersion: 'harmonic-beacon.migration-state.v1',

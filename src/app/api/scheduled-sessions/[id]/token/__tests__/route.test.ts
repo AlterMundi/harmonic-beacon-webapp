@@ -23,6 +23,7 @@ const principal = {
         roomName: 'weekend-stage',
         status: 'LIVE',
         startedAt: new Date('2026-08-01T15:00:00Z'),
+        maxPublishers: 12,
     },
     identity: 'event-stable-opaque',
     displayName: 'Attendee',
@@ -94,6 +95,7 @@ describe('GET /api/scheduled-sessions/[id]/token', () => {
             identity: 'event-stable-opaque',
             room: 'weekend-stage',
             canPublish: false,
+            session: { maxPublishers: 12 },
         });
         expect(JSON.stringify(body)).not.toMatch(/email|ticketEntitlement/i);
     });
