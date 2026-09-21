@@ -10,17 +10,52 @@ const SHA_PATTERN = /^[0-9a-f]{40}$/;
 const PENDING_STATUSES = new Set(['queued', 'in_progress', 'pending', 'requested', 'waiting']);
 const MAX_REASONS = 20;
 const ACTIONS_APP = Object.freeze({ id: 15368, slug: 'github-actions' });
-const EXPECTED_WORKFLOWS = Object.freeze({
+const CI_WORKFLOW = Object.freeze({ name: 'CI', path: '.github/workflows/ci.yml' });
+const E2E_WORKFLOW = Object.freeze({ name: 'E2E quality gates', path: '.github/workflows/e2e.yml' });
+const AUDIO_WORKFLOW = Object.freeze({ name: 'Audio boundary', path: '.github/workflows/audio-boundary.yml' });
+const LEGACY_EXPECTED_WORKFLOWS = Object.freeze({
   'diff-check': { name: 'CI', path: '.github/workflows/ci.yml' },
+  impact: CI_WORKFLOW,
   'lint-and-build': { name: 'CI', path: '.github/workflows/ci.yml' },
   test: { name: 'CI', path: '.github/workflows/ci.yml' },
   tapestry: { name: 'CI', path: '.github/workflows/ci.yml' },
   playlist: { name: 'CI', path: '.github/workflows/ci.yml' },
   analytics: { name: 'CI', path: '.github/workflows/ci.yml' },
-  e2e: { name: 'E2E quality gates', path: '.github/workflows/e2e.yml' },
-  account: { name: 'E2E quality gates', path: '.github/workflows/e2e.yml' },
-  'frozen-audio-paths': { name: 'Audio boundary', path: '.github/workflows/audio-boundary.yml' },
+  e2e: E2E_WORKFLOW,
+  account: E2E_WORKFLOW,
+  'frozen-audio-paths': AUDIO_WORKFLOW,
 });
+const INTEGRATED_JOB_NAMES = Object.freeze({
+  e2e: ['e2e / e2e', 'e2e / account'],
+});
+
+// C1 compatibility only: protected-base policy remains legacy until this
+// commit is integrated. A later protected-base change may select integrated-v2
+// before the direct E2E/audio emitters are retired.
+export const ACTIVE_EVIDENCE_FORM = 'legacy-v1';
+
+function evidenceRequirements(changedFiles, evidenceForm) {
+  const impact = classifyChanges(changedFiles);
+  if (evidenceForm === 'legacy-v1') {
+    return impact.requiredContexts.map((context) => ({
+      context,
+      expected: LEGACY_EXPECTED_WORKFLOWS[context],
+    }));
+  }
+  if (evidenceForm !== 'integrated-v2') throw new Error('unknown evidence form');
+  const contexts = ['diff-check'];
+  for (const job of impact.requiredJobChecks) contexts.push(...(INTEGRATED_JOB_NAMES[job] ?? [job]));
+  contexts.push('required-impact-checks');
+  return [...new Set(contexts)].map((context) => ({ context, expected: CI_WORKFLOW }));
+}
+
+function knownAlternativeWorkflow(run, requirement) {
+  if (!isExpectedApp(run?.app) || !isExpectedApp(run?.check_suite?.app)) return false;
+  const workflow = run?.workflow_run;
+  const known = [LEGACY_EXPECTED_WORKFLOWS[requirement.context], CI_WORKFLOW].filter(Boolean);
+  return known.some((expected) => workflow?.name === expected.name && workflow?.path === expected.path)
+    && !(workflow?.name === requirement.expected?.name && workflow?.path === requirement.expected?.path);
+}
 
 function fail(requiredContexts, ...reasons) {
   const bounded = reasons.slice(0, MAX_REASONS);
@@ -161,8 +196,8 @@ function isExpectedApp(app) {
   return app?.id === ACTIONS_APP.id && app?.slug === ACTIONS_APP.slug;
 }
 
-function isTrustedRun(run, context, input) {
-  const expected = EXPECTED_WORKFLOWS[context];
+function isTrustedRun(run, requirement, input) {
+  const expected = requirement.expected;
   const suite = run?.check_suite;
   const workflow = run?.workflow_run;
   const job = run?.workflow_job;
@@ -190,22 +225,26 @@ function isTrustedRun(run, context, input) {
     && pr?.base?.sha === input.currentBaseSha;
 }
 
-function latestExactRuns(checkRuns, headSha, evidenceNotBefore) {
+function latestExactRuns(checkRuns, requirements, headSha, evidenceNotBefore) {
   const cutoff = Date.parse(evidenceNotBefore);
   const latest = new Map();
-  for (const run of checkRuns) {
-    if (run.head_sha !== headSha) continue;
-    const started = Date.parse(run.workflow_run?.run_started_at ?? run.started_at ?? run.created_at ?? '');
-    if (run.status === 'completed' && run.conclusion === 'success' && started < cutoff) continue;
-    const prior = latest.get(run.name);
-    if (!prior || compareRuns(run, prior) > 0) latest.set(run.name, run);
+  for (const requirement of requirements) {
+    for (const run of checkRuns) {
+      if (run.name !== requirement.context || run.head_sha !== headSha) continue;
+      if (knownAlternativeWorkflow(run, requirement)) continue;
+      const started = Date.parse(run.workflow_run?.run_started_at ?? run.started_at ?? run.created_at ?? '');
+      if (run.status === 'completed' && run.conclusion === 'success' && started < cutoff) continue;
+      const prior = latest.get(requirement.context);
+      if (!prior || compareRuns(run, prior) > 0) latest.set(requirement.context, run);
+    }
   }
   return latest;
 }
 
-export function evaluateRequiredChecks(input) {
+export function evaluateRequiredChecksForEvidenceForm(input, evidenceForm) {
   validateInput(input);
-  const requiredContexts = classifyChanges(input.changedFiles).requiredContexts;
+  const requirements = evidenceRequirements(input.changedFiles, evidenceForm);
+  const requiredContexts = requirements.map(({ context }) => context);
 
   if (input.prNumber !== input.currentPrNumber) return fail(requiredContexts, 'wrong-pr');
   if (input.eventHeadSha !== input.currentHeadSha) return fail(requiredContexts, 'obsolete-head');
@@ -231,18 +270,19 @@ export function evaluateRequiredChecks(input) {
     };
   }
 
-  const latest = latestExactRuns(deduplicated.runs, input.eventHeadSha, input.evidenceNotBefore);
+  const latest = latestExactRuns(deduplicated.runs, requirements, input.eventHeadSha, input.evidenceNotBefore);
   const missing = [];
   const pending = [];
   const failed = [];
 
-  for (const context of requiredContexts) {
+  for (const requirement of requirements) {
+    const { context } = requirement;
     const run = latest.get(context);
     if (!run) {
       missing.push(`missing:${context}`);
       continue;
     }
-    if (!isTrustedRun(run, context, input)) {
+    if (!isTrustedRun(run, requirement, input)) {
       failed.push(`untrusted:${context}`);
       continue;
     }
@@ -286,6 +326,10 @@ export function evaluateRequiredChecks(input) {
     requiredContexts,
     reasons: [],
   };
+}
+
+export function evaluateRequiredChecks(input) {
+  return evaluateRequiredChecksForEvidenceForm(input, ACTIVE_EVIDENCE_FORM);
 }
 
 function parseArgs(argv) {

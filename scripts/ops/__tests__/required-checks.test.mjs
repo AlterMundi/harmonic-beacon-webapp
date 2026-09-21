@@ -6,7 +6,11 @@ import { dirname, join, resolve } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { evaluateRequiredChecks } from '../../ci/required-checks.mjs';
+import {
+  ACTIVE_EVIDENCE_FORM,
+  evaluateRequiredChecks,
+  evaluateRequiredChecksForEvidenceForm,
+} from '../../ci/required-checks.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const HEAD = '1111111111111111111111111111111111111111';
@@ -103,6 +107,13 @@ function appRuns(overrides = {}) {
   return ['diff-check', 'lint-and-build', 'test', 'e2e', 'account'].map((name, index) =>
     checkRun(name, { id: index + 1, ...(overrides[name] ?? {}) }),
   );
+}
+
+function integratedAppRuns(overrides = {}) {
+  return [
+    'diff-check', 'impact', 'lint-and-build', 'test',
+    'e2e / e2e', 'e2e / account', 'required-impact-checks',
+  ].map((name, index) => checkRun(name, { id: 100 + index, ...(overrides[name] ?? {}) }));
 }
 
 function assertState(actual, state, reason) {
@@ -260,6 +271,62 @@ test('succeeds when every selected application context passed on the exact head'
   }));
   assert.equal(result.state, 'success');
   assert.deepEqual(result.requiredContexts, ['diff-check', 'lint-and-build', 'test', 'e2e', 'account']);
+});
+
+test('C1 verifies the complete integrated form while protected-base policy remains legacy', () => {
+  assert.equal(ACTIVE_EVIDENCE_FORM, 'legacy-v1');
+  const result = evaluateRequiredChecksForEvidenceForm(input({
+    changedFiles: ['src/app/page.tsx'],
+    checkRuns: integratedAppRuns(),
+  }), 'integrated-v2');
+  assert.equal(result.state, 'success');
+  assert.deepEqual(result.requiredContexts, [
+    'diff-check', 'impact', 'lint-and-build', 'test',
+    'e2e / e2e', 'e2e / account', 'required-impact-checks',
+  ]);
+
+  const e2eWorkflow = readFileSync(resolve(ROOT, '.github/workflows/e2e.yml'), 'utf8');
+  assert.match(e2eWorkflow, /^ {2}pull_request:/m,
+    'the legacy emitter stays active until integrated-v2 is selected on the protected base');
+});
+
+test('integrated evidence never mixes direct legacy E2E success with missing or red CI E2E', () => {
+  const direct = [checkRun('e2e', { id: 201 }), checkRun('account', { id: 202 })];
+  const missing = integratedAppRuns().filter(({ name }) => name !== 'e2e / account');
+  assertState(evaluateRequiredChecksForEvidenceForm(input({
+    changedFiles: ['src/app/page.tsx'],
+    checkRuns: [...missing, ...direct],
+  }), 'integrated-v2'), 'pending', 'missing:e2e / account');
+
+  const red = integratedAppRuns({ 'e2e / e2e': { conclusion: 'failure' } });
+  assertState(evaluateRequiredChecksForEvidenceForm(input({
+    changedFiles: ['src/app/page.tsx'],
+    checkRuns: [...red, ...direct],
+  }), 'integrated-v2'), 'failure', 'conclusion:e2e / e2e:failure');
+});
+
+test('legacy policy never mixes integrated success with a red direct legacy form', () => {
+  const checks = [
+    ...appRuns({ account: { conclusion: 'failure' } }),
+    ...integratedAppRuns(),
+  ];
+  assertState(evaluateRequiredChecks(input({
+    changedFiles: ['src/app/page.tsx'],
+    checkRuns: checks,
+  })), 'failure', 'conclusion:account:failure');
+});
+
+test('integrated form requires its exact aggregate in addition to every selected job', () => {
+  const missing = integratedAppRuns().filter(({ name }) => name !== 'required-impact-checks');
+  assertState(evaluateRequiredChecksForEvidenceForm(input({
+    changedFiles: ['src/app/page.tsx'],
+    checkRuns: missing,
+    deadlineExpired: true,
+  }), 'integrated-v2'), 'failure', 'missing:required-impact-checks');
+  assertState(evaluateRequiredChecksForEvidenceForm(input({
+    changedFiles: ['src/app/page.tsx'],
+    checkRuns: integratedAppRuns({ 'required-impact-checks': { conclusion: 'skipped' } }),
+  }), 'integrated-v2'), 'failure', 'conclusion:required-impact-checks:skipped');
 });
 
 test('rejects a same-name success emitted by a foreign check App', () => {
