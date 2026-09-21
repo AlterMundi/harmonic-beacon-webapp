@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 2,
+  "services": [
+    {
+      "id": "malformed",
+      "name": "Malformed fixture",
+      "owner": {"status": "definitely true", "name": "AlterMundi"},
+      "repository": {"status": "verified", "slug": "AlterMundi/harmonic-beacon-webapp"},
+      "integrationLane": {"status": "verified", "name": "main"},
+      "deliveryLane": {"status": "verified", "name": "main"},
+      "ciWorkflow": {"status": "verified", "path": "/home/operator/private/workflow.yml"},
+      "deployAdapter": {"status": "verified", "kind": "repository-script", "references": []},
+      "localPaths": ["../private"],
+      "deployedRevision": {"status": "verified", "value": "not-a-sha"},
+      "artifactFingerprint": {"status": "verified", "kind": "oci-digest", "value": null, "references": []},
+      "health": {"status": "verified", "endpoints": []},
+      "alerts": {
+        "route": {"status": "verified", "kind": "service-monitor", "references": []},
+        "recipientProof": {"status": "verified", "references": [], "outcome": null}
+      },
+      "recovery": {
+        "target": {"status": "verified", "kind": "prior-artifact", "references": []},
+        "proof": {"status": "verified", "references": [], "outcome": null}
+      },
+      "staging": {
+        "status": "verified",
+        "environments": [],
+        "drill": {"status": "verified", "references": [], "outcome": null}
+      },
+      "unresolvedRequirements": [],
+      "mutationPolicy": "invalid"
+    }
+  ]
+}

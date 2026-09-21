@@ -14,6 +14,7 @@ import {
 } from '@/lib/room-token-issue';
 import { redactError } from '@/lib/redact';
 import { SESSION_COOKIE_NAME } from '@/lib/session-auth';
+import { resolveLiveKitPublicUrl } from '@/lib/livekit-public-url';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,6 +42,7 @@ export async function GET(request: NextRequest) {
     }
 
     try {
+        const livekitUrl = resolveLiveKitPublicUrl();
         const identity = bedRoomIdentity(entitlement.principal.identity);
         const ticketId = entitlement.principal.ticketEntitlementId;
         const ttlSeconds = ticketId
@@ -66,6 +68,7 @@ export async function GET(request: NextRequest) {
         }
         return tokenResponse({
             token,
+            livekitUrl,
             identity,
             room: BED_ROOM_NAME,
             canPublish: false,

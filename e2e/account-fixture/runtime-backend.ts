@@ -328,6 +328,7 @@ export async function runtimeEnv(source: Record<string, string | undefined>, dir
     const env: NodeJS.ProcessEnv = { PATH: source.PATH, HOME: source.HOME, TMPDIR: dir, NODE_ENV: 'production', NODE_OPTIONS: '--max-old-space-size=2048', NEXT_TELEMETRY_DISABLED: '1' };
     if (source.CI) env.CI = '1';
     if (source.NEXT_PUBLIC_E2E_CONTINUITY_OBSERVER === '1') env.NEXT_PUBLIC_E2E_CONTINUITY_OBSERVER = '1';
+    if (source.E2E_INCLUDE_FIREFOX === '1') env.E2E_INCLUDE_FIREFOX = '1';
     for (const name of ['PLAYWRIGHT_CHROME_EXECUTABLE', 'PLAYWRIGHT_BROWSERS_PATH']) {
         if (source[name]) {
             if (!path.isAbsolute(source[name]!)) throw new Error(`${name} must be an absolute installed path`);

@@ -55,20 +55,39 @@ test('analytics delivery is manual, release-bound, attempt-bound, and externally
   assert.match(ci, /analytics-runner\.sudoers/);
 });
 
-test('analytics catalog names the CI build and delivery workflow chain', async () => {
+test('typed analytics catalog names the exact CI build and delivery authority chain', async () => {
   const catalog = JSON.parse(await repositoryFile('deploy/platform-services.json'));
   const analytics = catalog.services.find(({ id }) => id === 'analytics');
-  assert.deepEqual(analytics.lanes, ['release']);
+  assert.equal(catalog.schemaVersion, 2);
+  assert.deepEqual(analytics.owner, { status: 'verified', name: 'AlterMundi' });
+  assert.deepEqual(analytics.repository, { status: 'verified', slug: 'AlterMundi/harmonic-beacon-webapp' });
+  assert.deepEqual(analytics.integrationLane, { status: 'verified', name: 'main' });
+  assert.deepEqual(analytics.deliveryLane, { status: 'documented', name: 'release' });
+  assert.deepEqual(analytics.ciWorkflow, { status: 'verified', path: '.github/workflows/ci.yml' });
+  assert.equal(analytics.deployAdapter.status, 'documented');
+  assert.equal(analytics.deployAdapter.kind, 'github-actions-workflow');
+  assert.ok(analytics.deployAdapter.references.includes('.github/workflows/analytics-delivery.yml'));
+  assert.ok(analytics.deployAdapter.references.includes('ops/analytics/hb-analytics-delivery-root'));
   assert.deepEqual(analytics.workflows, [
     '.github/workflows/ci.yml',
     '.github/workflows/analytics-build.yml',
     '.github/workflows/analytics-delivery.yml',
   ]);
   assert.ok(analytics.localPaths.includes('contracts/analytics-delivery/v2/receipt.schema.json'));
-  assert.deepEqual(analytics.health, [
-    { name: 'collector health', url: 'https://live.harmonicbeacon.com/_a/health', expectStatus: [200], provenanceField: 'provenance.sourceRevision' },
-    { name: 'collector readiness', url: 'https://live.harmonicbeacon.com/_a/ready', expectStatus: [200, 503], provenanceField: 'provenance.sourceRevision' },
-  ]);
+  assert.deepEqual(analytics.health, {
+    status: 'verified',
+    endpoints: [
+      { name: 'collector health', url: 'https://live.harmonicbeacon.com/_a/health', expectStatus: [200], provenanceField: 'provenance.sourceRevision' },
+      { name: 'collector readiness', url: 'https://live.harmonicbeacon.com/_a/ready', expectStatus: [200, 503], provenanceField: 'provenance.sourceRevision' },
+    ],
+  });
+  assert.deepEqual(analytics.alerts.recipientProof, { status: 'unresolved', references: [], outcome: null });
+  assert.ok(analytics.recoveryDocs.includes('docs/analytics/DELIVERY_RECOVERY_CONTRACT_V2.md'));
+  assert.equal(analytics.recovery.target.kind, 'restore-and-roll-forward');
+  assert.equal(
+    analytics.mutationPolicy,
+    'Keep analytics Compose/systemd lifecycle independent from Live; permit only exact-digest bounded helper operations and preserve product fail-open behavior.',
+  );
 });
 
 test('root helper and sudoers expose only one immutable locked state-machine boundary', async () => {

@@ -14,6 +14,7 @@ import {
 import { committedRoomLifecycle, disconnectRoomOnce } from '@/components/navigation/committed-room-lifecycle';
 import { redactErrorDetail } from '@/lib/redact';
 import { observeRoomAudioPlayback } from '@/lib/room-audio-playback';
+import { parseLiveKitTokenResponse } from '@/lib/livekit-token-response';
 
 // Participant identity for the live USB audio source
 const BEACON_IDENTITY = "beacon01";
@@ -128,7 +129,6 @@ export function AudioProvider({
     useEffect(() => { volumeRef.current = volume; }, [volume]);
     useEffect(() => { hasLiveStreamRef.current = hasLiveStream; }, [hasLiveStream]);
 
-    const LIVEKIT_URL = process.env.NEXT_PUBLIC_LIVEKIT_URL || "wss://live.altermundi.net";
 
     // Initialize LiveKit connection - runs once on mount
     useEffect(() => {
@@ -274,10 +274,10 @@ export function AudioProvider({
                 if (!res.ok) {
                     throw new Error(`token request failed: ${res.status}`);
                 }
-                const { token } = await res.json();
+                const { token, livekitUrl } = parseLiveKitTokenResponse(await res.json());
                 if (cancelled) return false;
 
-                await room.connect(LIVEKIT_URL, token);
+                await room.connect(livekitUrl, token);
                 if (cancelled) {
                     disconnectRoomOnce(room);
                     return false;
@@ -331,7 +331,7 @@ export function AudioProvider({
             });
             audioElements.clear();
         }, () => setPageGeneration(value => value + 1));
-    }, [LIVEKIT_URL, sessionId, pageGeneration]);
+    }, [sessionId, pageGeneration]);
 
     // When beacon goes live, mute playlist audio; unmute when beacon goes offline
     useEffect(() => {

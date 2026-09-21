@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harmonicbeacon.com/schemas/runtime-public-config.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "publicOrigin", "livekitPublicUrl", "featureFlags"],
+  "properties": {
+    "schemaVersion": {"const": "harmonic-beacon.runtime-public-config.v1"},
+    "publicOrigin": {"type": "string", "format": "uri", "pattern": "^https://[^/?#]+$"},
+    "livekitPublicUrl": {"type": "string", "format": "uri", "pattern": "^wss://[^?#]+$"},
+    "featureFlags": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tapestryPublic": {"type": "boolean"},
+        "promoInvitations": {"type": "boolean"}
+      },
+      "required": ["tapestryPublic", "promoInvitations"]
+    }
+  }
+}

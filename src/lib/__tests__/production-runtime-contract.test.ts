@@ -30,39 +30,34 @@ describe('production operational entrypoints', () => {
         expect(reconciler).not.toContain('memory: 256M');
     });
 
-    it('quiesces and preflights before any automatic application rollback', () => {
+    it('fences and fully quiesces writers around automatic application rollback', () => {
         const helper = readFileSync('deploy/hb-deploy-root', 'utf8');
-        const rollback = helper.slice(helper.indexOf('rollback() {'), helper.indexOf('\nusage() {'));
-        const stopApp = rollback.indexOf('stop app');
-        const preflight = rollback.indexOf('stage-grant-rollback-preflight.ts');
-        const stopWorker = rollback.indexOf('docker stop beacon-commerce-reconciler');
-        const compatible = rollback.indexOf('/app/src/lib/stage-grant-effects.ts');
-        const restore = rollback.indexOf('app commerce-reconciler');
+        const rollback = helper.slice(helper.indexOf('artifact_rollback() {'), helper.indexOf('\nschedule_apply() {'));
+        const initialPreflight = rollback.indexOf('run_release_continuity_preflight');
+        const fence = rollback.indexOf('entry_fence_acquire');
+        const stopWriters = rollback.indexOf('stop app commerce-reconciler');
+        const finalPreflight = rollback.indexOf('run_release_continuity_preflight', initialPreflight + 1);
+        const durablePreflight = rollback.indexOf('stage-grant-rollback-preflight.ts');
+        const restore = rollback.indexOf('artifact_compose_service_from');
+        const release = rollback.indexOf('entry_fence_release');
 
-        expect(stopApp).toBeGreaterThan(-1);
-        expect(preflight).toBeGreaterThan(stopApp);
-        expect(stopWorker).toBeGreaterThan(preflight);
-        expect(compatible).toBeGreaterThan(stopWorker);
-        expect(restore).toBeGreaterThan(compatible);
-        expect(rollback).toContain('automatic rollback refused: previous app lacks durable grant contract');
-        expect(rollback).toContain('[ "$migration_attempted" = true ]');
-        expect(rollback).toContain('failures before a migration attempt never changed');
+        expect(initialPreflight).toBeGreaterThan(-1);
+        expect(fence).toBeGreaterThan(initialPreflight);
+        expect(stopWriters).toBeGreaterThan(fence);
+        expect(finalPreflight).toBeGreaterThan(stopWriters);
+        expect(durablePreflight).toBeGreaterThan(finalPreflight);
+        expect(restore).toBeGreaterThan(durablePreflight);
+        expect(release).toBeGreaterThan(restore);
+        expect(rollback).toContain('automatic rollback refused: durable grant state did not quiesce');
+        expect(rollback).toContain('transaction_require_rollback');
     });
 
     it('quiesces writers and drains forward grant upgrades before replacement', () => {
-        const workflow = readFileSync('.github/workflows/deploy.yml', 'utf8');
-        const quiesce = workflow.indexOf('hb-deploy quiesce');
-        const migrationAttempt = workflow.indexOf("echo 'attempted=true'");
-        const migrate = workflow.indexOf('hb-deploy migrate');
-        const replace = workflow.indexOf('hb-deploy replace');
         const helper = readFileSync('deploy/hb-deploy-root', 'utf8');
-
-        expect(quiesce).toBeGreaterThan(-1);
-        expect(migrationAttempt).toBeGreaterThan(quiesce);
-        expect(migrate).toBeGreaterThan(migrationAttempt);
-        expect(replace).toBeGreaterThan(migrate);
-        expect(helper).toContain('scripts/release-quiesce-preflight.ts');
-        expect(helper).toContain('scripts/stage-grant-forward-drain.ts');
-        expect(workflow).toContain("always() && (failure() || cancelled())");
+        const migrate = helper.slice(helper.indexOf('artifact_migrate() {'), helper.indexOf('artifact_replace() {'));
+        expect(migrate.indexOf('migration-attempted')).toBeLessThan(migrate.indexOf('stop app'));
+        expect(migrate.indexOf('release-quiesce-preflight.ts')).toBeLessThan(migrate.indexOf('npx prisma migrate deploy'));
+        expect(migrate.indexOf('stage-grant-forward-drain.ts')).toBeGreaterThan(migrate.indexOf('npx prisma migrate deploy'));
+        expect(migrate).toContain('--no-build --pull never');
     });
 });

@@ -65,6 +65,7 @@ const TOKEN_RESPONSE = {
     // exercised with real media in e2e/tests/media-continuity.spec.ts.
     canPublish: false,
     token: 'test-token',
+    livekitUrl: 'wss://live.example.com',
     identity: 'opaque-attendee-12345678',
     displayName: 'Nico',
     role: 'ATTENDEE',

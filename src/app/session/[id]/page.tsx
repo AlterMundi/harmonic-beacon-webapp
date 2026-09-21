@@ -34,8 +34,7 @@ import type { StageConnectionQuality } from "@/lib/stage-layout";
 import { roomMixGains } from "@/lib/audio-mix";
 import { redactErrorDetail } from "@/lib/redact";
 import { isLocalizedStaffRole, localeForEventLanguage, staffRolePresentation } from "@/lib/i18n";
-
-const LIVEKIT_URL = process.env.NEXT_PUBLIC_LIVEKIT_URL || "wss://live.altermundi.net";
+import { parseLiveKitTokenResponse } from "@/lib/livekit-token-response";
 
 function stageRoomOptions(isAssignedFacilitator: boolean): RoomOptions {
     return {
@@ -696,6 +695,7 @@ function SessionRoom() {
                 }
 
                 const data = await res.json();
+                const { token, livekitUrl } = parseLiveKitTokenResponse(data);
                 if (cancelled) return;
 
                 setSessionInfo(data.session);
@@ -845,7 +845,7 @@ function SessionRoom() {
                     setDisconnectState(kind);
                 });
 
-                await room.connect(LIVEKIT_URL, data.token);
+                await room.connect(livekitUrl, token);
                 if (cancelled) {
                     disconnectRoomOnce(room);
                     return;

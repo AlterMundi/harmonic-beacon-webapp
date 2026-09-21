@@ -1,0 +1,1055 @@
+import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
+import test from 'node:test';
+import { fileURLToPath } from 'node:url';
+
+import {
+  ACTIVE_EVIDENCE_FORM,
+  evaluateRequiredChecks as evaluateActiveRequiredChecks,
+  evaluateRequiredChecksForEvidenceForm,
+} from '../../ci/required-checks.mjs';
+
+// Preserve the legacy regression corpus while C2 adds an explicit active-form
+// assertion below. Both complete forms remain independently testable.
+const evaluateRequiredChecks = (input) => evaluateRequiredChecksForEvidenceForm(input, 'legacy-v1');
+
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+const HEAD = '1111111111111111111111111111111111111111';
+const BASE = '2222222222222222222222222222222222222222';
+const MERGE = '4444444444444444444444444444444444444444';
+const ACTIONS_APP_ID = 15368;
+
+function workflowIdentity(name, id, overrides = {}) {
+  const workflow = ['e2e', 'account'].includes(name)
+    ? { name: 'E2E quality gates', path: '.github/workflows/e2e.yml' }
+    : name === 'frozen-audio-paths'
+      ? { name: 'Audio boundary', path: '.github/workflows/audio-boundary.yml' }
+      : { name: 'CI', path: '.github/workflows/ci.yml' };
+  const suiteId = 1000 + id;
+  return {
+    id: 2000 + id,
+    check_suite_id: suiteId,
+    run_attempt: 1,
+    event: 'pull_request',
+    head_sha: HEAD,
+    run_started_at: '2026-09-10T00:01:00.000Z',
+    pull_requests: [{ number: 534, head: { sha: HEAD }, base: { ref: 'main', sha: BASE } }],
+    ...workflow,
+    ...overrides,
+  };
+}
+
+function checkRun(name, overrides = {}) {
+  const id = overrides.id ?? 1;
+  const suiteId = 1000 + id;
+  const workflow = Object.hasOwn(overrides, 'workflow_run') ? overrides.workflow_run : workflowIdentity(name, id);
+  return {
+    id,
+    name,
+    head_sha: overrides.head_sha ?? HEAD,
+    status: overrides.status ?? 'completed',
+    conclusion: overrides.conclusion === undefined ? 'success' : overrides.conclusion,
+    completed_at: Object.hasOwn(overrides, 'completed_at') ? overrides.completed_at : null,
+    started_at: Object.hasOwn(overrides, 'started_at') ? overrides.started_at : '2026-09-10T00:01:00.000Z',
+    created_at: Object.hasOwn(overrides, 'created_at') ? overrides.created_at : '2026-09-10T00:01:00.000Z',
+    app: overrides.app ?? { id: ACTIONS_APP_ID, slug: 'github-actions' },
+    check_suite: overrides.check_suite ?? {
+      id: suiteId,
+      head_sha: overrides.head_sha ?? HEAD,
+      app: { id: ACTIONS_APP_ID, slug: 'github-actions' },
+    },
+    workflow_run: workflow,
+    workflow_job: Object.hasOwn(overrides, 'workflow_job') ? overrides.workflow_job : workflow === null ? null : {
+      id: 3000 + id,
+      run_id: workflow.id,
+      run_attempt: workflow.run_attempt,
+      check_run_id: id,
+      head_sha: overrides.head_sha ?? HEAD,
+      name,
+      status: overrides.status ?? 'completed',
+      conclusion: overrides.conclusion === undefined ? 'success' : overrides.conclusion,
+      started_at: Object.hasOwn(overrides, 'started_at') ? overrides.started_at : '2026-09-10T00:01:00.000Z',
+      completed_at: Object.hasOwn(overrides, 'completed_at') ? overrides.completed_at : null,
+    },
+  };
+}
+
+function input(overrides = {}) {
+  const value = {
+    prNumber: 534,
+    expectedBaseRef: 'main',
+    eventHeadSha: HEAD,
+    eventBaseSha: BASE,
+    currentPrNumber: 534,
+    currentPrState: 'open',
+    currentHeadSha: HEAD,
+    currentBaseSha: BASE,
+    currentBaseRef: 'main',
+    currentMergeSha: MERGE,
+    evaluatorBaseSha: BASE,
+    baseIsAncestor: true,
+    evidenceNotBefore: '2026-09-10T00:00:00.000Z',
+    protectedPrCount: 1,
+    reportedChangedFileCount: 1,
+    listedChangedFileCount: 1,
+    changedFiles: ['docs/ops/example.md'],
+    checkRuns: [checkRun('diff-check')],
+    checkSnapshotStable: true,
+    deadlineExpired: false,
+    ...overrides,
+  };
+  if (!Object.hasOwn(overrides, 'reportedCheckRunCount')) {
+    value.reportedCheckRunCount = new Set(value.checkRuns.map(({ id }) => id)).size;
+  }
+  return value;
+}
+
+function appRuns(overrides = {}) {
+  return ['diff-check', 'lint-and-build', 'test', 'e2e', 'account'].map((name, index) => {
+    const id = index + 1;
+    const e2e = ['e2e', 'account'].includes(name);
+    const runId = e2e ? 20_002 : 20_001;
+    const suiteId = e2e ? 10_002 : 10_001;
+    return checkRun(name, {
+      id,
+      check_suite: { id: suiteId, head_sha: HEAD, app: { id: ACTIONS_APP_ID, slug: 'github-actions' } },
+      workflow_run: workflowIdentity(name, id, { id: runId, check_suite_id: suiteId }),
+      ...(overrides[name] ?? {}),
+    });
+  });
+}
+
+function integratedAppRuns(overrides = {}, run = {}) {
+  const runId = run.id ?? 21_001;
+  const runAttempt = run.run_attempt ?? 1;
+  const runStartedAt = run.run_started_at ?? '2026-09-10T00:01:00.000Z';
+  const suiteId = run.check_suite_id ?? 11_001;
+  return (run.names ?? [
+    'diff-check', 'impact', 'lint-and-build', 'test',
+    'e2e / e2e', 'e2e / account', 'required-impact-checks',
+  ]).map((name, index) => {
+    const id = (run.check_id_base ?? 100) + index;
+    return checkRun(name, {
+      id,
+      created_at: runStartedAt,
+      started_at: runStartedAt,
+      check_suite: { id: suiteId, head_sha: HEAD, app: { id: ACTIONS_APP_ID, slug: 'github-actions' } },
+      workflow_run: workflowIdentity(name, id, {
+        id: runId,
+        check_suite_id: suiteId,
+        run_attempt: runAttempt,
+        run_started_at: runStartedAt,
+        name: 'CI',
+        path: '.github/workflows/ci.yml',
+      }),
+      ...(overrides[name] ?? {}),
+    });
+  });
+}
+
+const integratedAudioNames = [
+  'diff-check', 'impact', 'lint-and-build', 'test', 'tapestry', 'playlist', 'analytics',
+  'e2e / e2e', 'e2e / account', 'frozen-audio-paths', 'data-recovery',
+  'release-qualification', 'required-impact-checks',
+];
+
+function audioLabelRun(overrides = {}) {
+  const id = overrides.id ?? 900;
+  const suiteId = 11_900;
+  return checkRun('frozen-audio-paths', {
+    id,
+    check_suite: { id: suiteId, head_sha: HEAD, app: { id: ACTIONS_APP_ID, slug: 'github-actions' } },
+    workflow_run: workflowIdentity('frozen-audio-paths', id, { id: 21_900, check_suite_id: suiteId }),
+    ...overrides,
+  });
+}
+
+function assertState(actual, state, reason) {
+  assert.equal(actual.state, state);
+  if (reason) assert.ok(actual.reasons.includes(reason), JSON.stringify(actual));
+}
+
+function mapEvidence(raw) {
+  const result = spawnSync('jq', ['-c', '-f', resolve(ROOT, 'scripts/ci/check-evidence.jq')], {
+    encoding: 'utf8',
+    input: JSON.stringify(raw),
+  });
+  assert.equal(result.status, 0, result.stderr);
+  return JSON.parse(result.stdout);
+}
+
+function runEvidenceSnapshotFunction(name, raw) {
+  const workflow = readFileSync(resolve(ROOT, '.github/workflows/delivery-gate.yml'), 'utf8');
+  const start = workflow.indexOf('          canonical_evidence_snapshot()');
+  const end = workflow.indexOf('\n          for attempt', start);
+  assert.ok(start >= 0 && end > start, 'evidence snapshot functions must be present');
+  const functions = workflow.slice(start, end)
+    .split('\n')
+    .map((line) => line.replace(/^ {10}/, ''))
+    .join('\n');
+  return spawnSync('bash', ['-c', `${functions}\n${name} <<<"$FIXTURE"`], {
+    encoding: 'utf8',
+    env: { ...process.env, FIXTURE: JSON.stringify(raw) },
+  });
+}
+
+// Execute the checked-in fetch function; only the GitHub API boundary is stubbed.
+// Fixtures travel via files, never argv/environment (which share exec size limits).
+function fetchEvidenceSnapshot(raw, overrides = {}, afterFetch = '') {
+  const workflow = readFileSync(resolve(ROOT, '.github/workflows/delivery-gate.yml'), 'utf8');
+  const start = workflow.indexOf('          fetch_evidence_snapshot()');
+  const end = workflow.indexOf('\n          for attempt', start);
+  assert.ok(start >= 0 && end > start, 'production evidence functions must be present');
+  const functions = workflow.slice(start, end).split('\n')
+    .map((line) => line.replace(/^ {10}/, '')).join('\n');
+  const temp = mkdtempSync(join(tmpdir(), 'delivery-evidence-'));
+  const responses = {
+    checks: raw.checks, workflows: raw.workflows, suite: raw.suites[0],
+    run: raw.jobs[0].run, pages: raw.jobs[0].pages,
+  };
+  try {
+    for (const [name, value] of Object.entries(responses)) {
+      writeFileSync(join(temp, `${name}.json`), overrides[name] ?? JSON.stringify(value));
+    }
+    return spawnSync('bash', ['-e', '-o', 'pipefail'], {
+      encoding: 'utf8', maxBuffer: 16 * 1024 * 1024,
+      env: { ...process.env, FIXTURE_DIR: temp },
+      input: `set -u
+REPOSITORY=AlterMundi/harmonic-beacon-webapp
+event_head=${HEAD}
+payload_dir="$FIXTURE_DIR"
+gh() {
+  local endpoint="\${!#}" file
+  case "$endpoint" in
+    "repos/$REPOSITORY/commits/$event_head/check-runs?per_page=100&filter=all") file=checks ;;
+    "repos/$REPOSITORY/actions/runs?head_sha=$event_head&event=pull_request&per_page=100") file=workflows ;;
+    "repos/$REPOSITORY/check-suites/1011") file=suite ;;
+    "repos/$REPOSITORY/actions/runs/2011/attempts/2") file=run ;;
+    "repos/$REPOSITORY/actions/runs/2011/attempts/2/jobs?per_page=100") file=pages ;;
+    *) printf 'unexpected API request: %s\\n' "$endpoint" >&2; return 1 ;;
+  esac
+  cat "$FIXTURE_DIR/$file.json"
+}
+${functions}
+evidence="$(fetch_evidence_snapshot)"
+printf '%s\\n' "$evidence"
+${afterFetch}
+`,
+    });
+  } finally {
+    rmSync(temp, { recursive: true, force: true });
+  }
+}
+
+function fetchFixture() {
+  const current = checkRun('diff-check', {
+    id: 11, completed_at: '2026-09-10T00:01:30.000Z',
+    workflow_run: workflowIdentity('diff-check', 11, { run_attempt: 2 }),
+  });
+  const { workflow_run: run, workflow_job: job, ...check } = current;
+  return {
+    checks: [{ total_count: 1, check_runs: [check] }],
+    workflows: [{ total_count: 1, workflow_runs: [structuredClone(run)] }],
+    suites: [structuredClone(check.check_suite)],
+    jobs: [{ run_id: run.id, run_attempt: run.run_attempt, run, pages: [{ total_count: 1, jobs: [{
+      ...job,
+      check_run_url: `https://api.github.com/repos/AlterMundi/harmonic-beacon-webapp/check-runs/${check.id}`,
+    }] }] }],
+  };
+}
+
+for (const largePart of ['checks', 'workflows', 'suite', 'run', 'pages']) {
+  test(`fetch preserves complete evidence above 128 KiB: ${largePart}`, () => {
+    const raw = fetchFixture();
+    const targets = {
+      checks: raw.checks[0].check_runs[0], workflows: raw.workflows[0].workflow_runs[0],
+      suite: raw.suites[0], run: raw.jobs[0].run, pages: raw.jobs[0].pages[0].jobs[0],
+    };
+    targets[largePart].extra = { text: 'quotes " slash \\ newline\n Ω '.repeat(8192), nested: [null, false, 7] };
+    assert.ok(Buffer.byteLength(JSON.stringify(targets[largePart])) > 128 * 1024);
+    const result = fetchEvidenceSnapshot(raw, {}, `
+evidence_snapshot_complete <<<"$evidence"
+second="$(fetch_evidence_snapshot)"
+[ "$(canonical_evidence_snapshot <<<"$evidence")" = "$(canonical_evidence_snapshot <<<"$second")" ]
+drifted="$(jq '.jobs[0].run.run_attempt = 1' <<<"$second")"
+if evidence_snapshot_complete <<<"$drifted"; then exit 1; fi
+[ "$(canonical_evidence_snapshot <<<"$evidence")" != "$(canonical_evidence_snapshot <<<"$drifted")" ]
+`);
+    assert.equal(result.status, 0, result.stderr);
+    const fetched = JSON.parse(result.stdout);
+    assert.deepEqual(fetched, raw, 'no evidence fields may be dropped or reinterpreted');
+    const mapped = mapEvidence(fetched);
+    assert.equal(mapped[0].workflow_run.run_attempt, 2);
+    assert.equal(mapped[0].workflow_job.check_run_id, 11);
+    assertState(evaluateRequiredChecks(input({ checkRuns: mapped })), 'success');
+  });
+}
+
+for (const part of ['checks', 'workflows', 'suite', 'run', 'pages']) {
+  for (const [label, malformed] of Object.entries({
+    truncated: '{"broken":',
+    oversized: `{"broken":"${'x'.repeat(256 * 1024)}`,
+    empty: '',
+    multiple: '{} {}',
+  })) {
+    test(`fetch rejects malformed JSON evidence: ${part} (${label})`, () => {
+      const result = fetchEvidenceSnapshot(fetchFixture(), { [part]: malformed });
+      assert.notEqual(result.status, 0, 'malformed evidence must fail closed');
+      assert.equal(result.stdout, '', 'no snapshot may be emitted after parse failure');
+      assert.match(result.stderr, /parse|JSON/i);
+      assert.doesNotMatch(result.stderr, /Argument list too long/);
+    });
+  }
+}
+
+test('succeeds when every required context passed on the exact current head', () => {
+  assert.deepEqual(evaluateRequiredChecks(input()), {
+    schemaVersion: 1,
+    state: 'success',
+    description: 'all 1 required checks succeeded',
+    requiredContexts: ['diff-check'],
+    reasons: [],
+  });
+});
+
+test('succeeds when every selected application context passed on the exact head', () => {
+  const result = evaluateRequiredChecks(input({
+    changedFiles: ['src/app/page.tsx'],
+    checkRuns: appRuns(),
+  }));
+  assert.equal(result.state, 'success');
+  assert.deepEqual(result.requiredContexts, ['diff-check', 'lint-and-build', 'test', 'e2e', 'account']);
+});
+
+test('C2 selects the complete integrated form only after C1 compatibility exists', () => {
+  assert.equal(ACTIVE_EVIDENCE_FORM, 'integrated-v2');
+  const evidence = input({
+    changedFiles: ['src/app/page.tsx'],
+    checkRuns: integratedAppRuns(),
+  });
+  const result = evaluateActiveRequiredChecks(evidence);
+  assert.equal(result.state, 'success');
+  assert.deepEqual(result.requiredContexts, [
+    'diff-check', 'impact', 'lint-and-build', 'test',
+    'e2e / e2e', 'e2e / account', 'required-impact-checks',
+  ]);
+
+});
+
+test('integrated evidence never mixes direct legacy E2E success with missing or red CI E2E', () => {
+  const direct = [checkRun('e2e', { id: 201 }), checkRun('account', { id: 202 })];
+  const missing = integratedAppRuns().filter(({ name }) => name !== 'e2e / account');
+  assertState(evaluateRequiredChecksForEvidenceForm(input({
+    changedFiles: ['src/app/page.tsx'],
+    checkRuns: [...missing, ...direct],
+  }), 'integrated-v2'), 'pending', 'missing:e2e / account');
+
+  const red = integratedAppRuns({ 'e2e / e2e': { conclusion: 'failure' } });
+  assertState(evaluateRequiredChecksForEvidenceForm(input({
+    changedFiles: ['src/app/page.tsx'],
+    checkRuns: [...red, ...direct],
+  }), 'integrated-v2'), 'failure', 'conclusion:e2e / e2e:failure');
+});
+
+test('legacy policy never mixes integrated success with a red direct legacy form', () => {
+  const checks = [
+    ...appRuns({ account: { conclusion: 'failure' } }),
+    ...integratedAppRuns(),
+  ];
+  assertState(evaluateRequiredChecksForEvidenceForm(input({
+    changedFiles: ['src/app/page.tsx'],
+    checkRuns: checks,
+  }), 'legacy-v1'), 'failure', 'conclusion:account:failure');
+});
+
+test('integrated form requires its exact aggregate in addition to every selected job', () => {
+  const missing = integratedAppRuns().filter(({ name }) => name !== 'required-impact-checks');
+  assertState(evaluateRequiredChecksForEvidenceForm(input({
+    changedFiles: ['src/app/page.tsx'],
+    checkRuns: missing,
+    deadlineExpired: true,
+  }), 'integrated-v2'), 'failure', 'missing:required-impact-checks');
+  assertState(evaluateRequiredChecksForEvidenceForm(input({
+    changedFiles: ['src/app/page.tsx'],
+    checkRuns: integratedAppRuns({ 'required-impact-checks': { conclusion: 'skipped' } }),
+  }), 'integrated-v2'), 'failure', 'conclusion:required-impact-checks:skipped');
+});
+
+test('integrated audio requires both CI regressions and standalone label policy proof', () => {
+  const ci = integratedAppRuns({}, { names: integratedAudioNames });
+  const label = audioLabelRun();
+  const accepted = evaluateRequiredChecksForEvidenceForm(input({
+    changedFiles: ['src/context/AudioContext.tsx'],
+    checkRuns: [...ci, label],
+  }), 'integrated-v2');
+  assert.equal(accepted.state, 'success', JSON.stringify(accepted));
+  assert.ok(accepted.requiredContexts.includes('frozen-audio-paths'));
+  assert.ok(accepted.requiredContexts.includes('audio-label-policy'));
+
+  assertState(evaluateRequiredChecksForEvidenceForm(input({
+    changedFiles: ['src/context/AudioContext.tsx'],
+    checkRuns: ci,
+  }), 'integrated-v2'), 'pending', 'missing:audio-label-policy');
+
+  assertState(evaluateRequiredChecksForEvidenceForm(input({
+    changedFiles: ['src/context/AudioContext.tsx'],
+    checkRuns: [...ci, audioLabelRun({ conclusion: 'failure' })],
+  }), 'integrated-v2'), 'failure', 'conclusion:audio-label-policy:failure');
+
+  assertState(evaluateRequiredChecksForEvidenceForm(input({
+    changedFiles: ['src/context/AudioContext.tsx'],
+    checkRuns: [...ci.filter(({ name }) => name !== 'frozen-audio-paths'), label],
+  }), 'integrated-v2'), 'pending', 'missing:frozen-audio-paths');
+});
+
+test('integrated audio ignores an unmapped old Audio attempt without trusting suite lineage', () => {
+  const audioSuiteId = 11_900;
+  const ci = integratedAppRuns({}, {
+    names: integratedAudioNames,
+    run_started_at: '2026-09-10T00:01:00.000Z',
+  });
+  const currentLabel = audioLabelRun({
+    id: 902,
+    created_at: null,
+    started_at: '2026-09-10T12:00:03.000Z',
+    check_suite: {
+      id: audioSuiteId,
+      head_sha: HEAD,
+      app: { id: ACTIONS_APP_ID, slug: 'github-actions' },
+    },
+    workflow_run: workflowIdentity('frozen-audio-paths', 902, {
+      id: 21_900,
+      check_suite_id: audioSuiteId,
+      run_attempt: 2,
+      run_started_at: '2026-09-10T12:00:00.000Z',
+    }),
+  });
+  // Exact production shape after a rerun: check-runs contains both attempts,
+  // but Actions runs/jobs only maps the current attempt. Its timestamp is
+  // later than the CI workflow start, so it previously displaced CI evidence.
+  const oldUnmappedLabel = checkRun('frozen-audio-paths', {
+    id: 901,
+    started_at: '2026-09-10T00:01:04.000Z',
+    check_suite: currentLabel.check_suite,
+    workflow_run: null,
+    workflow_job: null,
+  });
+  const evidence = input({
+    changedFiles: ['src/context/AudioContext.tsx'],
+    checkRuns: [...ci, oldUnmappedLabel, currentLabel],
+  });
+  assert.equal(
+    evaluateRequiredChecksForEvidenceForm(evidence, 'integrated-v2').state,
+    'success',
+  );
+
+  const unknownSuite = {
+    ...oldUnmappedLabel,
+    id: 903,
+    check_suite: { ...oldUnmappedLabel.check_suite, id: 11_903 },
+  };
+  assertState(evaluateRequiredChecksForEvidenceForm(input({
+    changedFiles: ['src/context/AudioContext.tsx'],
+    checkRuns: [...ci, unknownSuite, currentLabel],
+  }), 'integrated-v2'), 'failure', 'untrusted:frozen-audio-paths');
+});
+
+test('integrated form never fills a newer incomplete CI attempt with older green jobs', () => {
+  const older = integratedAppRuns({}, {
+    id: 21_100,
+    run_attempt: 1,
+    run_started_at: '2026-09-10T00:01:00.000Z',
+    check_suite_id: 11_100,
+    check_id_base: 300,
+  });
+  const newer = integratedAppRuns({}, {
+    id: 21_101,
+    run_attempt: 1,
+    run_started_at: '2026-09-10T00:02:00.000Z',
+    check_suite_id: 11_101,
+    check_id_base: 400,
+  }).filter(({ name }) => ['diff-check', 'impact'].includes(name));
+  const result = evaluateRequiredChecksForEvidenceForm(input({
+    changedFiles: ['src/app/page.tsx'],
+    checkRuns: [...older, ...newer],
+  }), 'integrated-v2');
+  assertState(result, 'pending', 'missing:lint-and-build');
+  assert.ok(result.reasons.includes('missing:required-impact-checks'), JSON.stringify(result));
+});
+
+test('integrated form binds every job to the newest rerun attempt of one CI run', () => {
+  const older = integratedAppRuns({}, {
+    id: 21_200,
+    run_attempt: 1,
+    run_started_at: '2026-09-10T00:01:00.000Z',
+    check_suite_id: 11_200,
+    check_id_base: 500,
+  });
+  const rerun = integratedAppRuns({}, {
+    id: 21_200,
+    run_attempt: 2,
+    run_started_at: '2026-09-10T00:02:00.000Z',
+    check_suite_id: 11_200,
+    check_id_base: 600,
+  }).filter(({ name }) => name === 'diff-check');
+  assertState(evaluateRequiredChecksForEvidenceForm(input({
+    changedFiles: ['src/app/page.tsx'],
+    checkRuns: [...older, ...rerun],
+    deadlineExpired: true,
+  }), 'integrated-v2'), 'failure', 'missing:impact');
+});
+
+test('rejects a same-name success emitted by a foreign check App', () => {
+  assertState(evaluateRequiredChecks(input({
+    checkRuns: [checkRun('diff-check', { app: { id: 999999, slug: 'attacker-app' } })],
+  })), 'failure', 'untrusted:diff-check');
+});
+
+test('rejects a same-name success from the wrong workflow or pull request identity', () => {
+  const wrongWorkflow = checkRun('diff-check', {
+    workflow_run: workflowIdentity('diff-check', 1, { path: '.github/workflows/attacker.yml' }),
+  });
+  assertState(evaluateRequiredChecks(input({ checkRuns: [wrongWorkflow] })), 'failure', 'untrusted:diff-check');
+
+  const wrongPr = checkRun('diff-check', {
+    workflow_run: workflowIdentity('diff-check', 1, {
+      pull_requests: [{ number: 999, head: { sha: HEAD }, base: { ref: 'main', sha: BASE } }],
+    }),
+  });
+  assertState(evaluateRequiredChecks(input({ checkRuns: [wrongPr] })), 'failure', 'untrusted:diff-check');
+});
+
+test('an accepted check is bound to one exact workflow job, run and attempt identity', () => {
+  const base = checkRun('diff-check', { id: 42 });
+  for (const workflow_job of [
+    { ...base.workflow_job, check_run_id: 99 },
+    { ...base.workflow_job, run_id: 99 },
+    { ...base.workflow_job, run_attempt: 2 },
+    { ...base.workflow_job, name: 'attacker' },
+    { ...base.workflow_job, head_sha: '3333333333333333333333333333333333333333' },
+  ]) {
+    assertState(evaluateRequiredChecks(input({
+      checkRuns: [{ ...base, workflow_job }],
+    })), 'failure', 'untrusted:diff-check');
+  }
+});
+
+test('a missing required context stays pending before the deadline', () => {
+  assertState(evaluateRequiredChecks(input({
+    changedFiles: ['src/app/page.tsx'],
+    checkRuns: appRuns().filter(({ name }) => name !== 'account'),
+  })), 'pending', 'missing:account');
+});
+
+test('a missing required context fails after the deadline', () => {
+  assertState(evaluateRequiredChecks(input({
+    changedFiles: ['src/app/page.tsx'],
+    checkRuns: appRuns().filter(({ name }) => name !== 'account'),
+    deadlineExpired: true,
+  })), 'failure', 'missing:account');
+});
+
+for (const conclusion of ['failure', 'timed_out', 'action_required', 'startup_failure']) {
+  test(`required conclusion ${conclusion} fails closed`, () => {
+    assertState(evaluateRequiredChecks(input({
+      changedFiles: ['src/app/page.tsx'],
+      checkRuns: appRuns({ test: { conclusion } }),
+    })), 'failure', `conclusion:test:${conclusion}`);
+  });
+}
+
+test('cancelled required context fails closed', () => {
+  assertState(evaluateRequiredChecks(input({
+    changedFiles: ['src/app/page.tsx'],
+    checkRuns: appRuns({ e2e: { conclusion: 'cancelled' } }),
+  })), 'failure', 'conclusion:e2e:cancelled');
+});
+
+test('skipped required context fails closed, including a draft-required skip', () => {
+  assertState(evaluateRequiredChecks(input({
+    changedFiles: ['src/app/page.tsx'],
+    checkRuns: appRuns({ account: { conclusion: 'skipped' } }),
+  })), 'failure', 'conclusion:account:skipped');
+});
+
+test('an optional skipped context does not prevent success', () => {
+  const result = evaluateRequiredChecks(input({
+    checkRuns: [checkRun('diff-check'), checkRun('e2e', { id: 2, conclusion: 'skipped' })],
+  }));
+  assert.equal(result.state, 'success');
+  assert.deepEqual(result.requiredContexts, ['diff-check']);
+});
+
+test('an obsolete event head fails closed', () => {
+  assertState(evaluateRequiredChecks(input({ currentHeadSha: '3333333333333333333333333333333333333333' })), 'failure', 'obsolete-head');
+});
+
+test('a retargeted base or evaluator from another base fails closed', () => {
+  assertState(evaluateRequiredChecks(input({
+    eventBaseSha: '3333333333333333333333333333333333333333',
+  })), 'failure', 'retargeted-base');
+  assertState(evaluateRequiredChecks(input({
+    evaluatorBaseSha: '3333333333333333333333333333333333333333',
+  })), 'failure', 'wrong-evaluator-base');
+});
+
+test('a current base that is not an ancestor fails closed', () => {
+  assertState(evaluateRequiredChecks(input({ baseIsAncestor: false })), 'failure', 'obsolete-base');
+});
+
+test('multiple protected PRs sharing one head fail closed', () => {
+  assertState(evaluateRequiredChecks(input({ protectedPrCount: 2 })), 'failure', 'ambiguous-head');
+});
+
+test('an incomplete PR file listing fails closed', () => {
+  assertState(evaluateRequiredChecks(input({
+    reportedChangedFileCount: 3001,
+    listedChangedFileCount: 3000,
+  })), 'failure', 'incomplete-files');
+});
+
+test('a green check started before the latest base-target change is missing even if it completed later', () => {
+  const result = evaluateRequiredChecks(input({
+    evidenceNotBefore: '2026-09-10T00:02:00.000Z',
+    checkRuns: [checkRun('diff-check', {
+      started_at: '2026-09-10T00:01:00.000Z',
+      completed_at: '2026-09-10T00:03:00.000Z',
+    })],
+  }));
+  assertState(result, 'pending', 'missing:diff-check');
+});
+
+test('a success attached only to another SHA is missing', () => {
+  assertState(evaluateRequiredChecks(input({
+    checkRuns: [checkRun('diff-check', { head_sha: '3333333333333333333333333333333333333333' })],
+  })), 'pending', 'missing:diff-check');
+});
+
+test('the newest rerun wins over an older success', () => {
+  assertState(evaluateRequiredChecks(input({
+    checkRuns: [checkRun('diff-check', { id: 10 }), checkRun('diff-check', {
+      id: 11,
+      conclusion: 'failure',
+      started_at: '2026-09-10T00:02:00.000Z',
+      created_at: '2026-09-10T00:02:00.000Z',
+      workflow_run: workflowIdentity('diff-check', 11, { run_started_at: '2026-09-10T00:02:00.000Z' }),
+    })],
+  })), 'failure', 'conclusion:diff-check:failure');
+});
+
+test('a later workflow timestamp wins even when its check and workflow IDs are lower', () => {
+  const olderSuccess = checkRun('diff-check', {
+    id: 100,
+    workflow_run: workflowIdentity('diff-check', 100, { id: 900, run_started_at: '2026-09-10T00:01:00.000Z' }),
+  });
+  const newerQueued = checkRun('diff-check', {
+    id: 99,
+    status: 'queued',
+    conclusion: null,
+    started_at: null,
+    created_at: '2026-09-10T00:02:00.000Z',
+    workflow_run: workflowIdentity('diff-check', 99, { id: 899, run_started_at: '2026-09-10T00:02:00.000Z' }),
+  });
+  assertState(evaluateRequiredChecks(input({ checkRuns: [olderSuccess, newerQueued] })), 'pending', 'pending:diff-check:queued');
+});
+
+test('foreign checks without Actions workflow metadata are ordered deterministically by check timestamp', () => {
+  const trusted = checkRun('diff-check', {
+    id: 50,
+    workflow_run: workflowIdentity('diff-check', 50, { run_started_at: '2026-09-10T00:01:00.000Z' }),
+  });
+  const foreignNewer = checkRun('diff-check', {
+    id: 40,
+    created_at: '2026-09-10T00:02:00.000Z',
+    started_at: '2026-09-10T00:02:00.000Z',
+    app: { id: 999999, slug: 'attacker-app' },
+    workflow_run: null,
+  });
+  for (const checkRuns of [[trusted, foreignNewer], [foreignNewer, trusted]]) {
+    assertState(evaluateRequiredChecks(input({ checkRuns })), 'failure', 'untrusted:diff-check');
+  }
+
+  const foreignOlder = { ...foreignNewer, created_at: '2026-09-09T23:59:00.000Z', started_at: '2026-09-09T23:59:00.000Z' };
+  for (const checkRuns of [[trusted, foreignOlder], [foreignOlder, trusted]]) {
+    assertState(evaluateRequiredChecks(input({ checkRuns })), 'success');
+  }
+});
+
+test('an attempt-one success cannot authorize after attempt two appears without its checks', () => {
+  const staleSuccessMisattachedToAttemptTwo = checkRun('diff-check', {
+    id: 10,
+    created_at: '2026-09-10T00:01:00.000Z',
+    started_at: '2026-09-10T00:01:00.000Z',
+    completed_at: '2026-09-10T00:01:30.000Z',
+    workflow_run: workflowIdentity('diff-check', 10, {
+      run_attempt: 2,
+      run_started_at: '2026-09-10T00:02:00.000Z',
+    }),
+  });
+  assertState(evaluateRequiredChecks(input({
+    checkRuns: [staleSuccessMisattachedToAttemptTwo],
+  })), 'failure', 'untrusted:diff-check');
+});
+
+test('production evidence mapping does not attach a newly appeared attempt to an old check', () => {
+  const stale = checkRun('diff-check', {
+    id: 10,
+    created_at: '2026-09-10T00:01:00.000Z',
+    started_at: '2026-09-10T00:01:00.000Z',
+    completed_at: '2026-09-10T00:01:30.000Z',
+  });
+  const attemptTwo = workflowIdentity('diff-check', 10, {
+    run_attempt: 2,
+    run_started_at: '2026-09-10T00:02:00.000Z',
+  });
+  const raw = {
+    checks: [{ total_count: 1, check_runs: [{
+      id: stale.id,
+      name: stale.name,
+      head_sha: stale.head_sha,
+      status: stale.status,
+      conclusion: stale.conclusion,
+      completed_at: stale.completed_at,
+      started_at: stale.started_at,
+      created_at: stale.created_at,
+      app: stale.app,
+      check_suite: { id: stale.check_suite.id },
+    }] }],
+    workflows: [{ total_count: 1, workflow_runs: [attemptTwo] }],
+    suites: [stale.check_suite],
+    jobs: [{ run_id: attemptTwo.id, run_attempt: 2, run: attemptTwo, pages: [{ total_count: 0, jobs: [] }] }],
+  };
+  const mapped = mapEvidence(raw);
+  assert.equal(mapped[0].workflow_run, null);
+  assert.equal(mapped[0].workflow_job, null);
+  assertState(evaluateRequiredChecks(input({ checkRuns: mapped })), 'failure', 'untrusted:diff-check');
+});
+
+test('production evidence mapping accepts the one exact attempt job positive control', () => {
+  const current = checkRun('diff-check', {
+    id: 11,
+    created_at: '2026-09-10T00:02:00.000Z',
+    started_at: '2026-09-10T00:02:01.000Z',
+    completed_at: '2026-09-10T00:02:30.000Z',
+    workflow_run: workflowIdentity('diff-check', 11, {
+      run_attempt: 2,
+      run_started_at: '2026-09-10T00:02:00.000Z',
+    }),
+  });
+  const raw = {
+    checks: [{ total_count: 1, check_runs: [{
+      id: current.id,
+      name: current.name,
+      head_sha: current.head_sha,
+      status: current.status,
+      conclusion: current.conclusion,
+      completed_at: current.completed_at,
+      started_at: current.started_at,
+      created_at: current.created_at,
+      app: current.app,
+      check_suite: { id: current.check_suite.id },
+    }] }],
+    workflows: [{ total_count: 1, workflow_runs: [current.workflow_run] }],
+    suites: [current.check_suite],
+    jobs: [{
+      run_id: current.workflow_run.id,
+      run_attempt: 2,
+      run: current.workflow_run,
+      pages: [{ total_count: 1, jobs: [{
+        id: 3011,
+        run_id: current.workflow_run.id,
+        head_sha: HEAD,
+        name: current.name,
+        status: current.status,
+        conclusion: current.conclusion,
+        started_at: current.started_at,
+        completed_at: current.completed_at,
+        check_run_url: `https://api.github.com/repos/AlterMundi/harmonic-beacon-webapp/check-runs/${current.id}`,
+      }] }],
+    }],
+  };
+  const mapped = mapEvidence(raw);
+  assert.equal(mapped[0].workflow_run.run_attempt, 2);
+  assert.equal(mapped[0].workflow_job.check_run_id, current.id);
+  assert.equal(mapped[0].workflow_job.id, 3011);
+  assertState(evaluateRequiredChecks(input({ checkRuns: mapped })), 'success');
+});
+
+test('production evidence completeness accepts an exact full snapshot and rejects attempt drift', () => {
+  const workflow = workflowIdentity('diff-check', 10, { run_attempt: 2 });
+  const complete = {
+    checks: [{ total_count: 1, check_runs: [{ id: 10, check_suite: { id: 1_010 } }] }],
+    workflows: [{ total_count: 1, workflow_runs: [workflow] }],
+    suites: [{ id: 1_010 }],
+    jobs: [{
+      run_id: workflow.id,
+      run_attempt: workflow.run_attempt,
+      run: workflow,
+      pages: [{ total_count: 1, jobs: [{ id: 3_010 }] }],
+    }],
+  };
+  const accepted = runEvidenceSnapshotFunction('evidence_snapshot_complete', complete);
+  assert.equal(accepted.status, 0, accepted.stderr);
+
+  const drifted = structuredClone(complete);
+  drifted.jobs[0].run.run_attempt = 1;
+  const rejected = runEvidenceSnapshotFunction('evidence_snapshot_complete', drifted);
+  assert.notEqual(rejected.status, 0, 'attempt metadata drift must make the snapshot incomplete');
+});
+
+test('a higher rerun attempt wins within one workflow run', () => {
+  const suite = { id: 700, head_sha: HEAD, app: { id: ACTIONS_APP_ID, slug: 'github-actions' } };
+  const older = checkRun('diff-check', {
+    id: 10,
+    check_suite: suite,
+    workflow_run: workflowIdentity('diff-check', 10, { id: 800, check_suite_id: 700, run_attempt: 1 }),
+  });
+  const rerun = checkRun('diff-check', {
+    id: 9,
+    status: 'queued',
+    conclusion: null,
+    check_suite: suite,
+    workflow_run: workflowIdentity('diff-check', 9, { id: 800, check_suite_id: 700, run_attempt: 2 }),
+  });
+  assertState(evaluateRequiredChecks(input({ checkRuns: [older, rerun] })), 'pending', 'pending:diff-check:queued');
+});
+
+test('conflicting duplicate check IDs fail independent of response order', () => {
+  const success = checkRun('diff-check', { id: 77 });
+  const queued = checkRun('diff-check', { id: 77, status: 'queued', conclusion: null });
+  for (const checkRuns of [[success, queued], [queued, success]]) {
+    assertState(evaluateRequiredChecks(input({ checkRuns, reportedCheckRunCount: 1 })), 'failure', 'conflicting-check-run:77');
+  }
+});
+
+test('incomplete or unstable paginated check snapshots cannot succeed', () => {
+  assertState(evaluateRequiredChecks(input({ reportedCheckRunCount: 2 })), 'failure', 'incomplete-check-runs');
+  assertState(evaluateRequiredChecks(input({ checkSnapshotStable: false })), 'pending', 'unstable-check-snapshot');
+  assertState(evaluateRequiredChecks(input({ checkSnapshotStable: false, deadlineExpired: true })), 'failure', 'unstable-check-snapshot');
+});
+
+test('a newer queued rerun without timestamps overrides an older success', () => {
+  const result = evaluateRequiredChecks(input({
+    checkRuns: [
+      checkRun('diff-check', { id: 1 }),
+      checkRun('diff-check', {
+        id: 2,
+        status: 'queued',
+        conclusion: null,
+        started_at: null,
+        created_at: null,
+      }),
+    ],
+  }));
+  assertState(result, 'pending', 'pending:diff-check:queued');
+});
+
+for (const status of ['queued', 'in_progress']) {
+  test(`required context ${status} remains pending`, () => {
+    assertState(evaluateRequiredChecks(input({
+      checkRuns: [checkRun('diff-check', { status, conclusion: null })],
+      deadlineExpired: true,
+    })), 'pending', `pending:diff-check:${status}`);
+  });
+}
+
+test('docs-only changes require only the always-emitted diff check', () => {
+  const result = evaluateRequiredChecks(input({
+    checkRuns: [checkRun('diff-check'), checkRun('e2e', { id: 2, conclusion: 'skipped' }), checkRun('account', { id: 3, conclusion: 'skipped' })],
+  }));
+  assert.equal(result.state, 'success');
+  assert.deepEqual(result.requiredContexts, ['diff-check']);
+});
+
+test('closed PRs and wrong target branches fail closed', () => {
+  assertState(evaluateRequiredChecks(input({ currentPrState: 'closed' })), 'failure', 'pr-not-open');
+  assertState(evaluateRequiredChecks(input({ currentBaseRef: 'early-birds' })), 'failure', 'unexpected-base');
+});
+
+test('PR entry workflows rerun their base-sensitive evidence after retargeting', () => {
+  for (const path of ['ci.yml', 'audio-boundary.yml']) {
+    const workflow = readFileSync(resolve(ROOT, '.github', 'workflows', path), 'utf8');
+    assert.match(workflow, /pull_request:\n(?:.|\n)*?types: \[[^\]]*edited[^\]]*\]/, path);
+  }
+  const e2eWorkflow = readFileSync(resolve(ROOT, '.github/workflows/e2e.yml'), 'utf8');
+  assert.match(e2eWorkflow, /^ {2}workflow_call:/m);
+  assert.doesNotMatch(e2eWorkflow, /^ {2}pull_request:/m);
+});
+
+test('privileged delivery authority is never loaded by workflow_run from the default branch', () => {
+  const workflow = readFileSync(resolve(ROOT, '.github/workflows/delivery-gate.yml'), 'utf8');
+  const dispatcher = readFileSync(resolve(ROOT, '.github/workflows/delivery-gate-dispatch.yml'), 'utf8');
+  const evidenceMapper = readFileSync(resolve(ROOT, 'scripts/ci/check-evidence.jq'), 'utf8');
+  assert.match(workflow, /workflow_dispatch:/);
+  assert.doesNotMatch(workflow, /^ {2}workflow_run:/m);
+  assert.doesNotMatch(workflow, /^ {2}pull_request_target:/m);
+  assert.match(dispatcher, /pull_request_target:/);
+  assert.match(dispatcher, /^ {2}workflow_run:/m);
+  assert.doesNotMatch(workflow, /^\s+paths(?:-ignore)?:/m);
+  assert.doesNotMatch(workflow, /self-hosted|secrets\./);
+  assert.equal(workflow.match(/uses: actions\/checkout@/g)?.length, 1);
+  assert.doesNotMatch(workflow, /github\.head_ref|refs\/pull/);
+  assert.doesNotMatch(workflow, /checkout[^\n]*event_head|node[^\n]*event_head/);
+  assert.match(workflow, /id: target/);
+  assert.match(workflow, /base_sha=.*\.base\.sha/);
+  assert.doesNotMatch(workflow, /merge_sha=.*\.merge_commit_sha/);
+  assert.match(workflow, /ref: \$\{\{ steps\.target\.outputs\.base_sha \}\}/);
+  assert.match(workflow, /evaluator_base=.*git rev-parse HEAD/);
+  assert.match(workflow, /evaluatorBaseSha.*evaluator_base/);
+  assert.match(workflow, /currentMergeSha.*current_merge/);
+  assert.match(workflow, /final_pr=.*repos\/\$REPOSITORY\/pulls\/\$pr_number/);
+  assert.doesNotMatch(workflow, /final_merge=.*\.merge_commit_sha/);
+  assert.match(workflow, /context="delivery-gate-\$expected_base"/);
+  assert.match(workflow, /post_status success "\$description" "\$final_head"/);
+  assert.doesNotMatch(workflow, /post_status success "\$description" "\$event_head"/);
+  assert.doesNotMatch(workflow, /ref:.*github\.sha/);
+  assert.match(workflow, /previous_filename/);
+  assert.match(dispatcher, /EVENT_ACTION.*github\.event\.action/);
+  assert.match(dispatcher, /EVENT_ACTION" = closed/);
+  assert.match(dispatcher, /pulls\?state=open/);
+  assert.doesNotMatch(workflow, /commits\/\$event_head\/pulls/);
+  assert.match(dispatcher, /\.head\.sha == \$head/);
+  assert.match(workflow, /issues\/\$pr_number\/timeline/);
+  assert.match(workflow, /evidenceNotBefore.*evidence_not_before/);
+  assert.match(workflow, /--slurpfile changedFiles/);
+  assert.match(workflow, /check_suite_ids=.*check_suite\.id/);
+  assert.match(workflow, /check-suites\/\$suite_id/);
+  assert.match(workflow, /jq -c -f scripts\/ci\/check-evidence\.jq/);
+  assert.match(evidenceMapper, /app: \{id: \$check\.app\.id, slug: \$check\.app\.slug\}/);
+  assert.match(evidenceMapper, /check_suite: \(if \$suite == null/);
+  assert.match(evidenceMapper, /workflow_run: \(if \$binding == null/);
+  assert.match(evidenceMapper, /check_suite_id: \$binding\.workflow\.check_suite_id/);
+  assert.match(evidenceMapper, /pull_requests: \$binding\.workflow\.pull_requests/);
+  assert.match(workflow, /--slurpfile checkRuns/);
+  assert.match(workflow, /evidence_a=.*fetch_evidence_snapshot/);
+  assert.match(workflow, /evidence_b=.*fetch_evidence_snapshot/);
+  assert.match(workflow, /final_evidence=.*fetch_evidence_snapshot/);
+  assert.match(workflow, /canonical_evidence_snapshot.*final_evidence/);
+  assert.match(workflow, /final_timeline="[\s\S]{0,200}issues\/\$pr_number\/timeline/);
+  assert.match(workflow, /final_evidence_not_before/);
+  assert.match(workflow, /reportedCheckRunCount.*reported_check_run_count/);
+  assert.match(workflow, /checkSnapshotStable.*check_snapshot_stable/);
+  assert.match(workflow, /total_count/);
+  assert.doesNotMatch(workflow, /--argjson (?:changedFiles|checkRuns)/);
+  assert.match(workflow, /protectedPrCount.*protected_pr_count/);
+  assert.match(workflow, /reportedChangedFileCount.*reported_changed_file_count/);
+  assert.match(workflow, /listedChangedFileCount.*listed_changed_file_count/);
+  assert.match(workflow, /default: delivery-gate-shadow/);
+  assert.match(workflow, /inputs\.status_context.*inputs\.pr_number.*github\.sha/);
+  assert.match(workflow, /case "\$expected_base" in\s+main\|release/);
+  assert.match(workflow, /contents: read/);
+  assert.match(workflow, /actions: read/);
+  assert.match(workflow, /pull-requests: read/);
+  assert.match(workflow, /checks: read/);
+  assert.match(workflow, /statuses: write/);
+  assert.match(workflow, /delivery-gate:\n\s+name: Trusted delivery monitor/);
+  assert.match(workflow, /delivery-gate-shadow/);
+});
+
+test('default-branch lifecycle code can dispatch but cannot write the required status', () => {
+  const dispatcherPath = resolve(ROOT, '.github/workflows/delivery-gate-dispatch.yml');
+  assert.ok(existsSync(dispatcherPath), 'unprivileged lifecycle dispatcher must exist');
+  const dispatcher = readFileSync(dispatcherPath, 'utf8');
+  const authority = readFileSync(resolve(ROOT, '.github/workflows/delivery-gate.yml'), 'utf8');
+  assert.match(dispatcher, /^ {2}workflow_run:/m);
+  assert.match(dispatcher, /workflows: \[CI, E2E quality gates, Audio boundary\]/);
+  assert.match(dispatcher, /actions: write/);
+  assert.doesNotMatch(dispatcher, /statuses: write|repos\/\$REPOSITORY\/statuses|post_status/);
+  assert.match(dispatcher, /actions\/workflows\/delivery-gate\.yml\/dispatches/);
+  assert.match(dispatcher, /-f ref="\$target_base"/);
+  assert.doesNotMatch(authority, /^ {2}(?:workflow_run|pull_request_target):/m);
+  assert.match(authority, /^ {2}workflow_dispatch:/m);
+  assert.match(authority, /statuses: write/);
+  const exactBaseCheck = authority.indexOf('test "$GITHUB_SHA" = "$base_sha"');
+  const firstStatusWrite = authority.indexOf('post_status pending');
+  assert.ok(exactBaseCheck >= 0 && firstStatusWrite > exactBaseCheck,
+    'exact dispatched workflow SHA must be verified before the first status write');
+});
+
+test('rerun attempt two posts pending over attempt-one aggregate success at rerun start', () => {
+  const dispatcher = readFileSync(resolve(ROOT, '.github/workflows/delivery-gate-dispatch.yml'), 'utf8');
+  const authority = readFileSync(resolve(ROOT, '.github/workflows/delivery-gate.yml'), 'utf8');
+  const workflowRunBlock = dispatcher.match(/^ {2}workflow_run:\n((?: {4}.*\n)+)/m)?.[1];
+  const subscribed = workflowRunBlock?.match(/^ {4}types: \[([^\]]+)\]/m)?.[1]
+    .split(',').map((action) => action.trim());
+  assert.deepEqual(subscribed, ['requested', 'in_progress', 'completed']);
+
+  const lifecycle = [
+    { action: 'in_progress', run_attempt: 2 },
+    { action: 'completed', run_attempt: 2 },
+  ];
+  const firstWake = lifecycle.findIndex(({ action }) => subscribed.includes(action));
+  assert.equal(firstWake, 0, 'a rerun must wake the dispatcher when attempt two starts');
+
+  const temp = mkdtempSync(join(tmpdir(), 'delivery-gate-rerun-'));
+  const ghLog = join(temp, 'gh.log');
+  const fakeGh = join(temp, 'gh');
+  writeFileSync(fakeGh, `#!/usr/bin/env bash
+set -euo pipefail
+case "$*" in
+  *"pulls?state=open"*)
+    printf '%s\\n' '[[{"number":534,"state":"open","head":{"sha":"${HEAD}"},"base":{"ref":"main","sha":"${BASE}"}}]]'
+    ;;
+  *"pulls/534"*)
+    printf '%s\\n' '{"number":534,"state":"open","head":{"sha":"${HEAD}"},"base":{"ref":"main","sha":"${BASE}"}}'
+    ;;
+  *) printf '%s\\n' "$*" >> "$GH_LOG" ;;
+esac
+`);
+  chmodSync(fakeGh, 0o755);
+
+  try {
+    const dispatcherStart = dispatcher.indexOf('          set -euo pipefail');
+    assert.ok(dispatcherStart >= 0, 'dispatcher shell must be present');
+    const dispatcherScript = dispatcher.slice(dispatcherStart)
+      .split('\n').map((line) => line.replace(/^ {10}/, '')).join('\n');
+    const dispatch = spawnSync('bash', ['-c', dispatcherScript], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        PATH: `${temp}:${process.env.PATH}`,
+        GH_LOG: ghLog,
+        REPOSITORY: 'AlterMundi/harmonic-beacon-webapp',
+        EVENT_NAME: 'workflow_run',
+        EVENT_ACTION: lifecycle[firstWake].action,
+        INPUT_PR_NUMBER: '',
+        WORKFLOW_HEAD: HEAD,
+        WORKFLOW_RUN_ID: '9002',
+        WORKFLOW_RUN_ATTEMPT: String(lifecycle[firstWake].run_attempt),
+      },
+    });
+    assert.equal(dispatch.status, 0, dispatch.stderr);
+    assert.match(readFileSync(ghLog, 'utf8'),
+      /--method POST repos\/AlterMundi\/harmonic-beacon-webapp\/actions\/workflows\/delivery-gate\.yml\/dispatches -f ref=main -f inputs\[pr_number\]=534 -f inputs\[status_context\]=delivery-gate/);
+
+    const identityBound = authority.indexOf('[ "$initial_base_ref" = "$expected_base" ]');
+    const firstPending = authority.indexOf("post_status pending 'evaluating exact current-base required checks' \"$initial_head\"");
+    assert.ok(identityBound >= 0 && firstPending > identityBound,
+      'rerun pending must be written to the rebound current head');
+    assert.match(authority, /context="delivery-gate-\$expected_base"/);
+    assert.doesNotMatch(authority, /post_status pending[^\n]+\$current_merge/);
+  } finally {
+    rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test('delivery evidence binds each check to an exact attempt job and refetches the full snapshot', () => {
+  const workflow = readFileSync(resolve(ROOT, '.github/workflows/delivery-gate.yml'), 'utf8');
+  const evidenceMapper = readFileSync(resolve(ROOT, 'scripts/ci/check-evidence.jq'), 'utf8');
+  assert.match(workflow, /fetch_evidence_snapshot\(\)/);
+  assert.match(workflow, /actions\/runs\/\$run_id\/attempts\/\$run_attempt\/jobs\?per_page=100/);
+  assert.match(workflow, /run_attempt_record=.*gh api[\s\S]{0,180}actions\/runs\/\$run_id\/attempts\/\$run_attempt"\)/);
+  assert.match(evidenceMapper, /check_run_url/);
+  assert.match(evidenceMapper, /workflow_job: \(if \$binding == null/);
+  assert.match(evidenceMapper, /run_id: \$binding\.job\.run_id/);
+  assert.match(evidenceMapper, /run_attempt: \$binding\.run_attempt/);
+  assert.match(evidenceMapper, /check_run_id: \$check\.id/);
+  assert.doesNotMatch(evidenceMapper, /map\(select\(\.check_suite_id == \$check\.check_suite\.id\)\)[\s\S]{0,100}last/);
+  assert.match(workflow, /evidence_a=.*fetch_evidence_snapshot/);
+  assert.match(workflow, /evidence_b=.*fetch_evidence_snapshot/);
+  assert.match(workflow, /final_evidence=.*fetch_evidence_snapshot/);
+  assert.match(workflow, /canonical_evidence_snapshot.*final_evidence/);
+});
