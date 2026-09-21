@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { PrismaClient } from '@prisma/client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { ACCOUNT_PROVISIONED_SCOPES } from '../config';
 
 const databaseURL = process.env.LISTENER_TEST_DATABASE_URL;
 if (databaseURL) process.env.DATABASE_URL = databaseURL;
@@ -56,7 +57,7 @@ postgres('pinned OAuth Provider 1.6.30 confidential-client lifecycle', () => {
             create: {
                 id: randomUUID(), clientId, clientSecret: hashAccountClientSecret(clientSecret),
                 disabled: false, skipConsent: true, enableEndSession: true,
-                subjectType: 'public', scopes: ['openid', 'profile', 'email'], contacts: [],
+                subjectType: 'public', scopes: ACCOUNT_PROVISIONED_SCOPES, contacts: [],
                 redirectUris: ['https://listen.harmonicbeacon.com/api/account/callback'],
                 postLogoutRedirectUris: ['https://listen.harmonicbeacon.com/api/account/frontchannel-logout'],
                 tokenEndpointAuthMethod: 'client_secret_basic', grantTypes: ['authorization_code'],
@@ -64,7 +65,7 @@ postgres('pinned OAuth Provider 1.6.30 confidential-client lifecycle', () => {
             },
             update: {
                 clientSecret: hashAccountClientSecret(clientSecret), disabled: false,
-                scopes: ['openid', 'profile', 'email'],
+                scopes: ACCOUNT_PROVISIONED_SCOPES,
             },
         });
     });
@@ -106,7 +107,7 @@ postgres('pinned OAuth Provider 1.6.30 confidential-client lifecycle', () => {
         authorizeURL.search = new URLSearchParams({
             client_id: clientId,
             redirect_uri: 'https://listen.harmonicbeacon.com/api/account/callback',
-            response_type: 'code', scope: 'openid profile email',
+            response_type: 'code', scope: ACCOUNT_PROVISIONED_SCOPES.join(' '),
             state: 'state-for-handler-regression', nonce: 'nonce-for-handler-regression',
             code_challenge: challenge, code_challenge_method: 'S256',
         }).toString();
@@ -180,8 +181,14 @@ postgres('pinned OAuth Provider 1.6.30 confidential-client lifecycle', () => {
         const claims = await userInfo.json();
         expect(claims).toMatchObject({
             sub: accountId, name: 'OAuth Handler', preferred_name: 'OAuth Handler',
-            email, email_verified: true, profile_complete: false,
+            profile_complete: false,
         });
+        if (ACCOUNT_PROVISIONED_SCOPES.includes('email')) {
+            expect(claims).toMatchObject({ email, email_verified: true });
+        } else {
+            expect(claims).not.toHaveProperty('email');
+            expect(claims).not.toHaveProperty('email_verified');
+        }
         expect(claims).not.toHaveProperty('realName');
         expect(claims).not.toHaveProperty('real_name');
     });
@@ -204,7 +211,7 @@ postgres('pinned OAuth Provider 1.6.30 confidential-client lifecycle', () => {
             const authorize = new URL('/api/account/auth/oauth2/authorize', issuer);
             authorize.search = new URLSearchParams({
                 client_id: 'hb-live', redirect_uri: 'https://live.harmonicbeacon.com/api/account/callback',
-                response_type: 'code', scope: 'openid profile email', state: 'live-profile-return',
+                response_type: 'code', scope: ACCOUNT_PROVISIONED_SCOPES.join(' '), state: 'live-profile-return',
                 code_challenge: createHash('sha256').update(randomBytes(48)).digest('base64url'),
                 code_challenge_method: 'S256',
             }).toString();

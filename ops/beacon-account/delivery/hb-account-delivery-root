@@ -74,7 +74,7 @@ else
   readonly API_FIXTURES=''
   readonly STATE_DIR='/var/lib/harmonic-beacon/account-delivery'
   readonly RECEIPT_DIR='/var/lib/harmonic-beacon/account-delivery/receipts'
-  readonly DEPLOY_ENV='/etc/harmonic-beacon/account.deploy.env'
+  readonly DEPLOY_ENV='/etc/harmonic-beacon/beacon-account-deploy.env'
   readonly BUNDLE_ROOT='/usr/local/libexec/hb-account-delivery/current'
   readonly TRUST_ROOT='/'
   readonly STATE_TRUST_ROOT='/'
