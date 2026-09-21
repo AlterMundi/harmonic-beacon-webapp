@@ -69,13 +69,13 @@ rehearsal.
 A change limited to `.github/CODEOWNERS` and documentation remains a critical
 governance change and still requires the repository's configured independent
 CODEOWNER approval. It does not build or qualify application artifacts: CI runs
-the diff, bounded CODEOWNERS syntax, impact-selection, workflow-contract and
+the diff, bounded CODEOWNERS integrity, impact-selection, workflow-contract and
 required-check evaluator checks, and records `deployment.deploy=false`.
 
-The local validator checks the repository's supported CODEOWNERS structure; it
-does not decide who currently has repository access. GitHub's native CODEOWNERS
-errors and branch protection remain authoritative for that online fact, and an
-unavailable online result is unknown rather than proof. Mixing ownership edits
+The local validator checks only UTF-8 integrity and GitHub's documented 3 MiB
+file ceiling. GitHub's exact-head CODEOWNERS errors API owns pattern and owner
+semantics, while branch protection owns independent approval; an unavailable
+online result is unknown rather than proof. Mixing ownership edits
 with workflow, runtime, audio, authentication, unknown or other executable
 paths selects the complete applicable profile for those paths.
 

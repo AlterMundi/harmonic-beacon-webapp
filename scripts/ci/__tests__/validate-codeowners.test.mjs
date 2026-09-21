@@ -4,34 +4,26 @@ import test from 'node:test';
 
 import { validateCodeowners } from '../validate-codeowners.mjs';
 
-test('the checked-in ownership contract is structurally valid', () => {
+test('the checked-in ownership contract is bounded valid UTF-8', () => {
   const source = readFileSync(new URL('../../../.github/CODEOWNERS', import.meta.url), 'utf8');
-  assert.ok(validateCodeowners(source).rules > 0);
+  assert.ok(validateCodeowners(source).bytes > 0);
 });
 
-test('owners are validated structurally without a permanent person allowlist', () => {
-  assert.deepEqual(validateCodeowners([
-    '/.github/CODEOWNERS @future-maintainer',
-    '/.github/workflows/ @example-org/delivery_team release@example.org',
+test('GitHub-supported forms remain the native exact-head validator responsibility', () => {
+  const source = [
+    '* @default-owner',
+    '*.js @javascript-team # inline comment',
+    'relative/path @owner',
+    'relative/path @replacement-owner',
+    '/docs/generated/',
     '',
-  ].join('\n')), { rules: 2 });
+  ].join('\n');
+  assert.equal(validateCodeowners(source).bytes, Buffer.byteLength(source));
 });
 
-test('invalid patterns, missing owners, invalid owners and duplicates fail closed', () => {
-  for (const source of [
-    'relative/path @owner\n',
-    '/valid/path\n',
-    '/valid/path owner\n',
-    '/valid/path @owner\n/valid/path @other\n',
-    '/../escape @owner\n',
-    '/bad//path @owner\n',
-  ]) assert.throws(() => validateCodeowners(source), /CODEOWNERS/u, source);
-});
-
-test('empty, oversized and excessive contracts fail closed', () => {
-  assert.throws(() => validateCodeowners('# comments only\n'), /at least one/u);
+test('invalid UTF-8, NUL and files over GitHub\'s size limit fail locally', () => {
   assert.throws(() => validateCodeowners(Buffer.from([0xc3, 0x28])), /UTF-8/u);
-  assert.throws(() => validateCodeowners(`/${'a'.repeat(1100)} @owner\n`), /oversized/u);
-  const excessive = Array.from({ length: 513 }, (_, index) => `/path-${index} @owner`).join('\n');
-  assert.throws(() => validateCodeowners(excessive), /too many/u);
+  assert.throws(() => validateCodeowners(Buffer.from('valid\0invalid')), /NUL/u);
+  assert.throws(() => validateCodeowners(Buffer.alloc(3 * 1024 * 1024 + 1, 0x61)), /3 MiB/u);
+  assert.doesNotThrow(() => validateCodeowners(Buffer.alloc(3 * 1024 * 1024, 0x61)));
 });
