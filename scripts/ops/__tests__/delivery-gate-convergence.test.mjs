@@ -234,6 +234,7 @@ test('rerun starts, completions, and PR identity changes all wake the bounded ev
   assert.match(dispatcher, /cancel-in-progress: false/);
   assert.match(dispatcher, /name: Dispatch exact-base delivery authority\n\s+runs-on: ubuntu-24\.04\n\s+timeout-minutes: 10/);
   assert.doesNotMatch(dispatcher, /statuses: write|repos\/\$REPOSITORY\/statuses/);
+  assert.match(dispatcher, /^  statuses: read$/m);
   assert.match(dispatcher, /creator\.login == "github-actions\[bot\]"/);
   assert.match(dispatcher, /actions\/runs\/"/);
 });

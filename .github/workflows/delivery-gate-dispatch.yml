@@ -20,6 +20,7 @@ permissions:
   actions: write
   contents: read
   pull-requests: read
+  statuses: read
 
 concurrency:
   # GitHub keeps at most one pending member of a concurrency group. A burst of
