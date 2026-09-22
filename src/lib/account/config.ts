@@ -172,8 +172,8 @@ export function activeAccountStaticClients(environment: Environment = process.en
         (selected === 'staging') === client.clientId.endsWith('-staging'));
 }
 
-/** Phase-one provisioning preserves the prior image's scope contract. */
-export const ACCOUNT_PROVISIONED_SCOPES = ['openid', 'profile'];
+/** Phase-two provisioning matches the expanded static-client constraint. */
+export const ACCOUNT_PROVISIONED_SCOPES = ['openid', 'profile', 'email'];
 
 /** Only the exact pre/post rollout inventories are valid, never a superset. */
 export function accountClientScopesCompatible(scopes: string[]): boolean {

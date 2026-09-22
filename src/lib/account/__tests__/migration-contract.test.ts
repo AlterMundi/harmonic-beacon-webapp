@@ -10,6 +10,10 @@ const privateProfileSql = readFileSync(resolve(
     process.cwd(),
     'prisma/migrations/20260921170000_account_private_real_name/migration.sql',
 ), 'utf8');
+const emailScopeSql = readFileSync(resolve(
+    process.cwd(),
+    'prisma/migrations/20260921220000_account_email_scope/migration.sql',
+), 'utf8');
 
 describe('Account authority forward-only migration contract', () => {
     it('revokes legacy sessions/artifacts without replacing canonical accounts', () => {
@@ -79,5 +83,34 @@ describe('Account authority forward-only migration contract', () => {
         expect(privateProfileSql).not.toContain('UPDATE "beacon_oauth_clients"');
         expect(privateProfileSql).not.toContain('DROP CONSTRAINT');
         expect(privateProfileSql).not.toMatch(/SET\s+"real_name"\s*=\s*"display_name"/);
+    });
+
+    it('expands enabled clients transactionally without weakening confidential checks', () => {
+        expect(emailScopeSql.trimStart().startsWith('BEGIN;')).toBe(true);
+        expect(emailScopeSql.trimEnd().endsWith('COMMIT;')).toBe(true);
+        expect(emailScopeSql).toContain(
+            '"scopes" = ARRAY[\'openid\', \'profile\', \'email\']::TEXT[]',
+        );
+        expect(emailScopeSql).toContain('WHERE "disabled" = false');
+        expect(emailScopeSql).toContain(
+            'AND "scopes" = ARRAY[\'openid\', \'profile\']::TEXT[];',
+        );
+        expect(emailScopeSql).toContain(
+            'DROP CONSTRAINT "beacon_oauth_clients_static_confidential_check"',
+        );
+        expect(emailScopeSql).toContain(
+            'ADD CONSTRAINT "beacon_oauth_clients_static_confidential_check" CHECK',
+        );
+        for (const invariant of [
+            '"disabled" = true OR (',
+            '"public" = false',
+            '"require_pkce" = true',
+            '"skip_consent" = true',
+            '"enable_end_session" = true',
+            '"subject_type" = \'public\'',
+            '"type" = \'web\'',
+            '"grant_types" = ARRAY[\'authorization_code\']::TEXT[]',
+            '"response_types" = ARRAY[\'code\']::TEXT[]',
+        ]) expect(emailScopeSql).toContain(invariant);
     });
 });
