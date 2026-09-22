@@ -4,10 +4,11 @@ import { useState } from 'react';
 import { useRoomExit } from '@/components/navigation/RoomExitGuard';
 import { useLocale } from '@/context/LocaleContext';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 
 import { liveNavigationCopy } from '@/lib/live-navigation-copy';
 import type { LocalizedStaffRole, UiLocale } from '@/lib/i18n';
+import SessionAliasEditor from './SessionAliasEditor';
 
 type AccountHref =
     | 'https://account.harmonicbeacon.com/account'
@@ -34,6 +35,17 @@ export function trustedAccountLogoutURL(
     }
 }
 
+export function scheduledSessionIdFromPathname(pathname: string): string | null {
+    const match = /^\/session\/([^/]+)\/?$/.exec(pathname);
+    if (!match) return null;
+    try {
+        const sessionId = decodeURIComponent(match[1]);
+        return sessionId && !sessionId.includes('/') ? sessionId : null;
+    } catch {
+        return null;
+    }
+}
+
 export function LiveNavigationAccountMenu({
     displayName,
     staffRoleLabel,
@@ -53,8 +65,10 @@ export function LiveNavigationAccountMenu({
     const [busy, setBusy] = useState(false);
     const [signOutError, setSignOutError] = useState(false);
     const router = useRouter();
+    const pathname = usePathname();
     const requestExit = useRoomExit();
     const navCopy = liveNavigationCopy[locale];
+    const sessionId = roleLabel ? null : scheduledSessionIdFromPathname(pathname);
     const accountURL = new URL(accountHref);
     accountURL.searchParams.set('lang', locale);
 
@@ -88,6 +102,7 @@ export function LiveNavigationAccountMenu({
         <div className="hb-live-account-menu">
             {displayName && <p className="hb-live-account-menu__identity">{displayName}</p>}
             {roleLabel && <p className="hb-live-account-menu__role">{roleLabel}</p>}
+            {sessionId ? <SessionAliasEditor sessionId={sessionId} /> : null}
             <a role="menuitem" href={accountURL.toString()}>
                 {navCopy.account}
             </a>

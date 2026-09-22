@@ -13,9 +13,15 @@ test('external identity simulation rejects incorrect credentials, enforces PKCE 
         assert.equal(discovery.issuer, service.issuer);
         const verifier = 'fixture-verifier-with-at-least-forty-three-characters';
         const url = new URL(discovery.authorization_endpoint);
-        url.search = new URLSearchParams({ response_type: 'code', scope: 'openid profile', client_id: service.clientId,
+        url.search = new URLSearchParams({ response_type: 'code', scope: 'openid profile email', client_id: service.clientId,
             redirect_uri: 'https://localhost:3410/api/account/callback', nonce: 'test-nonce', state: 'test-state',
             code_challenge_method: 'S256', code_challenge: createHash('sha256').update(verifier).digest('base64url') }).toString();
+        const invalidScope = new URL(url);
+        invalidScope.searchParams.set('scope', 'openid profile email admin');
+        assert.equal((await fetch(invalidScope)).status, 400);
+        const legacyScope = new URL(url);
+        legacyScope.searchParams.set('scope', 'openid profile');
+        assert.equal((await fetch(legacyScope)).status, 200);
         const start = await fetch(url);
         const html = await start.text();
         const request = /name="request" value="([^"]+)"/.exec(html)![1];
@@ -42,7 +48,12 @@ test('external identity simulation rejects incorrect credentials, enforces PKCE 
         const introspect = await fetch(discovery.introspection_endpoint, { method: 'POST', headers: { authorization: basic }, body: new URLSearchParams({ token: tokens.access_token }) });
         assert.deepEqual(await introspect.json(), { active: true, client_id: service.clientId, sub: 'fixture-attendee' });
         assert.equal((await fetch(discovery.userinfo_endpoint)).status, 401);
-        assert.equal((await fetch(discovery.userinfo_endpoint, { headers: { authorization: `Bearer ${tokens.access_token}` } })).status, 200);
+        const userInfo = await fetch(discovery.userinfo_endpoint, { headers: { authorization: `Bearer ${tokens.access_token}` } });
+        assert.equal(userInfo.status, 200);
+        assert.deepEqual(await userInfo.json(), {
+            sub: 'fixture-attendee', name: 'fixture-attendee',
+            preferred_name: 'fixture-attendee', profile_complete: true,
+        });
         const status = (sub = 'fixture-attendee', authorization = basic) => fetch(`${service.issuer}/api/account/session-status`, { method: 'POST', headers: { authorization }, body: new URLSearchParams({ sid: String(payload.sid), sub }) });
         assert.equal((await status('fixture-attendee', 'Basic wrong')).status, 401);
         assert.deepEqual(await (await status('different')).json(), { active: false });

@@ -179,6 +179,9 @@ model TicketEntitlement {
   // BEACON_ACCOUNT_ENABLED=true; boundEmail remains a provider audit snapshot.
   accountId          String?                @map("account_id")
   accountIssuer      String?                @map("account_issuer")
+  // Account UserInfo snapshot at admission; distinct from provider boundEmail.
+  accountEmail       String?                @map("account_email") @db.VarChar(320)
+  accountEmailVerified Boolean?             @map("account_email_verified")
   boundAt            DateTime?              @map("bound_at")
   expiresAt          DateTime               @map("expires_at")
   issuedByUserId     String?                @map("issued_by_user_id") @db.Uuid
@@ -347,6 +350,9 @@ model WebSession {
   accountSubject         String?            @map("account_subject")
   accountSessionId       String?            @map("account_session_id")
   accountDisplayName     String?            @map("account_display_name")
+  accountEmail           String?            @map("account_email") @db.VarChar(320)
+  accountEmailVerified   Boolean?           @map("account_email_verified")
+  accountProfileComplete Boolean?           @map("account_profile_complete")
   accountValidatedAt     DateTime?          @map("account_validated_at")
   staffUserId            String?            @map("staff_user_id") @db.Uuid
   staffUser              User?              @relation("StaffWebSessions", fields: [staffUserId], references: [id], onDelete: Cascade)

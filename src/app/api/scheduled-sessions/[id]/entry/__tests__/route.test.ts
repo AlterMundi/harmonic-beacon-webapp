@@ -9,6 +9,8 @@ const {
     findUnique,
     readAttendeeDisplayName,
     confirmAttendeeDisplayName,
+    accountEnabled,
+    profileAllowed,
 } = vi.hoisted(() => ({
     principalFromToken: vi.fn(),
     accountIdentityFromToken: vi.fn(),
@@ -16,7 +18,12 @@ const {
     findUnique: vi.fn(),
     readAttendeeDisplayName: vi.fn(),
     confirmAttendeeDisplayName: vi.fn(),
+    accountEnabled: vi.fn(),
+    profileAllowed: vi.fn(),
 }));
+
+vi.mock('@/lib/account-rp', () => ({ beaconAccountEnabled: accountEnabled }));
+vi.mock('@/lib/live-profile-entry', () => ({ liveProfileEntryAllowed: profileAllowed }));
 
 vi.mock('@/lib/principal', () => ({ principalFromToken, accountIdentityFromToken }));
 vi.mock('@/lib/public-session-access', () => ({ attachPublicSessionAccess }));
@@ -79,6 +86,8 @@ async function patchEntry(body: unknown) {
 describe('GET /api/scheduled-sessions/[id]/entry', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        accountEnabled.mockReturnValue(false);
+        profileAllowed.mockResolvedValue(false);
         principalFromToken.mockResolvedValue(attendee);
         accountIdentityFromToken.mockResolvedValue(null);
         attachPublicSessionAccess.mockResolvedValue(false);
@@ -91,6 +100,30 @@ describe('GET /api/scheduled-sessions/[id]/entry', () => {
             displayName: 'Annie ✿',
             confirmed: true,
         });
+    });
+
+    it('requires profile completion before reading or changing the event alias', async () => {
+        accountEnabled.mockReturnValue(true);
+        accountIdentityFromToken.mockResolvedValue({ subject: 'account', profileComplete: false });
+        expect((await getEntry()).status).toBe(428);
+        expect((await patchEntry({ displayName: 'Alias' })).status).toBe(428);
+        expect(readAttendeeDisplayName).not.toHaveBeenCalled();
+        expect(confirmAttendeeDisplayName).not.toHaveBeenCalled();
+        expect(attachPublicSessionAccess).not.toHaveBeenCalled();
+    });
+
+    it('rejects a lost Account session even if an earlier principal lookup succeeded', async () => {
+        accountEnabled.mockReturnValue(true);
+        expect((await getEntry()).status).toBe(401);
+        expect(profileAllowed).not.toHaveBeenCalled();
+    });
+
+    it('continues when the profile gate accepts complete or active participation', async () => {
+        accountEnabled.mockReturnValue(true);
+        accountIdentityFromToken.mockResolvedValue({ subject: 'account', profileComplete: false });
+        profileAllowed.mockResolvedValue(true);
+        expect((await getEntry()).status).toBe(200);
+        expect(profileAllowed).toHaveBeenCalledWith({ complete: false, scheduledSessionId: 'event-1', ticketEntitlementId: 'ticket-1' });
     });
 
     it('confirms a valid ticket and returns WAITING before doors open', async () => {

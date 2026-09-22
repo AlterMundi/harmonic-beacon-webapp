@@ -196,6 +196,7 @@ for (const includeFirefox of ['0', '1']) test(`Account collection preserves exac
     const common = [
         ...['ATTENDEE', 'OPERATOR', 'FACILITATOR'].map(role => `Account RP ${role}: real callback, entitlement, stale identity revalidation and fail-closed binding`),
         'Account RP rejects a correctly authenticated but unbound staff identity',
+        'Account RP incomplete profile gates new entry, preserves active presence, and retains participation through same-account OIDC',
         ...['ATTENDEE', 'OPERATOR'].flatMap(role => [
             'denied VIDEO locale changes do not retry capture',
             'locale preserves real LiveKit playback',
@@ -211,7 +212,7 @@ for (const includeFirefox of ['0', '1']) test(`Account collection preserves exac
         if (['chromium-account', 'firefox-account'].includes(project)) titles.push('live continuity without capture: Staff open drawer survives a cancelled browser reload @desktop-native-staff');
         return titles.map(title => `${project}: ${title}`);
     });
-    assert.equal(expected.length, includeFirefox === '1' ? 70 : 52);
+    assert.equal(expected.length, includeFirefox === '1' ? 74 : 55);
     assert.deepEqual(actual.sort(), expected.sort());
 });
 

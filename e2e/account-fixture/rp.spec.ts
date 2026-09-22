@@ -1,9 +1,21 @@
 import { test, expect } from '@playwright/test';
+import { createHash } from 'node:crypto';
 import pg from 'pg';
-import { accountSessionRow, loginViaAccountFixture, requireAccountFixture } from './browser';
+import { accountSessionRow, authorizeViaAccountFixture, loginViaAccountFixture, requireAccountFixture } from './browser';
 import { FIXTURE_PASSWORD } from './protocol';
 import { SESSION_ES } from '../fixtures/test-data';
 import { withSessionStatus, withReconciledPublicationGrant } from '../fixtures/db';
+
+async function currentAccountSession(page: Parameters<typeof authorizeViaAccountFixture>[0], db: pg.Client) {
+    const token = (await page.context().cookies()).find(cookie => cookie.name === 'hb_session')?.value;
+    expect(token).toBeTruthy();
+    const result = await db.query<{ id: string; account_subject: string }>(`
+        select id, account_subject from web_sessions where token_digest = $1
+    `, [createHash('sha256').update(token!).digest('hex')]);
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0].account_subject).toBe('fixture-attendee');
+    return result.rows[0];
+}
 
 for (const role of ['ATTENDEE', 'OPERATOR', 'FACILITATOR'] as const) {
     test(`Account RP ${role}: real callback, entitlement, stale identity revalidation and fail-closed binding`, async ({ page }) => {
@@ -52,4 +64,133 @@ test('Account RP rejects a correctly authenticated but unbound staff identity', 
     expect((await callback).status()).toBe(303);
     await expect(page).toHaveURL(/account_error=1/);
     expect((await page.context().cookies()).filter(c => c.name === 'hb_session')).toHaveLength(0);
+});
+
+test('Account RP incomplete profile gates new entry, preserves active presence, and retains participation through same-account OIDC', async ({ page }) => {
+    requireAccountFixture();
+    await withSessionStatus(process.env.E2E_DATABASE_URL!, SESSION_ES.id, 'LIVE', async () => {
+        const db = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+        await db.connect();
+        let originalSessionId: string | undefined;
+        let originalProfileComplete: boolean | null | undefined;
+        let createdPresenceId: string | undefined;
+        try {
+            await authorizeViaAccountFixture(page, 'ATTENDEE');
+            const original = await currentAccountSession(page, db);
+            originalSessionId = original.id;
+            const bare = await db.query<{
+                account_profile_complete: boolean | null;
+                ticket_entitlement_id: string | null;
+            }>(`
+                select account_profile_complete, ticket_entitlement_id
+                from web_sessions where id = $1
+            `, [original.id]);
+            expect(bare.rows).toHaveLength(1);
+            expect(bare.rows[0].ticket_entitlement_id).toBeNull();
+            originalProfileComplete = bare.rows[0].account_profile_complete;
+
+            await db.query('update web_sessions set account_profile_complete = false where id = $1', [original.id]);
+            const denied = await page.request.get(`/api/scheduled-sessions/${SESSION_ES.id}/entry`);
+            expect(denied.status()).toBe(428);
+            expect(await denied.json()).toEqual({ error: 'profile_required' });
+            expect((await db.query(
+                'select ticket_entitlement_id from web_sessions where id = $1',
+                [original.id],
+            )).rows[0].ticket_entitlement_id).toBeNull();
+
+            // Establish the ordinary participant and heartbeat only while the
+            // fixture profile is complete; after this point the same false
+            // snapshot represents an active attendee, not a new entrant.
+            await db.query('update web_sessions set account_profile_complete = true where id = $1', [original.id]);
+            expect((await page.request.get(`/api/scheduled-sessions/${SESSION_ES.id}/entry`)).ok()).toBe(true);
+            const alias = 'RP fixture attendee';
+            expect((await page.request.patch(`/api/scheduled-sessions/${SESSION_ES.id}/entry`, {
+                data: { displayName: alias },
+            })).ok()).toBe(true);
+            expect((await page.request.get(`/api/scheduled-sessions/${SESSION_ES.id}/token`)).ok()).toBe(true);
+
+            const participation = await db.query<{
+                ticket_entitlement_id: string;
+                display_name: string;
+                display_name_confirmed_at: Date;
+                participant_id: string;
+            }>(`
+                select w.ticket_entitlement_id, w.display_name, w.display_name_confirmed_at,
+                       p.id as participant_id
+                from web_sessions w
+                join session_participants p
+                  on p.ticket_entitlement_id = w.ticket_entitlement_id
+                 and p.scheduled_session_id = $2
+                where w.id = $1
+            `, [original.id, SESSION_ES.id]);
+            expect(participation.rows).toHaveLength(1);
+            expect(participation.rows[0]).toMatchObject({ display_name: alias });
+            expect(participation.rows[0].display_name_confirmed_at).toBeInstanceOf(Date);
+            const existingOpen = await db.query(
+                'select id from live_presence_intervals where participant_id = $1 and ended_at is null',
+                [participation.rows[0].participant_id],
+            );
+            expect(existingOpen.rows).toHaveLength(0);
+
+            const heartbeat = await page.request.post(`/api/scheduled-sessions/${SESSION_ES.id}/presence`, {
+                data: { state: 'connected' },
+            });
+            expect(heartbeat.status()).toBe(202);
+            const openPresence = await db.query<{ id: string }>(`
+                select id from live_presence_intervals
+                where participant_id = $1 and ended_at is null
+            `, [participation.rows[0].participant_id]);
+            expect(openPresence.rows).toHaveLength(1);
+            createdPresenceId = openPresence.rows[0].id;
+
+            await db.query('update web_sessions set account_profile_complete = false where id = $1', [original.id]);
+            const activeEntry = await page.request.get(`/api/scheduled-sessions/${SESSION_ES.id}/entry`);
+            expect(activeEntry.ok()).toBe(true);
+            expect(await activeEntry.json()).toMatchObject({
+                state: 'READY',
+                identity: { kind: 'attendee', displayName: alias, confirmed: true },
+            });
+            const activeToken = await page.request.get(`/api/scheduled-sessions/${SESSION_ES.id}/token`);
+            expect(activeToken.ok()).toBe(true);
+            expect(await activeToken.json()).toMatchObject({ displayName: alias, principalKind: 'ticket' });
+
+            await authorizeViaAccountFixture(page, 'ATTENDEE');
+            const replacement = await currentAccountSession(page, db);
+            expect(replacement.id).not.toBe(original.id);
+            const rotated = await db.query<{
+                id: string;
+                ticket_entitlement_id: string | null;
+                display_name: string | null;
+                display_name_confirmed_at: Date | null;
+                account_profile_complete: boolean | null;
+            }>(`
+                select id, ticket_entitlement_id, display_name,
+                       display_name_confirmed_at, account_profile_complete
+                from web_sessions where id = any($1::uuid[])
+                order by id
+            `, [[original.id, replacement.id]]);
+            expect(rotated.rows).toHaveLength(2);
+            const oldRow = rotated.rows.find(row => row.id === original.id)!;
+            const newRow = rotated.rows.find(row => row.id === replacement.id)!;
+            expect(newRow).toMatchObject({
+                ticket_entitlement_id: participation.rows[0].ticket_entitlement_id,
+                display_name: alias,
+                account_profile_complete: true,
+            });
+            expect(newRow.display_name_confirmed_at).toEqual(participation.rows[0].display_name_confirmed_at);
+            expect(oldRow.ticket_entitlement_id).toBe(participation.rows[0].ticket_entitlement_id);
+            expect((await db.query('select revoked_at from web_sessions where id = $1', [original.id])).rows[0].revoked_at).toBeInstanceOf(Date);
+        } finally {
+            if (createdPresenceId) {
+                await db.query('delete from live_presence_intervals where id = $1', [createdPresenceId]);
+            }
+            if (originalSessionId && originalProfileComplete !== undefined) {
+                await db.query(
+                    'update web_sessions set account_profile_complete = $2 where id = $1',
+                    [originalSessionId, originalProfileComplete],
+                );
+            }
+            await db.end();
+        }
+    });
 });

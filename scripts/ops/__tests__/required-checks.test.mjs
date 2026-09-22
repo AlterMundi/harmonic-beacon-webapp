@@ -879,6 +879,25 @@ test('PR entry workflows rerun their base-sensitive evidence after retargeting',
   assert.doesNotMatch(e2eWorkflow, /^ {2}pull_request:/m);
 });
 
+test('partial CI reruns consume the successful impact producer artifact, not the new attempt', () => {
+  const workflow = readFileSync(resolve(ROOT, '.github/workflows/ci.yml'), 'utf8');
+  const producer = workflow.slice(workflow.indexOf('  impact:'), workflow.indexOf('  lint-and-build:'));
+  const consumer = workflow.slice(workflow.indexOf('  required-impact-checks:'));
+  assert.match(producer, /artifact_name: \$\{\{ steps\.classify\.outputs\.artifact_name \}\}/);
+  assert.ok(producer.includes("printf 'artifact_name=change-impact-%s-%s\\n' \"$GITHUB_RUN_ID\" \"$GITHUB_RUN_ATTEMPT\""));
+  assert.match(producer, /name: \$\{\{ steps\.classify\.outputs\.artifact_name \}\}/);
+  assert.match(consumer, /name: \$\{\{ needs\.impact\.outputs\.artifact_name \}\}/);
+  assert.doesNotMatch(consumer, /name: change-impact-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}/);
+  const guard = consumer.match(/run: '(\[\[ "\$IMPACT_ARTIFACT"[^\n]+)'/);
+  assert.ok(guard, 'missing artifact identity guard must not download all artifacts');
+  for (const [artifact, valid] of [['change-impact-123-1', true], ['change-impact-123-2', true], ['', false], ['change-impact-999-1', false], ['change-impact-123-0', false]]) {
+    const result = spawnSync('bash', ['-c', guard[1]], {
+      env: { ...process.env, GITHUB_RUN_ID: '123', GITHUB_RUN_ATTEMPT: '2', IMPACT_ARTIFACT: artifact },
+    });
+    assert.equal(result.status === 0, valid, artifact);
+  }
+});
+
 test('privileged delivery authority is never loaded by workflow_run from the default branch', () => {
   const workflow = readFileSync(resolve(ROOT, '.github/workflows/delivery-gate.yml'), 'utf8');
   const dispatcher = readFileSync(resolve(ROOT, '.github/workflows/delivery-gate-dispatch.yml'), 'utf8');

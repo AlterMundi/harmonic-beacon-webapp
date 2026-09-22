@@ -10,6 +10,7 @@ import {
 import { redactError } from '@/lib/redact';
 import { redeemPromoInvitationByDigest } from '@/lib/promo-invitation';
 import { sessionCookie } from '@/lib/principal';
+import { SESSION_COOKIE_NAME } from '@/lib/session-auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,6 +32,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
             code,
             state,
             stateCookie: request.cookies.get(ACCOUNT_STATE_COOKIE)?.value,
+            currentSessionToken: request.cookies.get(SESSION_COOKIE_NAME)?.value,
             origin,
         });
         let returnTo = completed.returnTo;

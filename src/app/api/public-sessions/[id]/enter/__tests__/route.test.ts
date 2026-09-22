@@ -83,12 +83,24 @@ describe('GET /api/public-sessions/[id]/enter', () => {
         expect(attachPublicSessionAccess).not.toHaveBeenCalled();
     });
 
+    it('delegates incomplete profiles to the active-aware room gate without creating access or replacing cookies', async () => {
+        accountIdentityFromToken.mockResolvedValue({ subject: 'opaque-subject', profileComplete: false });
+        const response = await enter(PUBLIC_ID, `/api/public-sessions/${PUBLIC_ID}/enter`, {
+            host: 'localhost:3000', cookie: 'hb_session=account-cookie',
+        });
+        expect(response.status).toBe(303);
+        expect(new URL(response.headers.get('location')!).pathname).toBe(`/session/${PUBLIC_ID}`);
+        expect(response.headers.get('set-cookie')).toBeNull();
+        expect(attachPublicSessionAccess).not.toHaveBeenCalled();
+    });
+
     it('attaches public access to an Account session without replacing its identity cookie', async () => {
         accountIdentityFromToken.mockResolvedValue({
             issuer: 'https://account-staging.harmonicbeacon.com',
             subject: 'opaque-subject',
             sessionId: 'opaque-session',
             displayName: 'Nicolás',
+            profileComplete: true,
             validatedAt: new Date('2026-08-19T12:00:00.000Z'),
         });
 
@@ -113,6 +125,7 @@ describe('GET /api/public-sessions/[id]/enter', () => {
             subject: 'opaque-subject',
             sessionId: 'opaque-session',
             displayName: 'Nicolás',
+            profileComplete: true,
             validatedAt: new Date('2026-08-19T12:00:00.000Z'),
         });
 
@@ -143,6 +156,7 @@ describe('GET /api/public-sessions/[id]/enter', () => {
             subject: 'opaque-subject',
             sessionId: 'opaque-session',
             displayName: 'Nicolás',
+            profileComplete: true,
             validatedAt: new Date('2026-08-19T12:00:00.000Z'),
         });
         findUnique.mockResolvedValue({

@@ -149,6 +149,9 @@ export async function accountIdentityFromToken(
             accountSubject: true,
             accountSessionId: true,
             accountDisplayName: true,
+            accountEmail: true,
+            accountEmailVerified: true,
+            accountProfileComplete: true,
             accountValidatedAt: true,
         },
     });
@@ -194,6 +197,9 @@ export async function principalFromToken(
             accountSubject: true,
             accountSessionId: true,
             accountDisplayName: true,
+            accountEmail: true,
+            accountEmailVerified: true,
+            accountProfileComplete: true,
             accountValidatedAt: true,
             staffUser: {
                 select: {

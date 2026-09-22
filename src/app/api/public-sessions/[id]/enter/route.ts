@@ -52,6 +52,14 @@ export async function GET(
         });
     }
 
+    if (currentAccount.profileComplete !== true) {
+        // The room entry boundary can distinguish a new entry from an active
+        // participation. Do not force an active attendee through onboarding.
+        return NextResponse.redirect(new URL(`/session/${id}`, origin), {
+            status: 303, headers: { 'Cache-Control': 'private, no-store' },
+        });
+    }
+
     const now = new Date();
     const session = await prisma.scheduledSession.findUnique({
         where: { id },

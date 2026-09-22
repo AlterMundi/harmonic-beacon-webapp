@@ -5,17 +5,18 @@ import type { ComponentProps } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { messages } from '@/lib/i18n';
+import { LocaleProvider } from '@/context/LocaleContext';
 import SpotlightConsoleImpl from '../SpotlightConsole';
 
 type SpotlightConsoleProps = Omit<ComponentProps<typeof SpotlightConsoleImpl>, 'copy' | 'staffRoles'>;
 
 function SpotlightConsole(props: SpotlightConsoleProps) {
     return (
-        <SpotlightConsoleImpl
+        <LocaleProvider initialLocale="en"><SpotlightConsoleImpl
             {...props}
             copy={messages.en.ops.spotlight}
             staffRoles={messages.en.staffRoles}
-        />
+        /></LocaleProvider>
     );
 }
 
@@ -138,6 +139,20 @@ describe('SpotlightConsole', () => {
         expect(screen.getByText(/left/)).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Take floor' })).toBeInTheDocument();
         expect(screen.getAllByRole('button', { name: 'Give floor' })).toHaveLength(2);
+    });
+
+    it.each(['ADMIN', 'OPERATOR'] as const)('limits identity inspection across all stage states to Admin (%s)', async (role) => {
+        const fetcher = mockFetch(snapshot([
+            attendee('stage', { canPublish: true, stageState: 'ON_STAGE' }),
+            attendee('invited', { canPublish: true, stageState: 'INVITED' }),
+            attendee('queue', { raisedAt: '2026-08-01T15:10:00.000Z', queuePosition: 1 }),
+            attendee('audience'),
+        ]));
+        vi.stubGlobal('fetch', fetcher);
+        const { container } = render(<SpotlightConsole sessionId="event-1" role={role} />);
+        await screen.findByText('#1 — Attendee · ID ue-queue');
+        expect(container.querySelectorAll('details')).toHaveLength(role === 'ADMIN' ? 4 : 0);
+        expect(fetcher.mock.calls.some(([url]) => String(url).endsWith('/identity'))).toBe(false);
     });
 
     it('lets system administrators select exactly 6, 9, or 12 scene publishers', async () => {

@@ -36,6 +36,11 @@ function queryText(): string {
     return query.strings.join('?').replace(/\s+/g, ' ');
 }
 
+function queryValues(): unknown[] {
+    const query = mocks.queryRaw.mock.calls.at(-1)?.[0] as { values: unknown[] };
+    return query.values;
+}
+
 describe('amplification credit cursor and limit', () => {
     it('round-trips the exact entered_at + entry_id position', () => {
         const cursor = {
@@ -110,6 +115,9 @@ describe('amplification credit feed query', () => {
         expect(sql).toContain('"participant"."staff_user_id" IS NULL');
         expect(sql).toContain('"participant"."ticket_entitlement_id" IS NOT NULL');
         expect(sql).toContain('LEFT JOIN "commerce_entitlements" AS "commerce"');
+        expect(sql).toContain('COALESCE("ticket"."bound_email", CASE');
+        expect(sql).toContain('char_length("ticket"."account_email") <= ?');
+        expect(queryValues()).toContain(254);
         expect(page.entries).toHaveLength(2);
         expect(page.entries[1]).toMatchObject({
             registration_id: null,
