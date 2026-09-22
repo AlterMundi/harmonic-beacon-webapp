@@ -1,5 +1,3 @@
--- NULL means not yet observed from authenticated Account UserInfo.
--- Do not revoke old sessions or infer profile/email from tickets and aliases.
 ALTER TABLE "web_sessions"
   ADD COLUMN "account_email" VARCHAR(320),
   ADD COLUMN "account_email_verified" BOOLEAN,

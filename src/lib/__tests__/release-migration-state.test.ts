@@ -63,6 +63,14 @@ describe('release migration state', () => {
     expect(validateForwardOnlyMigration(migration)).toEqual({ safe: true, violations: [] });
   });
 
+  it('accepts the committed Account identity snapshot migration through the deployment gate', () => {
+    const migration = readFileSync(new URL(
+      '../../../prisma/migrations/20260921171000_live_account_profile_snapshot/migration.sql',
+      import.meta.url,
+    ));
+    expect(validateForwardOnlyMigration(migration)).toEqual({ safe: true, violations: [] });
+  });
+
   it('accepts only the exact future-row scene-capacity default migration', () => {
     const migration = readFileSync(new URL(
       '../../../prisma/migrations/20260917211500_default_scene_capacity_12/migration.sql',
