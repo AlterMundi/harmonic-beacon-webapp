@@ -38,7 +38,11 @@ export async function attachPublicSessionAccess(
     return prisma.$transaction(async (tx) => {
         const entitlement = await tx.ticketEntitlement.upsert({
             where: { codeDigest },
-            update: {},
+            // A nonempty update lets Prisma use PostgreSQL ON CONFLICT.
+            // An empty update may become SELECT + INSERT and race when the
+            // page, another tab or a second device enters concurrently. Only
+            // repeat the immutable key; never overwrite historical snapshots.
+            update: { codeDigest },
             create: {
                 scheduledSessionId: session.id,
                 codeDigest,
