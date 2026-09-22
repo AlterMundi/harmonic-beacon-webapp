@@ -69,6 +69,7 @@ describe('attachPublicSessionAccess', () => {
         )).resolves.toBe(true);
 
         expect(entitlementUpsert).toHaveBeenCalledWith(expect.objectContaining({
+            update: { codeDigest: expect.any(String) },
             create: expect.objectContaining({
                 scheduledSessionId: publicSession.id,
                 codeLastFour: 'FREE',
@@ -80,6 +81,9 @@ describe('attachPublicSessionAccess', () => {
                 expiresAt: new Date('2026-08-23T16:00:00Z'),
             }),
         }));
+        const upsert = entitlementUpsert.mock.calls[0][0];
+        expect(upsert.update.codeDigest).toBe(upsert.where.codeDigest);
+        expect(upsert.update.codeDigest).toBe(upsert.create.codeDigest);
         expect(webSessionUpdateMany).toHaveBeenCalledWith({
             where: expect.objectContaining({
                 accountIssuer: account.issuer,
@@ -140,6 +144,8 @@ describe('attachPublicSessionAccess', () => {
         findParticipant.mockResolvedValue({ displayName: 'Historical alias' });
         await attachPublicSessionAccess('new-device', publicSession, { ...account, profileComplete: true });
         expect(webSessionUpdateMany.mock.calls[0][0].data.displayName).toBe('Historical alias');
-        expect(entitlementUpsert.mock.calls[0][0].update).toEqual({});
+        expect(entitlementUpsert.mock.calls[0][0].update).toEqual({
+            codeDigest: entitlementUpsert.mock.calls[0][0].where.codeDigest,
+        });
     });
 });
