@@ -95,6 +95,17 @@ account_validate() {
       /run/account-mail-worker-staging.env
 }
 
+account_candidate_image_id() {
+  docker image inspect "harmonic-beacon/account:$BEACON_ACCOUNT_IMAGE_TAG" --format '{{.Id}}'
+}
+
+account_require_prepared_image() (
+  echo "${HB_ACCOUNT_PREPARED_IMAGE_ID:-}" | grep -Eq '^sha256:[0-9a-f]{64}$' ||
+    account_fail 'missing preflight image identity'
+  test "$(account_candidate_image_id)" = "$HB_ACCOUNT_PREPARED_IMAGE_ID" ||
+    account_fail 'candidate image changed since preflight'
+)
+
 account_require_internal_mail_network() {
   environment=$1
   network="beacon_account_mail_$environment"

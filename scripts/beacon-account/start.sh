@@ -37,9 +37,9 @@ rollback_on_failure() {
 }
 trap rollback_on_failure EXIT HUP INT TERM
 
-# Build once from the exact reviewed checkout. Staging and production consume
-# the same immutable image, but never the same runtime secret or database.
-account_build_candidate
+# Consume the image already built and bound by protected preflight; never
+# rebuild between the verified backup/restore and cutover.
+account_require_prepared_image
 account_validate
 
 if [ "$environment" = production ]; then

@@ -325,7 +325,8 @@ test('lifecycle verifies immutable provenance and does not downgrade schemas', (
   assert.match(start, /HB_ACCOUNT_TRUSTED_SOURCE_SHA.*BEACON_ACCOUNT_GIT_SHA/s);
   assert.doesNotMatch(start, /(?:^|[;&|()]|\s)git(?:\s|$)/m);
   assert.match(lib, /docker image inspect "harmonic-beacon\/account:\$BEACON_ACCOUNT_IMAGE_TAG"/);
-  assert.match(start, /account_build_candidate[\s\S]*account_validate/);
+  assert.match(start, /account_require_prepared_image[\s\S]*account_validate/);
+  assert.doesNotMatch(start, /account_compose build|account_build_candidate/);
   assert.match(lib, /account_compose build account-production/);
   assert.match(start, /account_compose up -d --no-deps[\s\\]+account-mail-worker-production account-production/);
   assert.match(start, /account_compose up -d account-mail-worker-staging account-staging/);

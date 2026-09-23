@@ -510,14 +510,14 @@ create_state() {
   python3 -I - "$temporary" "$phase" "$target" "$operation" "$sha" \
     "$ci_run" "$ci_attempt" "$delivery_run" "$delivery_attempt" \
     "$previous_sha" "$previous_worker" "$backup_path" "$backup_hash" \
-    "$(config_contract_hash)" <<'PY'
+    "$(config_contract_hash)" "$candidate_image_id" <<'PY'
 import json
 import os
 import sys
 (
     file, phase, target, operation, sha, ci_run, ci_attempt, delivery_run,
     delivery_attempt, previous_sha, previous_worker, backup_path, backup_hash,
-    config_hash,
+    config_hash, candidate_image_id,
 ) = sys.argv[1:]
 value = {
     "phase": phase,
@@ -533,6 +533,7 @@ value = {
     "backup_path": backup_path,
     "backup_hash": backup_hash,
     "config_hash": config_hash,
+    "candidate_image_id": candidate_image_id,
     "restore": {"status": "verified", "mode": "isolated-ephemeral-postgres", "cleanup": "verified"},
 }
 with open(file, "w", encoding="utf-8") as stream:
@@ -573,8 +574,10 @@ required_keys = {
     "delivery_run", "delivery_attempt", "previous_sha", "previous_worker",
     "backup_path", "backup_hash", "config_hash", "restore",
 }
-if set(data) != required_keys:
+if set(data) not in (required_keys, required_keys | {"candidate_image_id"}):
     raise SystemExit("delivery state keys differ from the v1 contract")
+if "candidate_image_id" in data and not re.fullmatch(r"sha256:[0-9a-f]{64}", str(data["candidate_image_id"])):
+    raise SystemExit("invalid candidate image identity")
 expected = {
     "phase": phase,
     "target": target,
@@ -853,9 +856,12 @@ probe() {
 }
 
 preflight() {
-  local previous_sha previous_worker backup_path backup_hash restore_mode
+  local previous_sha previous_worker backup_path backup_hash restore_mode candidate_image_id
   if [ -e "$(state_file)" ] || [ -L "$(state_file)" ]; then
     require_state preflight
+    load_account_library
+    HB_ACCOUNT_PREPARED_IMAGE_ID="$(json_value "$(state_file)" candidate_image_id)"
+    account_require_prepared_image
     return 0
   fi
   load_account_library
@@ -865,6 +871,8 @@ preflight() {
   # Migration inspection and backup use tools from this exact image, including
   # on a host which has never built the candidate. No migration or cutover here.
   account_build_candidate
+  candidate_image_id="$(account_candidate_image_id)"
+  [[ "$candidate_image_id" =~ ^sha256:[0-9a-f]{64}$ ]] || fail 'invalid built image identity'
   if [ "$target" = production ]; then
     account_check_production_migrations before
     backup_path="$(account_backup_production)"
@@ -899,6 +907,9 @@ deploy() {
     return 0
   fi
   load_account_library
+  HB_ACCOUNT_PREPARED_IMAGE_ID="$(json_value "$(state_file)" candidate_image_id)"
+  account_require_prepared_image
+  export HB_ACCOUNT_PREPARED_IMAGE_ID
   if [ "$operation" = interruption-checkpoint ]; then
     previous_sha="$(json_value "$(state_file)" previous_sha)"
     previous_worker="$(json_value "$(state_file)" previous_worker)"

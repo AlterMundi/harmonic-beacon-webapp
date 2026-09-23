@@ -68,6 +68,7 @@ account_compose() {
 docker() {
   test -f "$TEST_DIR/image"
   test "$1 $2 $3" = 'image inspect harmonic-beacon/account:${SHA}'
+  if [ "$5" = '{{.Id}}' ]; then echo sha256:${'0'.repeat(64)}; return; fi
   if [ "$TEST_MODE" = wrong-sha ]; then echo BEACON_GIT_SHA=wrong; else echo BEACON_GIT_SHA=${SHA}; fi
 }
 account_check_production_migrations() {
@@ -227,6 +228,8 @@ account_require_internal_mail_network() { :; }
 account_capture_previous_runtime() { printf '%040d\\n' 1; }
 account_capture_previous_worker() { printf '\\n'; }
 account_build_candidate() { printf 'build-called\\n' >> "\${HB_TEST_RUNTIME_RESTORED%/*}/build.log"; }
+account_candidate_image_id() { docker image inspect candidate --format '{{.Id}}'; }
+account_require_prepared_image() { test "$(account_candidate_image_id)" = "$HB_ACCOUNT_PREPARED_IMAGE_ID"; }
 account_backup_staging() {
   local directory="\${HB_TEST_RUNTIME_RESTORED%/*}"
   printf 'backup-called\\n' >> "$directory/backup.log"
@@ -249,7 +252,9 @@ docker() {
   case "$*" in
     *pg_restore*) cat >/dev/null ;;
     *'SELECT count'*) printf '1\\n' ;;
-    *'{{.Id}}'*) printf 'sha256:%064d\\n' 0 ;;
+    *'{{.Id}}'*)
+      if [ -f "\${HB_TEST_RUNTIME_RESTORED%/*}/candidate-drift" ]; then printf 'sha256:%064d\\n' 9;
+      else printf 'sha256:%064d\\n' 0; fi ;;
     *'RepoDigests'*) printf 'harmonic-beacon/account@sha256:%064d\\n' 1 ;;
     *) return 0 ;;
   esac
@@ -706,6 +711,17 @@ test('conflicting durable preflight state fails closed instead of being replaced
   assert.equal(read(path.join(fixture.root, 'backup.log')).trim().split('\n').length, 1);
 });
 
+for (const verb of ['preflight', 'deploy']) {
+  test(`changed candidate image is rejected on ${verb} without cutover`, (t) => {
+    const fixture = helperFixture(t);
+    assert.equal(fixture.invoke('preflight').status, 0);
+    fs.writeFileSync(path.join(fixture.root, 'candidate-drift'), 'changed');
+    assert.notEqual(fixture.invoke(verb).status, 0);
+    assert.equal(fs.existsSync(path.join(fixture.root, 'start.log')), false);
+    assert.equal(read(path.join(fixture.root, 'build.log')).trim().split('\n').length, 1);
+  });
+}
+
 test('exact deploy replay returns from durable deployed state without repeating cutover', (t) => {
   const fixture = helperFixture(t);
   assert.equal(fixture.invoke('preflight').status, 0);
@@ -858,6 +874,7 @@ test('interruption receipt recovery advances state without repeating the cutover
   const stateFile = path.join(fixture.state, `staging-${fixture.deliveryRun}-${fixture.deliveryAttempt}.json`);
   fs.writeFileSync(stateFile, `${JSON.stringify({
     phase: 'preflight', target: 'staging', operation: 'interruption-checkpoint', sha: fixture.currentSha,
+    candidate_image_id: `sha256:${'0'.repeat(64)}`,
     ci_run: fixture.ciRun, ci_attempt: Number(fixture.ciAttempt),
     delivery_run: fixture.deliveryRun, delivery_attempt: Number(fixture.deliveryAttempt),
     previous_sha: 'd'.repeat(40), previous_worker: false, backup_path: '/test/unused',
@@ -889,6 +906,7 @@ test('failure before checkpoint cannot claim a successful drill but can record r
   const stateFile = path.join(fixture.state, `staging-${fixture.deliveryRun}-${fixture.deliveryAttempt}.json`);
   fs.writeFileSync(stateFile, JSON.stringify({
     phase: 'preflight', target: 'staging', operation: 'interruption-checkpoint', sha: fixture.currentSha,
+    candidate_image_id: `sha256:${'0'.repeat(64)}`,
     ci_run: fixture.ciRun, ci_attempt: Number(fixture.ciAttempt),
     delivery_run: fixture.deliveryRun, delivery_attempt: Number(fixture.deliveryAttempt),
     previous_sha: 'd'.repeat(40), previous_worker: false, backup_path: '/test/unused',
@@ -1246,6 +1264,7 @@ account_capture_previous_runtime() { echo "${'a'.repeat(40)}"; }
 account_capture_previous_worker() { echo 1; }
 account_compose() { printf 'compose:%s\\n' "$*" >> "$MOCK_LOG"; }
 account_validate() { :; }
+account_require_prepared_image() { :; }
 account_restore_previous_runtime() { printf 'restore:%s:%s:%s\\n' "$1" "$2" "$3" >> "$MOCK_LOG"; }
 account_verify_running() { printf 'verify:%s\\n' "$*" >> "$MOCK_LOG"; }
 `);
