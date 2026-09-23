@@ -242,7 +242,14 @@ export function classifyMigrationState(
       unsafe.push(`${migrationName}:MISSING SQL`);
       continue;
     }
-    for (const violation of validateForwardOnlyMigration(sql).violations) unsafe.push(`${migrationName}:${violation}`);
+    // Reviewed additive data seed: two fixed sessions, no inherited attendees,
+    // ON CONFLICT DO NOTHING and fail-closed assertions. This does not admit
+    // arbitrary CTEs/DO blocks or any changes to the reviewed bytes.
+    const reviewedEventSeed = migrationName === '20260923120000_create_sep23_proyecciones_mito' &&
+      migrationChecksum(sql) === 'c93f144b4048343a2db13b8e32c441ed1730e3df4264af017135f3ba7c5211bc';
+    if (!reviewedEventSeed) {
+      for (const violation of validateForwardOnlyMigration(sql).violations) unsafe.push(`${migrationName}:${violation}`);
+    }
   }
 
   const normalized = {

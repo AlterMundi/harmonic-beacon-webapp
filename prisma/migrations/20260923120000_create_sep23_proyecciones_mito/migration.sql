@@ -33,7 +33,7 @@ WITH facilitator_source AS (
 INSERT INTO "scheduled_sessions" (
     "id", "title", "description", "room_name", "language", "scheduled_at",
     "status", "is_test", "paid_mode", "public_access", "attendee_cap",
-    "max_publishers", "facilitator_id", "updated_at"
+    "max_publishers", "scene_capacity", "facilitator_id", "updated_at"
 )
 SELECT
     event_sessions."id",
@@ -47,6 +47,7 @@ SELECT
     true,
     true,
     150,
+    6,
     6,
     facilitator_source."id",
     CURRENT_TIMESTAMP
@@ -80,7 +81,8 @@ BEGIN
       AND "paid_mode" = true
       AND "public_access" = true
       AND "attendee_cap" = 150
-      AND "max_publishers" = 6;
+      AND "max_publishers" = 6
+      AND "scene_capacity" = 6;
 
     SELECT
         (SELECT count(*) FROM "ticket_entitlements" WHERE "scheduled_session_id" IN (
