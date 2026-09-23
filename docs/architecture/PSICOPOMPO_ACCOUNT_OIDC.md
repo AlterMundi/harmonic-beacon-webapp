@@ -42,6 +42,42 @@ path; it does not remove accounts, sessions of other clients or database schema.
 
 ## Verification checkpoint — 2026-09-22
 
+### Session continuation agreed in msg_9b3dde4ea579
+
+OAuth code/access/ID-token TTLs remain 300/900/900 seconds. The initial ID token
+is signature/issuer/audience/expiry/nonce validated; its `sid` and `sub` bind the
+RP session. `userinfo.sub` must match. Profile fields come from userinfo, not
+from name inference or assumptions about the ID token.
+
+Backend-only `POST https://account.harmonicbeacon.com/api/account/session-status`
+uses Basic client authentication and exact Content-Type
+`application/x-www-form-urlencoded`, body `sid=<opaque>&sub=<opaque>`.
+Only activated `hb-psicopompo` receives `expires_at` (integer Unix seconds) on
+active responses. Existing Live/Listener response shapes remain unchanged.
+
+Synthetic active fixture:
+```json
+{"active":true,"iss":"https://account.harmonicbeacon.com","sub":"synthetic-account","sid":"synthetic-session","expires_at":2000000000}
+```
+Inactive fixture (missing, expired, revoked, wrong subject/environment):
+```json
+{"active":false}
+```
+
+HTTP 401 means client credentials/gate rejected; 415 content type; 400 shape;
+429 rate limit; 404 host/authority mismatch. Network/non-200/schema mismatch
+must fail closed. Security revision is checked internally, not exposed.
+
+PMP caps its session at min(initial login + 8h, central expires_at), rechecks
+at most every 15 minutes and never extends the original 8h bound. OAuth tokens
+are not reused after expiry. Central session configuration is 30d with 24h
+update age, not a promised fixed absolute lifetime. Snapshot profile data does
+not imply continuous synchronization. No global logout is exposed to PMP;
+the provider enableEndSession flag stays true to emit signed sid, while the
+public route boundary rejects a client without registered logout redirects.
+
+### Earlier local checkpoint
+
 - Base: `early-birds@311d73c45574cbe80f84310dcb423055ddab5610`.
 - Account Vitest regression: 98 passed, 11 PostgreSQL cases skipped because no
   isolated test database was configured. TypeScript and changed-file ESLint pass.

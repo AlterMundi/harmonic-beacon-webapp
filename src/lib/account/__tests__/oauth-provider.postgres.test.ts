@@ -1,5 +1,6 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { PrismaClient } from '@prisma/client';
+import { createLocalJWKSet, jwtVerify } from 'jose';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ACCOUNT_PROVISIONED_SCOPES } from '../config';
 
@@ -268,6 +269,25 @@ postgres('pinned OAuth Provider 1.6.30 confidential-client lifecycle', () => {
             expect(tokens.access_token).toBeTruthy();
             expect(tokens.id_token).toBeTruthy();
             expect(tokens.refresh_token).toBeUndefined();
+            const { accountAuth } = await import('../auth');
+            const jwks = await accountAuth().api.getJwks();
+            const verified = await jwtVerify(tokens.id_token, createLocalJWKSet(jwks), {
+                issuer, audience: rpClient, algorithms: ['EdDSA'],
+            });
+            expect(verified.payload.sub).toBe(accountId);
+            expect(verified.payload.sid).toBe(before!.session.id);
+            const { POST: sessionStatus } = await import('@/app/api/account/session-status/route');
+            const status = await sessionStatus(new Request(`${issuer}/api/account/session-status`, {
+                method: 'POST', headers: {
+                    host: 'account.harmonicbeacon.com',
+                    'content-type': 'application/x-www-form-urlencoded',
+                    authorization: `Basic ${Buffer.from(`${rpClient}:${rpSecret}`).toString('base64')}`,
+                }, body: new URLSearchParams({ sid: verified.payload.sid as string, sub: accountId }),
+            }));
+            expect(status.status).toBe(200);
+            expect(await status.json()).toMatchObject({
+                active: true, iss: issuer, sub: accountId, sid: before!.session.id,
+            });
             expect(await currentAccountSession(new Headers({ cookie }))).toMatchObject({
                 user: { id: accountId }, profile: { displayName: '李', realName: 'Private Real Name' },
             });
