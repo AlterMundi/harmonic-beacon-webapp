@@ -159,7 +159,7 @@ export default async function LandingPage({
                                             <p className="event-card__label">
                                                 {event.language === "ENGLISH" ? copy.english : copy.spanish}
                                             </p>
-                                            {publicFreeSession && (
+                                            {(publicFreeSession || event.checkoutUrl) && (
                                                 <>
                                                     <h3 className="font-serif text-xl text-[var(--paper)]">{event.title}</h3>
                                                     {event.description && (
@@ -171,7 +171,7 @@ export default async function LandingPage({
                                         </div>
                                         <div className="text-right">
                                             <p className="text-xs font-mono text-[var(--text-secondary)]">
-                                                {publicFreeSession ? (locale === 'en' ? 'Free' : 'Gratis') : (event.language === "ENGLISH" ? "US $50" : "US $20")}
+                                                {publicFreeSession ? (locale === 'en' ? 'Free' : 'Gratis') : event.checkoutUrl ? (locale === 'en' ? 'See ticket price' : 'Consultar precio') : (event.language === "ENGLISH" ? "US $50" : "US $20")}
                                             </p>
                                         </div>
                                     </div>
@@ -204,7 +204,7 @@ export default async function LandingPage({
                                                 {copy.salesSoon}
                                             </p>
                                         )}
-                                        {!publicFreeSession && (
+                                        {!publicFreeSession && !event.checkoutUrl && (
                                             <p className="mt-3 text-xs text-[var(--text-secondary)]">
                                                 USD $50 {copy.globalNorth} · USD $20 {copy.globalSouth}
                                             </p>

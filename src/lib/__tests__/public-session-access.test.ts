@@ -52,6 +52,12 @@ describe('attachPublicSessionAccess', () => {
         expect(entitlementUpsert).not.toHaveBeenCalled();
     });
 
+    it('preserves authenticated direct entry for internal test rooms', async () => {
+        currentEvent.mockResolvedValue({publicAccess:true,isPublished:true,isTest:true,status:'SCHEDULED'});
+        const {attachPublicSessionAccess}=await import('../public-session-access');
+        expect(await attachPublicSessionAccess('cookie',publicSession,account)).toBe(true);
+    });
+
     it('does nothing for a session that is not explicitly public', async () => {
         const { attachPublicSessionAccess } = await import('../public-session-access');
         await expect(attachPublicSessionAccess(

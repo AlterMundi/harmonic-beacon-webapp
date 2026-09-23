@@ -218,6 +218,19 @@ describe('landing page', () => {
         expect(screen.getAllByText(/USD \$50 Norte Global.*USD \$20 Sur Global/)).toHaveLength(2);
     });
 
+    it('shows custom paid event details without inventing a legacy ticket price', async () => {
+        mountDb(vi.fn().mockResolvedValue([{
+            ...SATURDAY, title: 'Nuevo encuentro', description: 'Descripción propia',
+            checkoutUrl: 'https://tickets.harmonicbeacon.com/events/new',
+        }]));
+        await renderPage();
+        expect(screen.getByRole('heading', { name: 'Nuevo encuentro' })).toBeInTheDocument();
+        expect(screen.getByText('Descripción propia')).toBeInTheDocument();
+        expect(screen.getByText('Consultar precio')).toBeInTheDocument();
+        expect(screen.queryByText(/US.*\$20/)).toBeNull();
+        expect(screen.getByRole('link', { name: /Comprar entrada/ })).toHaveAttribute('href', 'https://tickets.harmonicbeacon.com/events/new');
+    });
+
     it('presents a free public event with the required Account and name-confirmation step', async () => {
         mountDb(vi.fn().mockResolvedValue([{
             ...SATURDAY,
