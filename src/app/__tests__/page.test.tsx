@@ -264,7 +264,8 @@ describe('landing page', () => {
         await renderPage();
 
         expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Próximos encuentros.');
-        expect(screen.getByText(/Cuatro sábados para participar desde cualquier lugar/)).toBeInTheDocument();
+        expect(screen.getByText(/Encuentros gratuitos y sincrónicos en castellano/)).toBeInTheDocument();
+        expect(screen.getByRole('heading', { level: 2, name: 'PRÓXIMOS ENCUENTROS EN VIVO' })).toBeInTheDocument();
         expect(screen.getByRole('link', { name: /Conocer la Proyección del Mito/ })).toHaveAttribute(
             'href',
             'https://harmonicbeacon.com/proyeccion-armonica-del-mito/',
@@ -319,7 +320,8 @@ describe('landing page', () => {
         await renderPage();
 
         expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Upcoming gatherings.');
-        expect(screen.getByText(/Four Saturdays to join from anywhere/)).toBeInTheDocument();
+        expect(screen.getByText(/Free live gatherings in Spanish/)).toBeInTheDocument();
+        expect(screen.getByRole('heading', { level: 2, name: 'UPCOMING LIVE GATHERINGS' })).toBeInTheDocument();
         expect(screen.getByText('English')).toBeInTheDocument();
         expect(screen.getByText('Spanish')).toBeInTheDocument();
         expect(screen.getByLabelText('Show times for')).toHaveValue('America/Argentina/Buenos_Aires');

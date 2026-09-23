@@ -2,15 +2,15 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import {
-    PUBLIC_CYCLE_SESSION_IDS,
-    isPublicCycleSession,
+    PUBLIC_FREE_SESSION_IDS,
+    isPublicFreeSession,
 } from '@/lib/public-cycle';
 
-describe('public four-Saturday cycle', () => {
-    it('recognizes exactly the four reviewed room ids', () => {
-        expect(PUBLIC_CYCLE_SESSION_IDS).toHaveLength(4);
-        for (const id of PUBLIC_CYCLE_SESSION_IDS) expect(isPublicCycleSession(id)).toBe(true);
-        expect(isPublicCycleSession('10000000-0000-4000-8000-000000000001')).toBe(false);
+describe('public complimentary sessions', () => {
+    it('recognizes the reviewed free room ids', () => {
+        expect(PUBLIC_FREE_SESSION_IDS).toHaveLength(6);
+        for (const id of PUBLIC_FREE_SESSION_IDS) expect(isPublicFreeSession(id)).toBe(true);
+        expect(isPublicFreeSession('10000000-0000-4000-8000-000000000001')).toBe(false);
     });
 
     it('preserves the historical four-session correction at 16:00 UTC', () => {
@@ -80,6 +80,30 @@ describe('public four-Saturday cycle', () => {
         expect(migration).toContain('ON CONFLICT ("id") DO NOTHING');
         expect(migration).toContain('related_count <> 0');
         expect(migration).toContain('50000000-0000-4000-8000-202609120001');
+        expect(migration).not.toContain('INSERT INTO "ticket_entitlements"');
+        expect(migration).not.toContain('INSERT INTO "session_participants"');
+    });
+
+    it('creates two isolated public Proyecciones Mito sessions for September 23', () => {
+        const migration = readFileSync(
+            new URL(
+                '../../../prisma/migrations/20260923120000_create_sep23_proyecciones_mito/migration.sql',
+                import.meta.url,
+            ),
+            'utf8',
+        );
+
+        for (const [id, room, scheduledAt] of [
+            ['50000000-0000-4000-8000-202609230001', 'proyecciones-mito-2026-09-23-1000-art', '2026-09-23 13:00:00'],
+            ['50000000-0000-4000-8000-202609230002', 'proyecciones-mito-2026-09-23-1800-art', '2026-09-23 21:00:00'],
+        ]) {
+            expect(migration).toContain(id);
+            expect(migration).toContain(room);
+            expect(migration).toContain(`'${scheduledAt}'::timestamp`);
+        }
+        expect(migration).toContain('false,\n    true,\n    true,');
+        expect(migration).toContain('ON CONFLICT ("id") DO NOTHING');
+        expect(migration).toContain('related_count <> 0');
         expect(migration).not.toContain('INSERT INTO "ticket_entitlements"');
         expect(migration).not.toContain('INSERT INTO "session_participants"');
     });

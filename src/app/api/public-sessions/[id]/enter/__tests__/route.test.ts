@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createRequest, mockParams } from '@/__tests__/helpers';
 
 const PUBLIC_ID = '50000000-0000-4000-8000-202608220001';
+const PROYECCIONES_MITO_ID = '50000000-0000-4000-8000-202609230001';
 const {
     findUnique,
     accountIdentityFromToken,
@@ -144,7 +145,15 @@ describe('GET /api/public-sessions/[id]/enter', () => {
         );
     });
 
-    it('rejects every session outside the four published rooms before database access', async () => {
+    it('accepts a reviewed Proyecciones Mito room before Account admission', async () => {
+        const response = await enter(PROYECCIONES_MITO_ID);
+        expect(response.status).toBe(303);
+        expect(response.headers.get('location')).toContain(
+            `next=%2Fsession%2F${PROYECCIONES_MITO_ID}`,
+        );
+    });
+
+    it('rejects every session outside the reviewed complimentary rooms before database access', async () => {
         const response = await enter('10000000-0000-4000-8000-000000000001');
         expect(response.status).toBe(404);
         expect(findUnique).not.toHaveBeenCalled();
