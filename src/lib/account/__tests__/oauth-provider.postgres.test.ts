@@ -33,6 +33,8 @@ postgres('pinned OAuth Provider 1.6.30 confidential-client lifecycle', () => {
         process.env.BEACON_ACCOUNT_RATE_SECRET = 'handler-rate-secret-that-is-at-least-32-characters';
         process.env.BEACON_ACCOUNT_CLIENT_SECRET_HB_LISTENER = clientSecret;
         process.env.BEACON_ACCOUNT_CLIENT_SECRET_HB_LIVE = `${clientSecret}-live`;
+        process.env.BEACON_ACCOUNT_PSICOPOMPO_ENABLED = '1';
+        process.env.BEACON_ACCOUNT_CLIENT_SECRET_HB_PSICOPOMPO = `${clientSecret}-psicopompo`;
         ({ prisma } = await import('@/lib/db'));
         const { hashAccountPassword } = await import('@/lib/session-auth');
         const { hashAccountClientSecret } = await import('../client-secret');
@@ -193,12 +195,21 @@ postgres('pinned OAuth Provider 1.6.30 confidential-client lifecycle', () => {
         expect(claims).not.toHaveProperty('real_name');
     });
 
-    it('completes an existing profile before Live and retains the authenticated session', async () => {
+    it.each([
+        ['hb-live', 'https://live.harmonicbeacon.com/api/account/callback'],
+        ['hb-psicopompo', 'https://psicopompo.altermundi.net/api/auth/beacon/callback'],
+    ])('completes a profile before %s and exchanges its exact callback code', async (rpClient, redirectUri) => {
         const listener = await prisma.beaconOAuthClient.findUniqueOrThrow({ where: { clientId } });
+        const { hashAccountClientSecret } = await import('../client-secret');
+        const rpSecret = `${clientSecret}-${rpClient === 'hb-live' ? 'live' : 'psicopompo'}`;
+        await prisma.beaconProfile.update({ where: { accountId }, data: { realName: null } });
         await prisma.beaconOAuthClient.create({ data: {
-            ...listener, id: randomUUID(), clientId: 'hb-live',
+            ...listener, id: randomUUID(), clientId: rpClient,
+            clientSecret: hashAccountClientSecret(rpSecret),
             metadata: undefined,
-            redirectUris: ['https://live.harmonicbeacon.com/api/account/callback'],
+            redirectUris: [redirectUri],
+            postLogoutRedirectUris: rpClient === 'hb-psicopompo' ? []
+                : ['https://live.harmonicbeacon.com/api/account/frontchannel-logout'],
         } });
         try {
             const signIn = await accountRoutePOST(jsonRequest('/api/account/auth/sign-in/email', {
@@ -209,10 +220,11 @@ postgres('pinned OAuth Provider 1.6.30 confidential-client lifecycle', () => {
             const before = await currentAccountSession(new Headers({ cookie }));
             expect(before?.user.id).toBe(accountId);
             const authorize = new URL('/api/account/auth/oauth2/authorize', issuer);
+            const verifier = randomBytes(48).toString('base64url');
             authorize.search = new URLSearchParams({
-                client_id: 'hb-live', redirect_uri: 'https://live.harmonicbeacon.com/api/account/callback',
+                client_id: rpClient, redirect_uri: redirectUri,
                 response_type: 'code', scope: ACCOUNT_PROVISIONED_SCOPES.join(' '), state: 'live-profile-return',
-                code_challenge: createHash('sha256').update(randomBytes(48)).digest('base64url'),
+                code_challenge: createHash('sha256').update(verifier).digest('base64url'),
                 code_challenge_method: 'S256',
             }).toString();
             const { GET } = await import('@/app/api/account/auth/[...all]/route');
@@ -238,14 +250,29 @@ postgres('pinned OAuth Provider 1.6.30 confidential-client lifecycle', () => {
             const result = await resumed.json();
             expect(result.status).toBe('continued');
             const callback = new URL(result.redirect);
-            expect(callback.origin).toBe('https://live.harmonicbeacon.com');
+            expect(callback.origin + callback.pathname).toBe(redirectUri);
             expect(callback.searchParams.get('state')).toBe('live-profile-return');
             expect(callback.searchParams.get('code')).toBeTruthy();
+            const token = await accountRoutePOST(new Request(`${issuer}/api/account/auth/oauth2/token`, {
+                method: 'POST', headers: {
+                    host: 'account.harmonicbeacon.com',
+                    'content-type': 'application/x-www-form-urlencoded',
+                    authorization: `Basic ${Buffer.from(`${rpClient}:${rpSecret}`).toString('base64')}`,
+                }, body: new URLSearchParams({ grant_type: 'authorization_code',
+                    code: callback.searchParams.get('code')!, redirect_uri: redirectUri,
+                    code_verifier: verifier,
+                }),
+            }));
+            expect(token.status).toBe(200);
+            const tokens = await token.json();
+            expect(tokens.access_token).toBeTruthy();
+            expect(tokens.id_token).toBeTruthy();
+            expect(tokens.refresh_token).toBeUndefined();
             expect(await currentAccountSession(new Headers({ cookie }))).toMatchObject({
                 user: { id: accountId }, profile: { displayName: '李', realName: 'Private Real Name' },
             });
         } finally {
-            await prisma.beaconOAuthClient.deleteMany({ where: { clientId: 'hb-live' } });
+            await prisma.beaconOAuthClient.deleteMany({ where: { clientId: rpClient } });
         }
     });
 });
