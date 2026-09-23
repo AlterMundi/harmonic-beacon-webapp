@@ -49,6 +49,8 @@ on:
   push:
     branches: [early-birds, "feat/early-birds-*"]
     paths:
+      - src/app/api/account/**
+      - src/lib/account/**
       - Dockerfile
       - package.json
       - package-lock.json
