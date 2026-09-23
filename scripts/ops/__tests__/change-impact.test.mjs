@@ -367,6 +367,24 @@ test('every selected logical check and matrix is backed by a required hosted job
   }
 });
 
+test('read-only cohort export selects its own checks, never unrelated runtime delivery', () => {
+  const paths = ['scripts/export-live-cohort.py', 'scripts/test_export_live_cohort.py',
+    'scripts/ops/__tests__/cohort-export.test.mjs'];
+  const report = classifyChanges(paths);
+  assert.deepEqual(report.domains, ['observation-tooling']);
+  assert.deepEqual(report.requiredJobChecks, ['impact']);
+  assert.equal(report.deployment.deploy, false);
+  for (const sensitive of ['src/lib/auth.ts', 'src/lib/commerce-entitlement.ts',
+    'src/context/AudioContext.tsx', 'prisma/migrations/example/migration.sql', 'src/app/layout.tsx']) {
+    const original = classifyChanges([sensitive]);
+    const mixed = classifyChanges([...paths, sensitive]);
+    for (const check of original.requiredJobChecks) assert.ok(mixed.requiredJobChecks.includes(check), `${sensitive}: ${check}`);
+    assert.deepEqual(mixed.deployment.servicesToReplace, original.deployment.servicesToReplace);
+  }
+  assert.deepEqual(classifyChanges(['scripts/export-other-cohort.py']).details.unclassifiedPaths,
+    ['scripts/export-other-cohort.py']);
+});
+
 test('unknown paths expand to every matrix and service without guessing a migration', () => {
   const report = classifyChanges(['mystery/runtime.xyz']);
   assert.equal(report.risk, 'critical');
