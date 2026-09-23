@@ -195,12 +195,15 @@ function pathFacts(path) {
     set('critical', ['data'], ['app', 'commerce-reconciler'], ['data-recovery']);
   }
 
-  // This allowlist is deliberately exact. These files implement and test one
-  // GET-only diagnostic, have no runtime or privileged-operation callers, and
-  // are exercised by the impact job's ops-tooling suite. Other scripts/ops
-  // paths keep the critical infrastructure profile below.
+  // Deliberately exact: reviewed GET-only delivery diagnosis and read-only
+  // cohort export, neither called by app/worker runtime or a delivery helper.
+  // Both are exercised by impact's ops-tooling suite. Other scripts/ops paths
+  // keep the critical infrastructure profile below; names alone confer no trust.
   if (path === 'scripts/ops/delivery-status.mjs'
-      || path === 'scripts/ops/__tests__/delivery-status.test.mjs') {
+      || path === 'scripts/ops/__tests__/delivery-status.test.mjs'
+      || path === 'scripts/export-live-cohort.py'
+      || path === 'scripts/test_export_live_cohort.py'
+      || path === 'scripts/ops/__tests__/cohort-export.test.mjs') {
     set('functional', ['observation-tooling'], [], ['ops-tooling']);
     return facts;
   }
