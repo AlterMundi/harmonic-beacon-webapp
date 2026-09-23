@@ -39,6 +39,69 @@ test('production uses the existing canonical Account deployment file', () => {
   assert.ok(!helper.includes("readonly DEPLOY_ENV='/etc/harmonic-beacon/account.deploy.env'"));
 });
 
+for (const mode of ['cold', 'build-failure', 'wrong-sha']) {
+  test(`production preflight candidate image: ${mode}`, (t) => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'account-cold-image-'));
+    t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+    // Execute the actual preflight and real shared build function; synthetic
+    // Docker starts with no candidate and rejects image use before build.
+    const helper = read(HELPER);
+    const preflight = helper.slice(helper.indexOf('\npreflight() {'), helper.indexOf('\ndeploy() {'));
+    const result = run('/bin/bash', ['-c', `
+set -eu
+. "$1"
+target=production
+BEACON_ACCOUNT_GIT_SHA=${SHA}
+BEACON_ACCOUNT_IMAGE_TAG=${SHA}
+HB_ACCOUNT_TRUSTED_SOURCE_SHA=${SHA}
+state_file() { printf '%s/state' "$TEST_DIR"; }
+load_account_library() { :; }
+account_require_internal_mail_network() { :; }
+account_capture_previous_runtime() { echo previous; }
+account_capture_previous_worker() { echo previous-worker; }
+account_compose() {
+  test "$*" = 'build account-production'
+  echo build >> "$TEST_DIR/order"
+  test "$TEST_MODE" != build-failure
+  touch "$TEST_DIR/image"
+}
+docker() {
+  test -f "$TEST_DIR/image"
+  test "$1 $2 $3" = 'image inspect harmonic-beacon/account:${SHA}'
+  if [ "$TEST_MODE" = wrong-sha ]; then echo BEACON_GIT_SHA=wrong; else echo BEACON_GIT_SHA=${SHA}; fi
+}
+account_check_production_migrations() {
+  test "$1" = before
+  test -f "$TEST_DIR/image"
+  echo inspect-migrations >> "$TEST_DIR/order"
+}
+account_backup_production() {
+  test -f "$TEST_DIR/image"
+  echo backup >> "$TEST_DIR/order"
+  echo synthetic > "$TEST_DIR/backup"
+  echo "$TEST_DIR/backup"
+}
+require_private_file() { test -f "$1"; }
+isolated_restore() { echo restore >> "$TEST_DIR/order"; echo isolated-ephemeral-postgres; }
+create_state() { echo state >> "$TEST_DIR/order"; }
+account_migrate_production() { echo forbidden-migration; exit 90; }
+${preflight}
+preflight
+`, 'preflight-test', path.join(REPOSITORY, 'scripts/beacon-account/lib.sh')], {
+      env: { ...process.env, TEST_DIR: directory, TEST_MODE: mode },
+    });
+    const order = read(path.join(directory, 'order')).trim().split('\n');
+    if (mode === 'cold') {
+      assert.equal(result.status, 0, result.stderr);
+      assert.deepEqual(order, ['build', 'inspect-migrations', 'backup', 'restore', 'state']);
+    } else {
+      assert.notEqual(result.status, 0);
+      assert.deepEqual(order, ['build']);
+    }
+    assert.doesNotMatch(result.stdout, /forbidden-migration/);
+  });
+}
+
 function read(file) {
   return fs.readFileSync(file, 'utf8');
 }
@@ -163,6 +226,7 @@ account_load_deploy_env() { BEACON_ACCOUNT_GIT_SHA="$HB_TEST_SHA"; BEACON_ACCOUN
 account_require_internal_mail_network() { :; }
 account_capture_previous_runtime() { printf '%040d\\n' 1; }
 account_capture_previous_worker() { printf '\\n'; }
+account_build_candidate() { printf 'build-called\\n' >> "\${HB_TEST_RUNTIME_RESTORED%/*}/build.log"; }
 account_backup_staging() {
   local directory="\${HB_TEST_RUNTIME_RESTORED%/*}"
   printf 'backup-called\\n' >> "$directory/backup.log"
@@ -625,6 +689,7 @@ test('exact preflight replay returns the durable state without repeating backup 
   assert.equal(replay.status, 0, replay.stderr);
   assert.equal(read(stateFile), firstState);
   assert.equal(read(path.join(fixture.root, 'backup.log')).trim().split('\n').length, 1);
+  assert.equal(read(path.join(fixture.root, 'build.log')).trim().split('\n').length, 1);
 });
 
 test('conflicting durable preflight state fails closed instead of being replaced', (t) => {

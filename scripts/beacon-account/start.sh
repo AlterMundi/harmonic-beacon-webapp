@@ -39,10 +39,7 @@ trap rollback_on_failure EXIT HUP INT TERM
 
 # Build once from the exact reviewed checkout. Staging and production consume
 # the same immutable image, but never the same runtime secret or database.
-account_compose build account-production
-baked_sha=$(docker image inspect "harmonic-beacon/account:$BEACON_ACCOUNT_IMAGE_TAG" \
-  --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n 's/^BEACON_GIT_SHA=//p' | tail -n 1)
-test "$baked_sha" = "$BEACON_ACCOUNT_GIT_SHA" || account_fail 'built image provenance mismatch'
+account_build_candidate
 account_validate
 
 if [ "$environment" = production ]; then

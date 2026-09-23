@@ -862,6 +862,9 @@ preflight() {
   account_require_internal_mail_network "$target"
   previous_sha="$(account_capture_previous_runtime "$target")"
   previous_worker="$(account_capture_previous_worker "$target" "$previous_sha")"
+  # Migration inspection and backup use tools from this exact image, including
+  # on a host which has never built the candidate. No migration or cutover here.
+  account_build_candidate
   if [ "$target" = production ]; then
     account_check_production_migrations before
     backup_path="$(account_backup_production)"
