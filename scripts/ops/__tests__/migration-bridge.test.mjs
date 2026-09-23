@@ -8,6 +8,54 @@ import test from 'node:test';
 const root = resolve(import.meta.dirname, '../../..');
 const source = (path) => readFile(join(root, path), 'utf8');
 
+test('retirement preserves recovery inputs and refuses active/fenced or unknown successors', async () => {
+  const helper = await source('deploy/hb-migration-bridge-root');
+  const body = helper.slice(helper.indexOf('retire_completed() {'), helper.indexOf('\nusage()'));
+  assert.ok(body.startsWith('retire_completed() {'));
+  assert.doesNotMatch(await source('deploy/hb-migration-bridge.sudoers'), /hb-migration-bridge retire/);
+  for (const variant of ['completed', 'successor', 'fenced', 'active', 'changed-worker', 'unknown-app']) {
+    const area = await mkdtemp(join(tmpdir(), 'hb-retire-'));
+    try {
+      await mkdir(join(area, 'config'), {recursive:true});
+      const state = {permitId:'p',phase:variant==='active'?'applying':'applied',fenceState:variant==='fenced'?'held':'absent'};
+      await writeFile(join(area, 'state.json'), JSON.stringify(state));
+      await writeFile(join(area, 'config/permit.json'), JSON.stringify({permitId:'p',sourceSha:'source'}));
+      await writeFile(join(area, 'config/activation.json'), '{}');
+      await writeFile(join(area, 'staging-rehearsal.json'), '{}');
+      if (variant === 'successor') {
+        await mkdir(join(area,'app-bridge'));
+        await writeFile(join(area,'app-bridge/state.json'), JSON.stringify({phase:'applied',candidateImageId:'other',productionPriorImageId:'candidate',permitId:'next',sourceSha:'nextsource'}));
+        await writeFile(join(area,'app-bridge/permit.json'), JSON.stringify({permitId:'next',sourceSha:'nextsource'}));
+      }
+      const script = `set -eu
+ROOT="$AREA"; CONFIG="$AREA/config"; STATE="$ROOT/state.json"
+PERMIT="$CONFIG/permit.json"; ACTIVATION="$CONFIG/activation.json"; RECEIPT="$ROOT/staging-rehearsal.json"
+SHARED_LOCK="$AREA/app-bridge/operation.lock"
+die() { echo "$*" >&2; exit 1; }
+validate_permit() { :; }; root_file() { test -f "$1"; }
+phase_is() { test "$(jq -r .phase "$STATE")" = "$1" || die phase; }
+permit() { jq -r "$1" "$PERMIT"; }; candidate_image() { echo candidate; }
+container_image() { if [ "$1" = beacon-app ]; then echo "$APP"; else echo "$WORKER"; fi; }
+wait_prior_app() { :; }; wait_worker() { :; }
+remove_rehearsal_container() { :; }
+install() { local args=(); while [ "$#" -gt 0 ]; do case "$1" in -o|-g) shift 2;; *) args+=("$1"); shift;; esac; done; command install "\${args[@]}"; }
+${body}
+retire_completed
+`;
+      const run = spawnSync('bash', ['-c',script,join(root,'deploy/hb-migration-bridge-root')], {encoding:'utf8',env:{...process.env,AREA:area,APP:['unknown-app','successor'].includes(variant)?'other':'candidate',WORKER:variant==='changed-worker'?'other':'candidate'}});
+      if (['completed','successor'].includes(variant)) {
+        assert.equal(run.status,0,run.stderr);
+        await assert.rejects(stat(join(area,'state.json')));
+        assert.deepEqual(JSON.parse(await readFile(join(area,'transactions/p/completed/state.json'),'utf8')),state);
+        assert.equal(await readFile(join(area,'transactions/p/completed/permit.json'),'utf8'),await readFile(join(area,'config/permit.json'),'utf8'));
+      } else {
+        assert.notEqual(run.status,0,variant);
+        assert.deepEqual(JSON.parse(await readFile(join(area,'state.json'),'utf8')),state);
+      }
+    } finally { await rm(area,{recursive:true,force:true}); }
+  }
+});
+
 test('archive children remain readable under root-only transaction umask', async () => {
   const area = await mkdtemp(join(tmpdir(), 'hb-migration-modes-'));
   try {
