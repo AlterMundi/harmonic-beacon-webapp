@@ -5,6 +5,16 @@ import EventEditor from '../EventEditor';
 vi.mock('next/link',()=>({default:({href,children}:{href:string;children:React.ReactNode})=><a href={href}>{children}</a>}));
 const response=(data:unknown)=>({ok:true,json:async()=>data});
 afterEach(()=>{cleanup();vi.unstubAllGlobals();});
+it('shows invalid field feedback beside Save instead of silently blocking submission',async()=>{
+    const fetch=vi.fn().mockResolvedValue(response({events:[],facilitators:[]}));
+    vi.stubGlobal('fetch',fetch);
+    render(<EventEditor locale="es"/>);
+    await waitFor(()=>expect(fetch).toHaveBeenCalledOnce());
+    fireEvent.click(screen.getByText('Crear evento'));
+    fireEvent.click(screen.getByText('Guardar cambios'));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Facilitador:');
+    expect(fetch).toHaveBeenCalledOnce();
+});
 it('creates with an explicit zone and keeps a visible saved confirmation',async()=>{
     const fetch=vi.fn().mockResolvedValue(response({events:[],facilitators:[{id:'80000000-0000-4000-8000-000000000002',name:'Facilitator'}]}));
     vi.stubGlobal('fetch',fetch);

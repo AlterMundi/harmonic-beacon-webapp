@@ -16,7 +16,7 @@ import stat
 import subprocess
 import tempfile
 
-CUTOFF = '2026-09-23T21:00:00Z'
+CUTOFF = '2026-09-23T22:00:00Z'
 ISSUER = 'https://account.harmonicbeacon.com'
 DESTINATION = Path('/mnt/m2-1TB/PMP-GPT/.runtime/beacon-auth/operator-import/beacon-live-observed.json')
 QUERY_PREFIX = """
@@ -38,7 +38,7 @@ array_agg(DISTINCT metadata->>'surface' ORDER BY metadata->>'surface') AS surfac
 FROM audit_logs WHERE action='pmp_cohort_authenticated_visit_v2'
 AND created_at >= $1 AND metadata->>'issuer'=$2
 GROUP BY metadata->>'issuer',metadata->>'subject' LIMIT 10001`,
-['2026-09-23T21:00:00Z','https://account.harmonicbeacon.com']);
+['2026-09-23T22:00:00Z','https://account.harmonicbeacon.com']);
 """ + QUERY_SUFFIX
 
 
