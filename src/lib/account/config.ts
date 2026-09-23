@@ -157,6 +157,13 @@ export const ACCOUNT_STATIC_CLIENTS = [
         postLogoutRedirectUri: 'https://live-staging.harmonicbeacon.com/api/account/frontchannel-logout',
         requiresCompleteProfile: true,
     },
+    {
+        clientId: 'hb-psicopompo',
+        secretVariable: 'BEACON_ACCOUNT_CLIENT_SECRET_HB_PSICOPOMPO',
+        redirectUri: 'https://psicopompo.altermundi.net/api/auth/beacon/callback',
+        postLogoutRedirectUri: null,
+        requiresCompleteProfile: true,
+    },
 ] as const;
 
 export function accountStaticClientSecrets(environment: Environment = process.env) {
@@ -168,8 +175,13 @@ export function accountStaticClientSecrets(environment: Environment = process.en
 
 export function activeAccountStaticClients(environment: Environment = process.env) {
     const selected = accountEnvironment(environment);
-    return ACCOUNT_STATIC_CLIENTS.filter((client) => selected === 'local' ||
-        (selected === 'staging') === client.clientId.endsWith('-staging'));
+    return ACCOUNT_STATIC_CLIENTS.filter((client) => {
+        if (client.clientId === 'hb-psicopompo') {
+            return selected !== 'staging' && environment.BEACON_ACCOUNT_PSICOPOMPO_ENABLED === '1';
+        }
+        return selected === 'local' ||
+            (selected === 'staging') === client.clientId.endsWith('-staging');
+    });
 }
 
 /** Phase-two provisioning matches the expanded static-client constraint. */

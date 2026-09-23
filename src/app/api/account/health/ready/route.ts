@@ -56,8 +56,10 @@ export async function GET(request: Request): Promise<Response> {
                 row.responseTypes.length === 1 && row.responseTypes[0] === 'code' &&
                 accountClientScopesCompatible(row.scopes) &&
                 row.redirectUris.length === 1 && row.redirectUris[0] === client.redirectUri &&
-                row.postLogoutRedirectUris.length === 1 &&
-                row.postLogoutRedirectUris[0] === client.postLogoutRedirectUri);
+                (client.postLogoutRedirectUri
+                    ? row.postLogoutRedirectUris.length === 1 &&
+                        row.postLogoutRedirectUris[0] === client.postLogoutRedirectUri
+                    : row.postLogoutRedirectUris.length === 0));
         });
         checks.jwks = await prisma.beaconJwks.count({ where: {
             OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],

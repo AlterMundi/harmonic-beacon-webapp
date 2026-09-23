@@ -67,7 +67,10 @@ export async function POST(request: Request): Promise<Response> {
         session.securityRevision === session.user.securityRevision &&
         session.authorityEnvironment === accountEnvironment());
     return Response.json(isActive
-        ? { active: true, iss: accountOrigin(), sub, sid }
+        ? { active: true, iss: accountOrigin(), sub, sid,
+            ...(definition.clientId === 'hb-psicopompo'
+                ? { expires_at: Math.floor(session!.expiresAt.getTime() / 1000) } : {}),
+        }
         : { active: false }, {
         headers: { 'Cache-Control': 'no-store' },
     });

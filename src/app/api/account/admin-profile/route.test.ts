@@ -58,8 +58,11 @@ describe('Live-only Account admin profile backchannel', () => {
     });
 
     it('rejects Listener clients and wrong secrets before reading private data', async () => {
+        vi.stubEnv('BEACON_ACCOUNT_PSICOPOMPO_ENABLED', '1');
+        vi.stubEnv('BEACON_ACCOUNT_CLIENT_SECRET_HB_PSICOPOMPO', secret);
         for (const candidate of [
             request('hb-listener', `${secret}-listener`), request('hb-live', 'wrong-secret'),
+            request('hb-psicopompo', secret),
         ]) expect((await POST(candidate)).status).toBe(401);
         expect(findAccount).not.toHaveBeenCalled();
     });
@@ -75,4 +78,3 @@ describe('Live-only Account admin profile backchannel', () => {
         });
     });
 });
-
