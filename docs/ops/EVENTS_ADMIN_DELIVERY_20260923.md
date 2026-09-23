@@ -7,7 +7,9 @@ current participants, payment contracts and active media sessions.
 ## Sequence
 
 1. Base on the actual Live release, port PR580 without reverting Account, and
-   qualify the exact candidate. Keep September23 10:00/18:00 ART unchanged.
+   qualify the exact candidate. Owner subsequently corrected the evening event
+   to September23 19:00 ART (22UTC); 18ART is only the cohort observation cutoff.
+   Correct through a new migration, preserving the applied migration and event ID.
 2. Use the existing reviewed migration bridge v2, not the held legacy deploy.
    Verify installed bytes, prior transaction, exact image/schema inventory,
    mounted backups and absence of active sessions. Preserve the prior receipt

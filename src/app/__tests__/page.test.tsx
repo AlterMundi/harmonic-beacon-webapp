@@ -114,6 +114,7 @@ describe('landing page', () => {
             expect.objectContaining({
                 where: {
                     isTest: false,
+                    isPublished: true,
                     endedAt: null,
                     OR: [
                         {
@@ -131,7 +132,7 @@ describe('landing page', () => {
         // No paid-mode or attendee-cap columns leak into the public page.
         const select = findMany.mock.calls[0][0].select;
         expect(Object.keys(select).sort()).toEqual([
-            'description', 'id', 'language', 'publicAccess', 'scheduledAt', 'title',
+            'checkoutUrl', 'description', 'id', 'language', 'publicAccess', 'scheduledAt', 'title',
         ]);
     });
 
@@ -215,6 +216,19 @@ describe('landing page', () => {
         expect(links[0]).toHaveAttribute('href', 'https://tickets.example.invalid/harmonic-beacon');
         expect(links[0]).toHaveAttribute('rel', expect.stringContaining('noreferrer'));
         expect(screen.getAllByText(/USD \$50 Norte Global.*USD \$20 Sur Global/)).toHaveLength(2);
+    });
+
+    it('shows custom paid event details without inventing a legacy ticket price', async () => {
+        mountDb(vi.fn().mockResolvedValue([{
+            ...SATURDAY, title: 'Nuevo encuentro', description: 'Descripción propia',
+            checkoutUrl: 'https://tickets.harmonicbeacon.com/events/new',
+        }]));
+        await renderPage();
+        expect(screen.getByRole('heading', { name: 'Nuevo encuentro' })).toBeInTheDocument();
+        expect(screen.getByText('Descripción propia')).toBeInTheDocument();
+        expect(screen.getByText('Consultar precio')).toBeInTheDocument();
+        expect(screen.queryByText(/US.*\$20/)).toBeNull();
+        expect(screen.getByRole('link', { name: /Comprar entrada/ })).toHaveAttribute('href', 'https://tickets.harmonicbeacon.com/events/new');
     });
 
     it('presents a free public event with the required Account and name-confirmation step', async () => {

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { Prisma } from '@prisma/client';
 
 import type { AccountIdentity } from '@/lib/account-rp';
 import { prisma } from '@/lib/db';
@@ -36,6 +37,12 @@ export async function attachPublicSessionAccess(
     const codeDigest = publicEntitlementDigest(session.id, account);
 
     return prisma.$transaction(async (tx) => {
+        // Serialize issuance with publication/access edits and lifecycle changes.
+        await tx.$queryRaw(Prisma.sql`SELECT id FROM scheduled_sessions WHERE id::text=${session.id} FOR UPDATE`);
+        const current = await tx.scheduledSession.findUnique({where:{id:session.id},select:{publicAccess:true,isPublished:true,isTest:true,status:true}});
+        // Internal test rooms remain usable through authenticated direct entry;
+        // public discovery and the public admission route exclude them separately.
+        if (!current || !current.publicAccess || !current.isPublished || !['SCHEDULED','LIVE'].includes(current.status)) return false;
         const entitlement = await tx.ticketEntitlement.upsert({
             where: { codeDigest },
             // A nonempty update lets Prisma use PostgreSQL ON CONFLICT.

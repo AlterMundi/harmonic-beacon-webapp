@@ -325,7 +325,7 @@ export async function startNativeBackend(options: { dir: string; uid: number; pg
 }
 
 export async function runtimeEnv(source: Record<string, string | undefined>, dir: string): Promise<NodeJS.ProcessEnv> {
-    const env: NodeJS.ProcessEnv = { PATH: source.PATH, HOME: source.HOME, TMPDIR: dir, NODE_ENV: 'production', NODE_OPTIONS: '--max-old-space-size=2048', NEXT_TELEMETRY_DISABLED: '1' };
+    const env: NodeJS.ProcessEnv = { PATH: source.PATH, HOME: source.HOME, TMPDIR: dir, TZ: 'UTC', NODE_ENV: 'production', NODE_OPTIONS: '--max-old-space-size=2048', NEXT_TELEMETRY_DISABLED: '1' };
     if (source.CI) env.CI = '1';
     if (source.NEXT_PUBLIC_E2E_CONTINUITY_OBSERVER === '1') env.NEXT_PUBLIC_E2E_CONTINUITY_OBSERVER = '1';
     if (source.E2E_INCLUDE_FIREFOX === '1') env.E2E_INCLUDE_FIREFOX = '1';

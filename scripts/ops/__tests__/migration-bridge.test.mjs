@@ -244,6 +244,7 @@ async function recoveryScenario({failBarrier = ''} = {}) {
         *'stop app commerce-reconciler'*) log stop-writers;;
         *'stage-grant-rollback-preflight.ts'*) log barrier-grant; [ "$HB_FAIL_BARRIER" != grant ];;
         *'scene-capacity-rollback-preflight.ts'*) log barrier-scene; [ "$HB_FAIL_BARRIER" != scene ];;
+        *'event-editor-rollback-preflight.ts'*) log barrier-editor; [ "$HB_FAIL_BARRIER" != editor ];;
       esac
     }
     recover_internal
@@ -257,7 +258,7 @@ async function recoveryScenario({failBarrier = ''} = {}) {
   return {result, operations:log.trim().split('\n').filter(Boolean)};
 }
 
-for (const barrier of ['grant','scene']) test(`recovery retains fence and writers on ${barrier} rollback-barrier refusal`, async () => {
+for (const barrier of ['grant','scene','editor']) test(`recovery retains fence and writers on ${barrier} rollback-barrier refusal`, async () => {
   const {result, operations} = await recoveryScenario({failBarrier:barrier});
   assert.notEqual(result.status, 0, result.stderr);
   assert.ok(operations.includes(`barrier-${barrier}`));

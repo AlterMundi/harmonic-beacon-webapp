@@ -16,6 +16,14 @@ const secondSql = 'ALTER TABLE "first" ADD COLUMN "label" TEXT;\n';
 const checksum = (sql: string) => createHash('sha256').update(Buffer.from(sql)).digest('hex');
 
 describe('release migration state', () => {
+  it('admits only the owner-directed exact evening correction, preserving general update denial', () => {
+    const name = '20260923170000_correct_sep23_evening_time';
+    const sql = readFileSync(new URL(`../../../prisma/migrations/${name}/migration.sql`, import.meta.url), 'utf8');
+    expect(classifyMigrationState([name], [], new Map([[name, sql]])).unsafe).toEqual([]);
+    expect(classifyMigrationState([name], [], new Map([[name, sql + '\n']])).unsafe.length).toBeGreaterThan(0);
+    expect(classifyMigrationState(['other'], [], new Map([['other', sql]])).unsafe.length).toBeGreaterThan(0);
+    expect(validateForwardOnlyMigration(sql).safe).toBe(false);
+  });
   it('admits only the exact named September event seed, never arbitrary procedural SQL', () => {
     const name = '20260923120000_create_sep23_proyecciones_mito';
     const sql = readFileSync(new URL(`../../../prisma/migrations/${name}/migration.sql`, import.meta.url), 'utf8');

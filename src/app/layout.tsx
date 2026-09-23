@@ -4,6 +4,7 @@ import localFont from "next/font/local";
 import { headers } from "next/headers";
 import { GlobalNavigation } from "@/components/brand/GlobalNavigation";
 import { LiveIdentityCacheBoundary } from "@/components/brand/LiveIdentityCacheBoundary";
+import { CohortVisitObserver } from "@/components/brand/CohortVisitObserver";
 import { LiveNavigationAccountMenu } from "@/components/brand/LiveNavigationAccountMenu";
 import { RoomExitProvider } from "@/components/navigation/RoomExitGuard";
 import { LocaleProvider } from "@/context/LocaleContext";
@@ -125,6 +126,7 @@ export default async function RootLayout({
           ) : undefined}
         />
         {navigationIdentity && <LiveIdentityCacheBoundary />}
+        {accountAvailable && <CohortVisitObserver />}
           {/* Main content */}
           <div className="relative z-10">{children}</div>
 
