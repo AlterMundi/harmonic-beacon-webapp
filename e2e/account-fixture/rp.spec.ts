@@ -12,17 +12,22 @@ test('Account RP observes landing and waiting room with an existing authenticate
     const original = await accountSessionRow(page);
     for (const [path, surface] of [['/', 'landing'], [`/session/${SESSION_ES.id}`, 'session']]) {
         await withSessionStatus(process.env.E2E_DATABASE_URL!, SESSION_ES.id, 'SCHEDULED', async () => {
-            const observation = page.waitForResponse(r =>
+            // A separate page keeps the real cookie, but cannot capture the
+            // callback landing's in-flight POST and then abort it by reloading.
+            const observedPage = await page.context().newPage();
+            try {
+            const observation = observedPage.waitForResponse(r =>
                 new URL(r.url()).pathname === '/api/cohort-visits' &&
                 r.request().postDataJSON()?.surface === surface);
-            await page.goto(path);
+            await observedPage.goto(path);
             const response = await observation;
             expect(response.status()).toBe(202);
             expect(response.headers()['cache-control']).toContain('no-store');
+            expect(await response.finished()).toBeNull();
             const body = await response.json();
             expect(body.accepted).toBe(true);
             expect(typeof body.observed).toBe('boolean');
-            expect((await accountSessionRow(page)).id).toBe(original.id);
+            expect((await accountSessionRow(observedPage)).id).toBe(original.id);
             if (body.observed) {
                 const db = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
                 await db.connect();
@@ -36,6 +41,7 @@ test('Account RP observes landing and waiting room with an existing authenticate
                     expect(Object.keys(rows.rows[0].metadata).sort()).toEqual(['issuer', 'subject', 'surface']);
                 } finally { await db.end(); }
             }
+            } finally { await observedPage.close(); }
         });
     }
 });
