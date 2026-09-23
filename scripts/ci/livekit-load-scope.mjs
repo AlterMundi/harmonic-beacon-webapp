@@ -27,7 +27,9 @@ export function requiresLiveKitLoad(files) {
 export function selectFromRefs(base, head, git = execFileSync) {
   if (![base, head].every(ref => /^[a-f0-9]{40}$/.test(ref ?? '') && !/^0+$/.test(ref))) return true;
   try {
-    const paths = git('git', ['diff', '--name-only', '-z', base, head], { encoding: 'utf8' })
+    // Inspect both sides of a rename; a media file renamed to a known UI path
+    // must not acquire the UI-only exemption.
+    const paths = git('git', ['diff', '--no-renames', '--name-only', '-z', base, head], { encoding: 'utf8' })
       .split('\0').filter(Boolean);
     return requiresLiveKitLoad(paths);
   } catch {

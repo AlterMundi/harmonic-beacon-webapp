@@ -20,6 +20,10 @@ test('missing refs, deleted paths and unavailable comparison fail to full covera
   assert.equal(selectFromRefs('a'.repeat(40), 'b'.repeat(40), () => { throw Error('unavailable'); }), true);
   assert.equal(selectFromRefs('a'.repeat(40), 'b'.repeat(40), () => 'src/lib/room-audio.ts\0'), true);
   assert.equal(selectFromRefs('a'.repeat(40), 'b'.repeat(40), () => 'src/app/layout.tsx\0'), false);
+  assert.equal(selectFromRefs('a'.repeat(40), 'b'.repeat(40), (_git, args) => {
+    assert.ok(args.includes('--no-renames'));
+    return 'src/lib/room-audio.ts\0src/app/layout.tsx\0';
+  }), true);
 });
 test('only load tooling and capacity steps are conditional; browser gates remain', () => {
   const workflow = readFileSync('.github/workflows/e2e.yml', 'utf8');
