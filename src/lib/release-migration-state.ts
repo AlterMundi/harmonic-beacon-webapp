@@ -247,7 +247,11 @@ export function classifyMigrationState(
     // arbitrary CTEs/DO blocks or any changes to the reviewed bytes.
     const reviewedEventSeed = migrationName === '20260923120000_create_sep23_proyecciones_mito' &&
       migrationChecksum(sql) === 'c93f144b4048343a2db13b8e32c441ed1730e3df4264af017135f3ba7c5211bc';
-    if (!reviewedEventSeed) {
+    // Owner-directed one-row schedule correction, with locked before-state
+    // validation. No general UPDATE/procedural migration permission is added.
+    const reviewedEventTimeCorrection = migrationName === '20260923170000_correct_sep23_evening_time' &&
+      migrationChecksum(sql) === '7bff527e6cb5dd685ce3505e482a0f084be360c92d381b2234f413677b29cf32';
+    if (!reviewedEventSeed && !reviewedEventTimeCorrection) {
       for (const violation of validateForwardOnlyMigration(sql).violations) unsafe.push(`${migrationName}:${violation}`);
     }
   }

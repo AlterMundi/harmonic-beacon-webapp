@@ -130,7 +130,10 @@ sudo -u beacon-runner sudo -n /usr/local/sbin/hb-migration-bridge apply
 Failure cleanup and explicit `recover` accept only the permit-bound candidate
 or prior app/worker endpoints. Once a production migration may have started,
 the helper rereads real migration state and runs the durable-grant and scene
-capacity rollback barriers when any permitted migration applied. It never
+capacity and event-editor rollback barriers when any permitted migration applied.
+The event-editor barrier refuses legacy recovery after editor mutations or
+publication/custom-checkout state that old binaries cannot interpret; retain
+the fence and roll forward to an editor-aware candidate. It never
 restores the Live database from the dump. It restores both exact prior binaries
 against the forward schema and retains the fence if that cannot be proved.
 Permit expiry does not disable bound rollback, recovery, or status.
