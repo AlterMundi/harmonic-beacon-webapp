@@ -3,10 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { digestSessionToken } from '@/lib/session-auth';
 
 const findUnique = vi.fn();
+const findBinding = vi.fn();
 
 vi.mock('@/lib/db', () => ({
     prisma: {
         webSession: { findUnique },
+        staffAccountBinding: { findUnique: findBinding },
     },
 }));
 
@@ -35,6 +37,7 @@ function localSession(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
     vi.resetAllMocks();
+    findBinding.mockResolvedValue(null);
     process.env.BEACON_ACCOUNT_ENABLED = 'true';
     process.env.BEACON_ACCOUNT_ISSUER_URL = ISSUER;
     process.env.BEACON_ACCOUNT_CLIENT_ID = 'hb-live-staging';
@@ -62,6 +65,7 @@ describe('local Account navigation state', () => {
             issuer: ISSUER,
             displayName: 'Nicolás',
             staffRole: null,
+            availableStaffRole: null,
         });
         await expect(locallyKnownLiveAccountSession(requestHeaders(), NOW)).resolves.toBe(true);
         expect(findUnique).toHaveBeenCalledWith({
@@ -113,6 +117,7 @@ describe('local Account navigation state', () => {
             issuer: ISSUER,
             displayName: 'Nicolás',
             staffRole: 'ADMIN',
+            availableStaffRole: 'ADMIN',
         });
     });
 
@@ -128,7 +133,31 @@ describe('local Account navigation state', () => {
             issuer: ISSUER,
             displayName: 'Nicolás',
             staffRole: null,
+            availableStaffRole: null,
         });
+    });
+
+    it('discovers a participant-mode admin by issuer/subject without granting staff mode', async () => {
+        findUnique.mockResolvedValue(localSession());
+        findBinding.mockResolvedValue({ disabledAt: null, staffUser: { role: 'ADMIN', disabledAt: null } });
+        const { locallyKnownLiveNavigationIdentity } = await import('../account-navigation-state');
+        await expect(locallyKnownLiveNavigationIdentity(requestHeaders(), NOW)).resolves.toEqual({
+            issuer: ISSUER, displayName: 'Nicolás', staffRole: null, availableStaffRole: 'ADMIN',
+        });
+        expect(findBinding).toHaveBeenCalledWith({
+            where: { accountIssuer_accountSubject: { accountIssuer: ISSUER, accountSubject: 'account-subject-opaque' } },
+            select: { disabledAt: true, staffUser: { select: { role: true, disabledAt: true } } },
+        });
+    });
+
+    it.each([
+        { disabledAt: NOW, staffUser: { role: 'ADMIN', disabledAt: null } },
+        { disabledAt: null, staffUser: { role: 'ADMIN', disabledAt: NOW } },
+    ])('withholds the shortcut when the available binding or staff is disabled', async binding => {
+        findUnique.mockResolvedValue(localSession());
+        findBinding.mockResolvedValue(binding);
+        const { locallyKnownLiveNavigationIdentity } = await import('../account-navigation-state');
+        expect((await locallyKnownLiveNavigationIdentity(requestHeaders(), NOW))?.availableStaffRole).toBeNull();
     });
 
     it.each([

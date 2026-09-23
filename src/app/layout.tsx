@@ -6,6 +6,7 @@ import { GlobalNavigation } from "@/components/brand/GlobalNavigation";
 import { LiveIdentityCacheBoundary } from "@/components/brand/LiveIdentityCacheBoundary";
 import { CohortVisitObserver } from "@/components/brand/CohortVisitObserver";
 import { LiveNavigationAccountMenu } from "@/components/brand/LiveNavigationAccountMenu";
+import { StaffModeAccess } from "@/components/brand/StaffModeAccess";
 import { RoomExitProvider } from "@/components/navigation/RoomExitGuard";
 import { LocaleProvider } from "@/context/LocaleContext";
 import { beaconAccountEnabled } from "@/lib/account-rp";
@@ -126,6 +127,7 @@ export default async function RootLayout({
           ) : undefined}
         />
         {navigationIdentity && <LiveIdentityCacheBoundary />}
+        {navigationIdentity && <StaffModeAccess availableRole={navigationIdentity.availableStaffRole} activeStaffRole={navigationIdentity.staffRole} />}
         {accountAvailable && <CohortVisitObserver />}
           {/* Main content */}
           <div className="relative z-10">{children}</div>
