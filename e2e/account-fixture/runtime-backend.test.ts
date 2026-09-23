@@ -194,6 +194,7 @@ for (const includeFirefox of ['0', '1']) test(`Account collection preserves exac
     } };
     walk(report.suites);
     const common = [
+        'Account RP observes landing and waiting room with an existing authenticated cookie',
         ...['ATTENDEE', 'OPERATOR', 'FACILITATOR'].map(role => `Account RP ${role}: real callback, entitlement, stale identity revalidation and fail-closed binding`),
         'Account RP rejects a correctly authenticated but unbound staff identity',
         'Account RP incomplete profile gates new entry, preserves active presence, and retains participation through same-account OIDC',
@@ -212,7 +213,7 @@ for (const includeFirefox of ['0', '1']) test(`Account collection preserves exac
         if (['chromium-account', 'firefox-account'].includes(project)) titles.push('live continuity without capture: Staff open drawer survives a cancelled browser reload @desktop-native-staff');
         return titles.map(title => `${project}: ${title}`);
     });
-    assert.equal(expected.length, includeFirefox === '1' ? 74 : 55);
+    assert.equal(expected.length, includeFirefox === '1' ? 78 : 58);
     assert.deepEqual(actual.sort(), expected.sort());
 });
 
