@@ -24,3 +24,12 @@ Plan:
 Design: existing night/paper/gold tokens and body typography; a quiet horizontal
 strip that wraps on mobile. No modal onboarding or menu-only discovery. Role and
 mode are distinct labels; controls describe their destination. No new animation.
+
+Authorized delivery follow-up: add root-only retirement of a completed app
+bridge transaction, allowing a healthy receipt-bound migration successor;
+preserve all recovery material before vacating its state. Reject in-flight,
+unknown or unhealthy endpoints. Preserve canonical runtime flags on the next
+app-only deployment through digest-bound public profiles. Test refusal and
+archive paths before installing reviewed helpers. No migration is introduced.
+Direction permits necessary service interruption, but ordinary continuity
+checks remain intact; unrelated services remain outside this change.

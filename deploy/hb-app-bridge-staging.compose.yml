@@ -10,10 +10,15 @@ services:
         required: false
     environment:
       NODE_ENV: production
+      BEACON_PUBLIC_ORIGIN: ${HB_PUBLIC_ORIGIN:?validated profile required}
+      LIVEKIT_PUBLIC_URL: ${HB_LIVEKIT_PUBLIC_URL:?validated profile required}
+      LIVEKIT_PUBLIC_URL_ALLOWLIST: ${HB_LIVEKIT_PUBLIC_URL:?validated profile required}
+      BEACON_CONFIG_PROFILE_SHA256: ${HB_CONFIG_PROFILE_SHA256:?validated profile required}
+      PROMO_INVITATIONS_ENABLED: ${HB_PROMO_INVITATIONS_ENABLED:?validated profile required}
+      TAPESTRY_PUBLIC_ENABLED: ${HB_TAPESTRY_PUBLIC_ENABLED:?validated profile required}
       DATABASE_URL: postgresql://${POSTGRES_USER:-beacon_staging}:${POSTGRES_PASSWORD:?required}@postgres:5432/${POSTGRES_DB:-beacon_live_staging}?schema=public
       E2E_DASHBOARD_ENABLED: ${E2E_DASHBOARD_ENABLED:-0}
       LIVEKIT_INTERNAL_URL: http://livekit-unavailable.invalid:7880
-      TAPESTRY_PUBLIC_ENABLED: "false"
       TICKET_LOGIN_URL_PREFIX: https://live-staging.harmonicbeacon.com
     ports:
       - 127.0.0.1:3200:3000

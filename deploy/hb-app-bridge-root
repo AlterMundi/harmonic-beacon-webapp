@@ -91,10 +91,13 @@ validate_permit() {
   require_regular_root_file "$PRODUCTION_COMPOSE" 644
   require_regular_root_file "$STAGING_COMPOSE" 644
   jq -e '
-    keys == ["archiveBytes","archiveEntries","archiveSha256","archiveValidatorSha256","buildTime",
+    ((keys - ["productionProfileSha256", "stagingProfileSha256"]) == ["archiveBytes","archiveEntries","archiveSha256","archiveValidatorSha256","buildTime",
       "databaseSchemaVersion","expiresAt","livekitProbeSha256","permitId","productionBaseGitSha",
       "productionBaseImageId","productionComposeSha256","schemaVersion",
-      "sourceSha","sourceTree","stagingComposeSha256"] and
+      "sourceSha","sourceTree","stagingComposeSha256"]) and
+    ((has("productionProfileSha256") == has("stagingProfileSha256"))) and
+    (if has("productionProfileSha256") then
+      ([.productionProfileSha256,.stagingProfileSha256] | all(.[]; test("^[0-9a-f]{64}$"))) else true end) and
     .schemaVersion == "hb-app-bridge.permit.v1" and
     (.permitId | test("^[0-9a-f]{64}$")) and
     (.sourceSha | test("^[0-9a-f]{40}$")) and
@@ -179,6 +182,7 @@ candidate_image() { jq -er '.candidateImageId' "$STATE"; }
 production_compose() {
   local image="$1"
   shift
+  load_profile production
   HB_APP_BRIDGE_IMAGE="$image" docker compose --project-name app --file "$PRODUCTION_COMPOSE" \
     --env-file "$PRODUCTION_ENV" "$@"
 }
@@ -186,8 +190,29 @@ production_compose() {
 staging_compose() {
   local image="$1"
   shift
+  load_profile staging
   HB_APP_BRIDGE_IMAGE="$image" docker compose --project-name hb-live-staging --file "$STAGING_COMPOSE" \
     --env-file "$STAGING_ENV" "$@"
+}
+
+load_profile() {
+  local kind="$1" path key
+  key="${kind}ProfileSha256"
+  jq -e --arg key "$key" 'has($key)' "$PERMIT" >/dev/null || return 0
+  path="$(dirname "$PRODUCTION_COMPOSE")/runtime-public-config/production.json"
+  [ "$kind" != staging ] || path="$(dirname "$PRODUCTION_COMPOSE")/runtime-public-config/live-staging.json"
+  require_regular_root_file "$path" 644
+  [ "$(sha256 "$path")" = "$(permit_value ".$key")" ] || die 'runtime profile digest mismatch'
+  jq -e 'keys==["featureFlags","livekitPublicUrl","publicOrigin","schemaVersion"] and
+    .schemaVersion=="harmonic-beacon.runtime-public-config.v1" and
+    (.publicOrigin|test("^https://[^/]+$")) and (.livekitPublicUrl|test("^wss://")) and
+    (.featureFlags|keys==["promoInvitations","tapestryPublic"] and
+      (.promoInvitations|type=="boolean") and (.tapestryPublic|type=="boolean"))' "$path" >/dev/null || die 'invalid runtime profile'
+  export HB_PUBLIC_ORIGIN="$(jq -r '.publicOrigin' "$path")"
+  export HB_LIVEKIT_PUBLIC_URL="$(jq -r '.livekitPublicUrl' "$path")"
+  export HB_CONFIG_PROFILE_SHA256="sha256:$(sha256 "$path")"
+  export HB_PROMO_INVITATIONS_ENABLED="$(jq -r '.featureFlags.promoInvitations' "$path")"
+  export HB_TAPESTRY_PUBLIC_ENABLED="$(jq -r '.featureFlags.tapestryPublic' "$path")"
 }
 
 write_state() {
@@ -248,6 +273,9 @@ stage() {
   local tx archive source image_id prior prior_sha state_input
   validate_permit
   validate_runtime_files
+  [ ! -e "$STATE" ] || die 'transaction slot occupied; retire completed state first'
+  load_profile production
+  load_profile staging
   tx="$ROOT/transactions/$(permit_value '.permitId')"
   [ ! -e "$tx" ] || die 'permit already has a transaction'
   install -d -o root -g root -m 700 "$tx" "$tx/source"
@@ -427,7 +455,47 @@ status() {
   jq '{permitId,phase,sourceSha,candidateImageId,productionPriorImageId,stagingPriorImageId}' "$STATE"
 }
 
-usage() { printf '%s\n' 'usage: hb-app-bridge {stage|stage-rollback|stage-reapply|apply|rollback|recover|status}' >&2; exit 2; }
+# Root-only lifecycle, not delegated to the runner. No runtime mutation.
+retire_completed() {
+  local archive current observed_sha migration_state migration_permit file
+  validate_permit false
+  assert_state_phase applied
+  current="$(container_image_id "$PRODUCTION_CONTAINER")"
+  observed_sha="$(source_sha)"
+  if [ "$current" != "$(candidate_image)" ]; then
+    migration_state="$(dirname "$ROOT")/migration-bridge-v2/state.json"
+    migration_permit="$(dirname "$(dirname "$PERMIT")")/migration-bridge-v2/permit.json"
+    require_regular_root_file "$migration_state" 600
+    require_regular_root_file "$migration_permit" 600
+    jq -e --arg image "$current" --slurpfile permit "$migration_permit" '
+      .phase=="applied" and .fenceState=="absent" and
+      .candidateImageId==$image and .permitId==$permit[0].permitId and
+      .sourceSha==$permit[0].sourceSha and (.sourceSha|test("^[0-9a-f]{40}$"))
+    ' "$migration_state" >/dev/null || die 'migration successor receipt mismatch'
+    [ "$(container_image_id beacon-commerce-reconciler)" = "$current" ] || die 'migration successor worker mismatch'
+    [ "$(container_health beacon-commerce-reconciler)" = healthy ] || die 'migration successor worker unhealthy'
+    observed_sha="$(jq -er '.sourceSha' "$migration_state")"
+  fi
+  wait_container "$PRODUCTION_CONTAINER" http://127.0.0.1:3000 "$observed_sha" || die 'completed app is not healthy'
+  archive="$ROOT/transactions/$(permit_value '.permitId')/completed"
+  [ ! -e "$archive" ] || die 'completion archive exists; inspect before resuming'
+  install -d -o root -g root -m 0700 "$archive"
+  for file in "$PERMIT" "$ACTIVATION" "$REHEARSAL_RECEIPT"; do
+    require_regular_root_file "$file" 600
+    install -o root -g root -m 0600 "$file" "$archive/$(basename "$file")"
+  done
+  install -o root -g root -m 0755 "$0" "$archive/helper"
+  install -o root -g root -m 0644 "$PRODUCTION_COMPOSE" "$archive/production.compose.yml"
+  install -o root -g root -m 0644 "$STAGING_COMPOSE" "$archive/staging.compose.yml"
+  jq -n --arg image "$current" --arg sha "$observed_sha" --arg at "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+    '{completedAt:$at,observedAppImage:$image,observedSourceSha:$sha}' > "$archive/receipt.json"
+  sync -f "$archive"
+  mv -- "$STATE" "$archive/state.json"
+  sync -f "$ROOT"
+  printf 'Completed app transaction preserved; slot available.\n'
+}
+
+usage() { printf '%s\n' 'usage: hb-app-bridge {stage|stage-rollback|stage-reapply|apply|rollback|recover|status|retire}' >&2; exit 2; }
 
 require_root
 [ "$#" -eq 1 ] || usage
@@ -444,5 +512,6 @@ case "$1" in
   rollback) rollback_candidate ;;
   recover) recover_interrupted ;;
   status) status ;;
+  retire) retire_completed ;;
   *) usage ;;
 esac
