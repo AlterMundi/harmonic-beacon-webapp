@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {test} from 'node:test';
+import {test} from 'vitest';
 import type pg from 'pg';
 import {parsePromotion,promoteEventManager} from './promote-event-manager';
 const input={staffUserId:'80000000-0000-4000-8000-000000000001',bindingId:'80000000-0000-4000-8000-000000000002',accountSubject:'synthetic-subject'};
