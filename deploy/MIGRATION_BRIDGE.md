@@ -145,3 +145,17 @@ capacity, PostgreSQL contains exactly the permitted pending migrations, the
 v1/v2 shared lock is a secure root-owned regular file, no bridge command is in
 flight, and both prior images remain available. Never overwrite either bridge's
 state or use the backup as an automatic production rollback.
+
+## Subsequent delivery
+
+After acceptance, root can run `hb-migration-bridge retire`. It is deliberately
+absent from runner sudoers. This accepts only an applied, unfenced transaction
+whose worker still matches and whose app is either the same candidate or its
+receipt-bound app-only successor. Both must be healthy. It preserves permit,
+activation, rehearsal receipt, helper and state under the original transaction's
+`completed/` directory before vacating the state slot. Source, image and backup
+remain intact. No service or database is changed. A partial archive requires
+inspection, not a blind retry. Install a new exact permit only after completion;
+the next delivery binds the actual current app and worker as its recovery pair.
+Retirement ends the old slot's executable rollback authority; archived evidence
+does not imply that an older binary remains compatible with later migrations.

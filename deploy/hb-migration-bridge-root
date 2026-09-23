@@ -544,7 +544,48 @@ rollback_candidate() {
 }
 status() { validate_permit false; root_file "$STATE" 600; jq '{permitId,phase,sourceSha,candidateImageId,migrationAttemptedToProduction,migrationAppliedToProduction,fenceState}' "$STATE"; }
 
-usage() { printf '%s\n' 'usage: hb-migration-bridge {stage|stage-resume|stage-rollback|stage-reapply|apply|rollback|recover|status}' >&2; exit 2; }
+# Root-owned lifecycle operation, deliberately absent from runner sudoers.
+# Preserve every recovery input before vacating the completed transaction slot.
+# A newer app-only receipt may supersede the app, but never the worker/schema.
+retire_completed() {
+  local archive app worker app_state app_permit file
+  validate_permit false; phase_is applied
+  [ "$(jq -r '.fenceState' "$STATE")" = absent ] || die 'cannot retire a fenced transaction'
+  app="$(container_image beacon-app)"; worker="$(container_image beacon-commerce-reconciler)"
+  [ "$worker" = "$(candidate_image)" ] || die 'worker differs from completed migration'
+  if [ "$app" != "$(candidate_image)" ]; then
+    app_state="$(dirname "$SHARED_LOCK")/state.json"
+    app_permit="$(dirname "$CONFIG")/app-bridge/permit.json"
+    root_file "$app_state" 600; root_file "$app_permit" 600
+    jq -e --arg image "$app" --arg prior "$(candidate_image)" --slurpfile permit "$app_permit" '
+      .phase=="applied" and .candidateImageId==$image and
+      .productionPriorImageId==$prior and .permitId==$permit[0].permitId and
+      .sourceSha==$permit[0].sourceSha' "$app_state" >/dev/null || die 'app successor receipt mismatch'
+    wait_prior_app beacon-app "$(jq -er '.sourceSha' "$app_state")" || die 'app successor is not healthy'
+  else
+    wait_prior_app beacon-app "$(permit '.sourceSha')" || die 'completed app is not healthy'
+  fi
+  wait_worker beacon-commerce-reconciler || die 'worker is not healthy'
+  remove_rehearsal_container hb-migration-rehearsal-app "$(candidate_image)"
+  remove_rehearsal_container hb-migration-rehearsal-worker "$(candidate_image)"
+  archive="$ROOT/transactions/$(permit '.permitId')/completed"
+  [ ! -e "$archive" ] || die 'completion archive already exists; inspect before resuming'
+  install -d -o root -g root -m 0700 "$archive"
+  install -o root -g root -m 0600 "$PERMIT" "$archive/permit.json"
+  for file in "$ACTIVATION" "$RECEIPT"; do
+    root_file "$file" 600
+    install -o root -g root -m 0600 "$file" "$archive/$(basename "$file")"
+  done
+  install -o root -g root -m 0755 "$0" "$archive/helper"
+  jq -n --arg app "$app" --arg worker "$worker" --arg at "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+    '{completedAt:$at,observedAppImage:$app,observedWorkerImage:$worker}' > "$archive/receipt.json"
+  sync -f "$archive"
+  mv -- "$STATE" "$archive/state.json"
+  sync -f "$ROOT"
+  printf 'Completed transaction preserved; slot available for a new reviewed permit.\n'
+}
+
+usage() { printf '%s\n' 'usage: hb-migration-bridge {stage|stage-resume|stage-rollback|stage-reapply|apply|rollback|recover|status|retire}' >&2; exit 2; }
 if [ "$TEST_MODE" = true ] && [ "${HB_MIGRATION_BRIDGE_SOURCE_ONLY:-}" = 1 ]; then return 0 2>/dev/null || exit 0; fi
 [ "$#" -eq 1 ] || usage
 if [ "$EUID" -eq 0 ]; then root_file "$0" 755; elif [ "$TEST_MODE" = false ]; then die 'must run as root through restricted sudo'; fi
@@ -555,5 +596,5 @@ install -d -o root -g root -m 0700 "$ROOT" "$ROOT/inbox" "$ROOT/transactions"
 exec 9>"$SHARED_LOCK"; flock -n 9 || die 'another bridge operation is active'
 case "$1" in
   stage) stage_candidate;; stage-resume) stage_resume;; stage-rollback) stage_rollback;; stage-reapply) stage_reapply;;
-  apply) apply_candidate;; rollback) rollback_candidate;; recover) recover;; status) status;; *) usage;;
+  apply) apply_candidate;; rollback) rollback_candidate;; recover) recover;; status) status;; retire) retire_completed;; *) usage;;
 esac
