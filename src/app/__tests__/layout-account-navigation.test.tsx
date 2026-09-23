@@ -41,6 +41,11 @@ vi.mock('@/components/brand/LiveNavigationAccountMenu', () => ({
 vi.mock('@/components/brand/LiveIdentityCacheBoundary', () => ({
     LiveIdentityCacheBoundary: () => <div data-testid="identity-cache-boundary" />,
 }));
+vi.mock('@/components/brand/StaffModeAccess', () => ({
+    StaffModeAccess: ({ availableRole, activeStaffRole }: { availableRole: string | null; activeStaffRole: string | null }) => (
+        <div data-testid="staff-mode-access" data-role={availableRole} data-active-role={activeStaffRole ?? 'attendee'} />
+    ),
+}));
 vi.mock('@/context/LocaleContext', () => ({
     LocaleProvider: ({ children }: { children: React.ReactNode }) => <div data-testid="locale-boundary">{children}</div>,
 }));
@@ -65,7 +70,7 @@ describe('root layout Account navigation hint', () => {
             cookie: `hb_session=${'a'.repeat(43)}`,
         });
         mocks.headers.mockResolvedValue(requestHeaders);
-        mocks.localNavigationIdentity.mockResolvedValue({ issuer: 'https://account-staging.harmonicbeacon.com', displayName: 'Nicolás', staffRole: 'ADMIN' });
+        mocks.localNavigationIdentity.mockResolvedValue({ issuer: 'https://account-staging.harmonicbeacon.com', displayName: 'Nicolás', staffRole: 'ADMIN', availableStaffRole: 'ADMIN' });
 
         render(await RootLayout({ children: <main>Live</main> }), { container: document });
 
@@ -83,6 +88,9 @@ describe('root layout Account navigation hint', () => {
         expect(screen.getByTestId('local-account-menu')).toHaveAttribute('data-role', 'Administration');
         expect(screen.getByTestId('local-account-menu')).toHaveAttribute('data-account-issuer', 'https://account-staging.harmonicbeacon.com');
         expect(screen.getByTestId('identity-cache-boundary')).toBeInTheDocument();
+        expect(screen.getByTestId('staff-mode-access')).toHaveAttribute('data-role', 'ADMIN');
+        expect(screen.getByTestId('exit-boundary')).toContainElement(screen.getByTestId('staff-mode-access'));
+        expect(screen.getByTestId('locale-boundary')).toContainElement(screen.getByTestId('staff-mode-access'));
     });
 
     it('keeps production Account hidden without reading local identity state', async () => {
@@ -123,7 +131,7 @@ describe('root layout Account navigation hint', () => {
             cookie: `hb_session=${'b'.repeat(43)}`,
         });
         mocks.headers.mockResolvedValue(requestHeaders);
-        mocks.localNavigationIdentity.mockResolvedValue({ issuer: 'https://account.harmonicbeacon.com', displayName: 'Production Tester', staffRole: null });
+        mocks.localNavigationIdentity.mockResolvedValue({ issuer: 'https://account.harmonicbeacon.com', displayName: 'Production Tester', staffRole: null, availableStaffRole: 'ADMIN' });
 
         render(await RootLayout({ children: <main>Live</main> }), { container: document });
 
@@ -135,5 +143,7 @@ describe('root layout Account navigation hint', () => {
         expect(screen.getByTestId('global-navigation')).toHaveAttribute('data-account-available', 'true');
         expect(screen.getByTestId('global-navigation')).toHaveAttribute('data-signed-in', 'true');
         expect(screen.getByTestId('local-account-menu')).toHaveTextContent('Production Tester');
+        expect(screen.getByTestId('staff-mode-access')).toHaveAttribute('data-role', 'ADMIN');
+        expect(screen.getByTestId('staff-mode-access')).toHaveAttribute('data-active-role', 'attendee');
     });
 });

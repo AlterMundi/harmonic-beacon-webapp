@@ -274,6 +274,8 @@ stage() {
   validate_permit
   validate_runtime_files
   [ ! -e "$STATE" ] || die 'transaction slot occupied; retire completed state first'
+  jq -e 'has("productionProfileSha256") and has("stagingProfileSha256")' "$PERMIT" >/dev/null ||
+    die 'new staging requires digest-bound runtime profiles'
   load_profile production
   load_profile staging
   tx="$ROOT/transactions/$(permit_value '.permitId')"

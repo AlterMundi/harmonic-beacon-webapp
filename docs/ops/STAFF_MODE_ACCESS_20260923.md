@@ -33,3 +33,12 @@ app-only deployment through digest-bound public profiles. Test refusal and
 archive paths before installing reviewed helpers. No migration is introduced.
 Direction permits necessary service interruption, but ordinary continuity
 checks remain intact; unrelated services remain outside this change.
+
+Verification scope correction (Direction, 2026-09-23): select checks from the
+actual changed files rather than routinely running unrelated load exercises.
+First bounded change: omit only LiveKit load/capacity exercises for the closed
+set of staff-navigation and app-bridge files in this delivery. Keep Account
+browser, room-exit, layout, compilation and bridge recovery tests. Unknown
+files, missing comparison refs and changes to the selector itself retain load
+coverage. Test the selector and workflow wiring before publication. This does
+not waive any failed check or change production authorization.
