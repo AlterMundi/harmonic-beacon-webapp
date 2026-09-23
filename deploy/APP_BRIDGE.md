@@ -168,3 +168,23 @@ bridge for migrations, worker/shared contracts, dependency or runtime Compose
 changes, or during an active event. Those changes require their owning release
 path. After acceptance, remove the sudoers fragment or leave it inert without
 a valid unexpired permit; preserve the transaction as the deployment receipt.
+
+### Completing a transaction and preserving runtime flags
+
+Root may invoke `hb-app-bridge retire` after acceptance. It is deliberately
+absent from runner sudoers. It accepts only `applied`, verifies current health
+and exact image/source, and archives permit, activation, rehearsal, helper,
+Compose files and state in the original transaction's `completed/` directory.
+Source/archive/images remain intact. It moves state last; a partial archive
+requires inspection. No container or database is changed. A completed migration
+successor is accepted only with a root-owned matching v2 permit/state, absent
+fence, and healthy matching app/worker. Unexplained runtime drift is rejected.
+Retirement relinquishes the old executable rollback slot, not its evidence.
+
+New permits include `productionProfileSha256` and `stagingProfileSha256`, binding
+the canonical root-owned runtime-public-config files already used by migration
+delivery. The helper validates and exports their origin, LiveKit URL and flags;
+the new Compose files require these fields rather than silently losing them.
+Historical permits remain readable for retirement using their original Compose
+bytes. Retire first, then install new Compose/permit bytes; do not rewrite a
+historical permit to make it validate. `stage` refuses any occupied state slot.

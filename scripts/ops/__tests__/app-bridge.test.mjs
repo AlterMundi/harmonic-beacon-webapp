@@ -27,6 +27,7 @@ test('bridge exposes only exact stage/apply/rollback/status sudo commands', asyn
     assert.match(sudoers, new RegExp(`/usr/local/sbin/hb-app-bridge ${verb}`));
   }
   assert.doesNotMatch(sudoers, /docker|sh\b|bash\b/);
+  assert.doesNotMatch(sudoers, /hb-app-bridge retire/);
 });
 
 test('production bridge is app-only and has a read-only fixed preflight', async () => {
@@ -127,6 +128,7 @@ if [ "$1" = inspect ]; then
   name="$2"
   if [[ "$*" == *State.Health.Status* ]]; then echo healthy; exit 0; fi
   if [[ "$*" == *Config.Env* ]]; then printf 'BEACON_COMMERCE_SERVICE_KEY_CURRENT_ID=x\\nBEACON_COMMERCE_SERVICE_KEY_CURRENT=x\\n'; exit 0; fi
+  if [ "$name" = beacon-commerce-reconciler ]; then cat ${JSON.stringify(join(state, 'worker.image'))}; exit 0; fi
   [ "$name" = beacon-app ] && cat ${JSON.stringify(join(state, 'production.image'))} || cat ${JSON.stringify(join(state, 'staging.image'))}
   exit 0
 fi
@@ -195,6 +197,20 @@ exec /usr/bin/install "${'$'}{args[@]}"
   await chmod(join(bridgeEtc, 'permit.json'), 0o600);
   await chmod(archive, 0o600);
 
+  const profiles = join(libexec, 'runtime-public-config');
+  await mkdir(profiles, { mode: 0o700 });
+  for (const name of ['production', 'live-staging']) {
+    await writeFile(join(profiles, `${name}.json`), JSON.stringify({
+      schemaVersion: 'harmonic-beacon.runtime-public-config.v1',
+      publicOrigin: 'https://live.example.test', livekitPublicUrl: 'wss://live.example.test',
+      featureFlags: { promoInvitations: true, tapestryPublic: true },
+    }), { mode: 0o644 });
+    await chmod(join(profiles, `${name}.json`), 0o644);
+  }
+  permit.productionProfileSha256 = digest(join(profiles, 'production.json'));
+  permit.stagingProfileSha256 = digest(join(profiles, 'live-staging.json'));
+  await writeFile(join(bridgeEtc, 'permit.json'), JSON.stringify(permit));
+
   const invoke = (verb) => spawnSync(helperPath, [verb], {
     cwd: root, encoding: 'utf8', env: { ...process.env, HB_APP_BRIDGE_TEST_ROOT: area },
   });
@@ -206,6 +222,10 @@ exec /usr/bin/install "${'$'}{args[@]}"
   assert.match(unsafeLock.stderr, /lock must not be a symbolic link/);
   assert.equal(await source(lockTarget), 'preserved');
   await unlink(join(bridgeRoot, 'operation.lock'));
+  const profileBefore = await source(join(profiles, 'production.json'));
+  await writeFile(join(profiles, 'production.json'), profileBefore + '\n');
+  assert.match(invoke('stage').stderr, /runtime profile digest mismatch/);
+  await writeFile(join(profiles, 'production.json'), profileBefore);
   for (const verb of ['stage', 'stage-rollback', 'stage-reapply']) {
     const result = invoke(verb);
     assert.equal(result.status, 0, `${verb}: ${result.stderr}`);
@@ -236,6 +256,7 @@ exec /usr/bin/install "${'$'}{args[@]}"
   result = invoke('apply');
   assert.equal(result.status, 0, result.stderr);
   assert.equal(await source(join(state, 'production.image')), candidate);
+  assert.match(invoke('stage').stderr, /transaction slot occupied/);
   result = invoke('rollback');
   assert.equal(result.status, 0, result.stderr);
   assert.equal(await source(join(state, 'production.image')), productionBase);
@@ -253,6 +274,36 @@ exec /usr/bin/install "${'$'}{args[@]}"
   const commands = await source(join(state, 'commands.log'));
   assert.doesNotMatch(commands, /compose sha256:/, 'image id must not become a compose subcommand');
   assert.doesNotMatch(commands, /\b(migrate|commerce-reconciler|tapestry|playlist-bot|postgres|livekit)\b/);
+
+  // Retirement must never recover an in-flight operation or mutate runtime.
+  transaction.phase = 'applying';
+  await writeFile(join(bridgeRoot, 'state.json'), JSON.stringify(transaction));
+  assert.notEqual(invoke('retire').status, 0);
+  transaction.phase = 'applied';
+  await writeFile(join(bridgeRoot, 'state.json'), JSON.stringify(transaction));
+  assert.notEqual(invoke('retire').status, 0, 'unknown successor must be refused');
+  const migrationRoot = join(area, 'var/lib/harmonic-beacon/migration-bridge-v2');
+  const migrationEtc = join(etc, 'migration-bridge-v2');
+  await mkdir(migrationRoot, { mode: 0o700 });
+  await mkdir(migrationEtc, { mode: 0o700 });
+  const successor = { permitId: 'e'.repeat(64), sourceSha: permit.productionBaseGitSha };
+  await writeFile(join(migrationEtc, 'permit.json'), JSON.stringify(successor), { mode: 0o600 });
+  const successorState = { ...successor, phase: 'applied', fenceState: 'held', candidateImageId: productionBase };
+  await writeFile(join(migrationRoot, 'state.json'), JSON.stringify(successorState), { mode: 0o600 });
+  assert.match(invoke('retire').stderr, /migration successor receipt mismatch/);
+  successorState.fenceState = 'absent';
+  await writeFile(join(migrationRoot, 'state.json'), JSON.stringify(successorState));
+  await writeFile(join(state, 'worker.image'), candidate);
+  assert.match(invoke('retire').stderr, /migration successor worker mismatch/);
+  await writeFile(join(state, 'worker.image'), productionBase);
+  const beforeRetire = await source(join(state, 'commands.log'));
+  result = invoke('retire');
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(JSON.parse(await source(join(bridgeRoot, 'transactions', permit.permitId, 'completed/state.json'))).phase, 'applied');
+  await assert.rejects(readFile(join(bridgeRoot, 'state.json')), { code: 'ENOENT' });
+  assert.equal(await source(join(state, 'production.image')), productionBase);
+  assert.doesNotMatch((await source(join(state, 'commands.log'))).slice(beforeRetire.length), /compose|build|stop|restart/);
+  assert.notEqual(invoke('retire').status, 0, 'repeated retirement fails without altering archive');
 });
 
 test('archive validator extracts regular files deterministically', async () => {

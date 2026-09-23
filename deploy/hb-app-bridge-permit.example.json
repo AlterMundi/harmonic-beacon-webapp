@@ -11,8 +11,10 @@
   "productionBaseGitSha": "9a40237a4042345c6c76c24ba4b492faa40ee03c",
   "productionBaseImageId": "sha256:REPLACE_WITH_64_LOWERCASE_HEX",
   "productionComposeSha256": "REPLACE_WITH_64_LOWERCASE_HEX",
+  "productionProfileSha256": "REPLACE_WITH_64_LOWERCASE_HEX",
   "schemaVersion": "hb-app-bridge.permit.v1",
   "sourceSha": "8a8050f8fc4ef02a3183e472f336332f06469c42",
   "sourceTree": "REPLACE_WITH_40_LOWERCASE_HEX",
-  "stagingComposeSha256": "REPLACE_WITH_64_LOWERCASE_HEX"
+  "stagingComposeSha256": "REPLACE_WITH_64_LOWERCASE_HEX",
+  "stagingProfileSha256": "REPLACE_WITH_64_LOWERCASE_HEX"
 }

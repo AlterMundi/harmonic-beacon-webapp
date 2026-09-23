@@ -37,12 +37,13 @@ export type LocalLiveNavigationIdentity = {
     issuer: string;
     displayName: string | null;
     staffRole: LocalizedStaffRole | null;
+    availableStaffRole: LocalizedStaffRole | null;
 };
 
 /**
  * Resolve the minimum host-local presentation used inside the global user
- * menu. This is deliberately not an authorization check: it performs one
- * read-only database lookup, never revalidates with Account and never updates
+ * menu. This is deliberately not an authorization check: it performs
+ * read-only session/binding lookups, never revalidates with Account and never updates
  * session activity. Protected Live and Ops routes still resolve their ordinary
  * principal independently.
  */
@@ -95,10 +96,26 @@ export async function locallyKnownLiveNavigationIdentity(
             binding.accountSubject === identity.subject
         );
 
+        // An attendee-mode session can belong to staff. This is presentation
+        // only; switching mode still goes through the ordinary staff OIDC flow.
+        const availableBinding = !row.staffUser
+            ? await prisma.staffAccountBinding.findUnique({
+                where: { accountIssuer_accountSubject: {
+                    accountIssuer: identity.issuer, accountSubject: identity.subject,
+                } },
+                select: { disabledAt: true, staffUser: { select: { role: true, disabledAt: true } } },
+            })
+            : null;
+        const availableStaffRole = isStaff ? row.staffUser!.role
+            : availableBinding && availableBinding.disabledAt === null &&
+              availableBinding.staffUser.disabledAt === null
+                ? availableBinding.staffUser.role : null;
+
         return {
             issuer: identity.issuer,
             displayName: identity.displayName?.trim() || null,
             staffRole: isStaff ? row.staffUser!.role : null,
+            availableStaffRole,
         };
     } catch {
         // Navigation remains neutral when local state/configuration is

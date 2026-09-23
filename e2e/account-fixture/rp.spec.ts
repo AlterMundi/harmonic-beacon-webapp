@@ -6,6 +6,45 @@ import { FIXTURE_PASSWORD } from './protocol';
 import { SESSION_ES } from '../fixtures/test-data';
 import { withSessionStatus, withReconciledPublicationGrant } from '../fixtures/db';
 
+test('Account RP admin is discoverable in attendee mode and switches explicitly both ways', async ({ page }) => {
+    requireAccountFixture();
+    async function finishAdminLogin() {
+        await page.getByLabel('Fixture username').fill('admin');
+        await page.getByLabel('Fixture password').fill(FIXTURE_PASSWORD);
+        const callback = page.waitForResponse(r => new URL(r.url()).pathname === '/api/account/callback');
+        await page.getByRole('button', { name: 'Sign in to simulation', exact: true }).click();
+        expect((await callback).status()).toBe(303);
+    }
+    const db = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+    await db.connect();
+    try {
+        await page.goto('/api/account/login?flow=attendee&next=%2F');
+        await finishAdminLogin();
+        await expect(page).toHaveURL(new URL('/', process.env.E2E_BASE_URL!).href);
+        const attendee = await accountSessionRow(page);
+        expect(attendee.account_subject).toBe('fixture-admin');
+        expect((await db.query('select staff_user_id from web_sessions where id = $1', [attendee.id])).rows[0].staff_user_id).toBeNull();
+        const strip = page.getByRole('complementary', { name: /Modo de acceso|Access mode/ });
+        await expect(strip).toContainText(/modo participante|participant mode/);
+        await strip.getByRole('link', { name: /Administrar eventos|Manage events/ }).click();
+        await finishAdminLogin();
+        await expect(page).toHaveURL(new URL('/ops/events/manage', process.env.E2E_BASE_URL!).href);
+        const staff = await accountSessionRow(page);
+        expect(staff.account_subject).toBe(attendee.account_subject);
+        expect((await db.query('select staff_user_id from web_sessions where id = $1', [staff.id])).rows[0].staff_user_id).not.toBeNull();
+        await expect(strip).toContainText(/modo equipo|staff mode/);
+        await strip.getByRole('link', { name: /Entrar como participante|Enter as participant/ }).click();
+        await finishAdminLogin();
+        await expect(page).toHaveURL(new URL('/', process.env.E2E_BASE_URL!).href);
+        const returned = await accountSessionRow(page);
+        expect(returned.account_subject).toBe(attendee.account_subject);
+        const state = (await db.query('select staff_user_id, ticket_entitlement_id from web_sessions where id = $1', [returned.id])).rows[0];
+        expect(state).toEqual({ staff_user_id: null, ticket_entitlement_id: null });
+        await expect(strip).toContainText(/modo participante|participant mode/);
+        expect((await db.query('select revoked_at from web_sessions where id = any($1::uuid[])', [[attendee.id, staff.id]])).rows.every(row => row.revoked_at !== null)).toBe(true);
+    } finally { await db.end(); }
+});
+
 test('Account RP observes landing and waiting room with an existing authenticated cookie', async ({ page }) => {
     requireAccountFixture();
     await authorizeViaAccountFixture(page, 'ATTENDEE');
