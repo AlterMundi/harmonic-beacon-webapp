@@ -47,6 +47,7 @@ const session = {
     status: 'SCHEDULED',
     facilitatorId: 'facilitator-1',
     publicAccess: false,
+    isPublished: true,
 };
 
 const attendee = {

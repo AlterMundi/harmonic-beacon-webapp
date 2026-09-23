@@ -5,7 +5,7 @@ import { prisma } from '@/lib/db';
 import {
     accountIdentityFromToken,
 } from '@/lib/principal';
-import { isPublicFreeSession } from '@/lib/public-cycle';
+import { UUID } from '@/lib/event-editor';
 import { attachPublicSessionAccess } from '@/lib/public-session-access';
 import { SESSION_COOKIE_NAME } from '@/lib/session-auth';
 
@@ -23,8 +23,15 @@ export async function GET(
     { params }: { params: Promise<{ id: string }> },
 ) {
     const { id } = await params;
-    if (!isPublicFreeSession(id)) {
+    if (!UUID.test(id)) {
         return NextResponse.json({ error: 'Session not found' }, { status: 404 });
+    }
+    const session = await prisma.scheduledSession.findUnique({
+        where: { id },
+        select: { id:true, scheduledAt:true, status:true, isTest:true, publicAccess:true, isPublished:true },
+    });
+    if (!session || session.isTest || !session.publicAccess || !session.isPublished || !['SCHEDULED','LIVE'].includes(session.status)) {
+        return NextResponse.json({ error:'Session unavailable' }, { status:404 });
     }
     if (!beaconAccountEnabled()) {
         return NextResponse.json(
@@ -61,16 +68,6 @@ export async function GET(
     }
 
     const now = new Date();
-    const session = await prisma.scheduledSession.findUnique({
-        where: { id },
-        select: {
-            id: true,
-            scheduledAt: true,
-            status: true,
-            isTest: true,
-            publicAccess: true,
-        },
-    });
     if (
         !session ||
         session.isTest ||

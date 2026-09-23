@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { transaction, entitlementUpsert, webSessionUpdateMany, findSession, findParticipant, fillEmail } = vi.hoisted(() => ({
+const { transaction, entitlementUpsert, webSessionUpdateMany, findSession, findParticipant, fillEmail, currentEvent } = vi.hoisted(() => ({
+    currentEvent:vi.fn(),
     transaction: vi.fn(),
     entitlementUpsert: vi.fn(),
     webSessionUpdateMany: vi.fn(),
@@ -34,11 +35,21 @@ describe('attachPublicSessionAccess', () => {
         webSessionUpdateMany.mockResolvedValue({ count: 1 });
         findSession.mockResolvedValue(null);
         findParticipant.mockResolvedValue(null);
+        currentEvent.mockResolvedValue({publicAccess:true,isPublished:true,isTest:false,status:'SCHEDULED'});
         transaction.mockImplementation(async (work) => work({
+            $queryRaw:vi.fn(),
+            scheduledSession:{findUnique:currentEvent},
             ticketEntitlement: { upsert: entitlementUpsert, updateMany: fillEmail },
             webSession: { updateMany: webSessionUpdateMany, findUnique: findSession },
             sessionParticipant: { findFirst: findParticipant },
         }));
+    });
+
+    it('rechecks publication inside the transaction before issuing access',async()=>{
+        currentEvent.mockResolvedValue({publicAccess:true,isPublished:false,isTest:false,status:'SCHEDULED'});
+        const {attachPublicSessionAccess}=await import('../public-session-access');
+        expect(await attachPublicSessionAccess('cookie',publicSession,account)).toBe(false);
+        expect(entitlementUpsert).not.toHaveBeenCalled();
     });
 
     it('does nothing for a session that is not explicitly public', async () => {

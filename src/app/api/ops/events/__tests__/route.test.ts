@@ -1,0 +1,16 @@
+import { beforeEach,expect,it,vi } from 'vitest';
+import { NextRequest } from 'next/server';
+const mocks=vi.hoisted(()=>({staff:vi.fn(),save:vi.fn(),find:vi.fn(),users:vi.fn()}));
+vi.mock('@/lib/ops-auth',()=>({resolveStaffSession:mocks.staff}));
+vi.mock('@/lib/account-rp',()=>({trustedLiveRequestOrigin:()=> 'https://live.harmonicbeacon.com'}));
+vi.mock('@/lib/db',()=>({prisma:{scheduledSession:{findMany:mocks.find},user:{findMany:mocks.users}}}));
+vi.mock('@/lib/event-editor',async importOriginal=>({...await importOriginal<typeof import('@/lib/event-editor')>(),saveEvent:mocks.save}));
+import { GET,POST,PUT } from '../route';
+const req=(method='GET',body:unknown={},origin='https://live.harmonicbeacon.com')=>new NextRequest('https://live.harmonicbeacon.com/api/ops/events',{method,headers:{origin,'content-type':'application/json'},...(method==='GET'?{}:{body:JSON.stringify(body)})});
+beforeEach(()=>{vi.clearAllMocks();mocks.staff.mockResolvedValue({id:'s',role:'ADMIN'});mocks.find.mockResolvedValue([]);mocks.users.mockResolvedValue([]);mocks.save.mockResolvedValue({id:'event'});});
+it('denies anonymous reads',async()=>{mocks.staff.mockResolvedValue(null);expect((await GET(req())).status).toBe(401);expect(mocks.find).not.toHaveBeenCalled();});
+it('denies non-admin reads and writes',async()=>{mocks.staff.mockResolvedValue({role:'OPERATOR'});expect((await GET(req())).status).toBe(403);expect((await POST(req('POST'))).status).toBe(403);expect(mocks.save).not.toHaveBeenCalled();});
+it('rejects cross-origin writes before authentication',async()=>{expect((await POST(req('POST',{},'https://evil.invalid'))).status).toBe(403);expect(mocks.staff).not.toHaveBeenCalled();});
+it('returns private uncached operator data',async()=>{const result=await GET(req());expect(result.status).toBe(200);expect(result.headers.get('cache-control')).toBe('private, no-store');});
+it('distinguishes create from update and requires an update ID',async()=>{expect((await PUT(req('PUT'))).status).toBe(400);expect((await POST(req('POST',{id:'event'}))).status).toBe(200);expect(mocks.save).toHaveBeenCalledWith(expect.anything(),{id:'event'},undefined);});
+it('bounds the input',async()=>{expect((await POST(req('POST',{description:'x'.repeat(12001)}))).status).toBe(413);expect(mocks.save).not.toHaveBeenCalled();});

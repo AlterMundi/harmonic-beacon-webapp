@@ -10,7 +10,6 @@ import Link from "next/link";
 
 import { EventLocalTime, EventSchedule } from "@/components/events/EventSchedule";
 import { prisma } from "@/lib/db";
-import { isPublicFreeSession } from "@/lib/public-cycle";
 import { redactError } from "@/lib/redact";
 
 import LoginClient from "./login/LoginClient";
@@ -28,6 +27,7 @@ type WeekendEvent = {
     language: "ENGLISH" | "SPANISH";
     scheduledAt: Date;
     publicAccess: boolean;
+    checkoutUrl: string | null;
 };
 
 const INTERNAL_NEXT = /^\/session(\/[A-Za-z0-9_-]+)*$/;
@@ -66,6 +66,7 @@ async function weekendEvents(): Promise<WeekendEvent[] | null> {
         return await prisma.scheduledSession.findMany({
             where: {
                 isTest: false,
+                isPublished: true,
                 endedAt: null,
                 OR: [
                     { status: "SCHEDULED", scheduledAt: { gte: discoverableAfter } },
@@ -80,6 +81,7 @@ async function weekendEvents(): Promise<WeekendEvent[] | null> {
                 language: true,
                 scheduledAt: true,
                 publicAccess: true,
+                checkoutUrl: true,
             },
         });
     } catch (error) {
@@ -103,7 +105,7 @@ export default async function LandingPage({
         : null;
     const accountError = params.account_error === '1';
     const events = await weekendEvents();
-    const hasTicketedEvents = events === null || events.some((event) => !isPublicFreeSession(event.id));
+    const hasTicketedEvents = events === null || events.some((event) => !event.publicAccess);
     const purchaseUrlSession1 = process.env.TICKET_PURCHASE_URL_SESSION_1 || process.env.TICKET_PURCHASE_URL;
     const purchaseUrlSession2 = process.env.TICKET_PURCHASE_URL_SESSION_2 || process.env.TICKET_PURCHASE_URL;
     const purchaseUrlFor = (language: string) =>
@@ -149,7 +151,7 @@ export default async function LandingPage({
                         <EventSchedule locale={locale}>
                             <ul className="grid gap-4 md:grid-cols-2">
                                 {events.map((event) => {
-                                    const publicFreeSession = isPublicFreeSession(event.id);
+                                    const publicFreeSession = event.publicAccess;
                                     return (
                                 <li key={event.id} className="event-card">
                                     <div className="flex items-start justify-between gap-3">
@@ -187,9 +189,9 @@ export default async function LandingPage({
                                                     {locale === 'en' ? 'Enter event' : 'Ingresar al evento'}
                                                 </a>
                                             </>
-                                        ) : purchaseUrlFor(event.language) ? (
+                                        ) : (event.checkoutUrl || purchaseUrlFor(event.language)) ? (
                                             <a
-                                                href={purchaseUrlFor(event.language)}
+                                                href={event.checkoutUrl || purchaseUrlFor(event.language)}
                                                 className="event-button event-button--primary mt-3 inline-flex w-full text-center sm:w-auto"
                                                 rel="noreferrer noopener"
                                                 target="_blank"

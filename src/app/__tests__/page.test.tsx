@@ -114,6 +114,7 @@ describe('landing page', () => {
             expect.objectContaining({
                 where: {
                     isTest: false,
+                    isPublished: true,
                     endedAt: null,
                     OR: [
                         {
@@ -131,7 +132,7 @@ describe('landing page', () => {
         // No paid-mode or attendee-cap columns leak into the public page.
         const select = findMany.mock.calls[0][0].select;
         expect(Object.keys(select).sort()).toEqual([
-            'description', 'id', 'language', 'publicAccess', 'scheduledAt', 'title',
+            'checkoutUrl', 'description', 'id', 'language', 'publicAccess', 'scheduledAt', 'title',
         ]);
     });
 

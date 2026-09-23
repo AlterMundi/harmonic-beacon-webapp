@@ -46,6 +46,7 @@ describe('GET /api/public-sessions/[id]/enter', () => {
             status: 'SCHEDULED',
             isTest: false,
             publicAccess: true,
+            isPublished: true,
         });
     });
 
@@ -57,7 +58,7 @@ describe('GET /api/public-sessions/[id]/enter', () => {
             `http://localhost:3000/api/account/login?flow=attendee&next=%2Fsession%2F${PUBLIC_ID}`,
         );
         expect(response.headers.get('set-cookie')).toBeNull();
-        expect(findUnique).not.toHaveBeenCalled();
+        expect(findUnique).toHaveBeenCalled();
         expect(attachPublicSessionAccess).not.toHaveBeenCalled();
     });
 
@@ -80,7 +81,7 @@ describe('GET /api/public-sessions/[id]/enter', () => {
         const response = await enter();
 
         expect(response.status).toBe(503);
-        expect(findUnique).not.toHaveBeenCalled();
+        expect(findUnique).toHaveBeenCalled();
         expect(attachPublicSessionAccess).not.toHaveBeenCalled();
     });
 
@@ -153,10 +154,17 @@ describe('GET /api/public-sessions/[id]/enter', () => {
         );
     });
 
-    it('rejects every session outside the reviewed complimentary rooms before database access', async () => {
+    it('rejects unknown sessions based on the database', async () => {
+        findUnique.mockResolvedValue(null);
         const response = await enter('10000000-0000-4000-8000-000000000001');
         expect(response.status).toBe(404);
-        expect(findUnique).not.toHaveBeenCalled();
+        expect(attachPublicSessionAccess).not.toHaveBeenCalled();
+    });
+
+    it.each([{isPublished:false,publicAccess:true},{isPublished:true,publicAccess:false}])('rejects hidden or paid events without issuing free access', async fields => {
+        findUnique.mockResolvedValue({id:PUBLIC_ID,status:'SCHEDULED',isTest:false,...fields});
+        expect((await enter()).status).toBe(404);
+        expect(attachPublicSessionAccess).not.toHaveBeenCalled();
     });
 
     it('does not issue access after a room is ended', async () => {
