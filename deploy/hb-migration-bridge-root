@@ -425,6 +425,7 @@ rollback_barriers() {
   local image="$(candidate_image)"
   prod_compose "$image" "$image" run --rm --no-deps migrate npx tsx scripts/stage-grant-rollback-preflight.ts >/dev/null || die 'durable-grant rollback barrier refused'
   prod_compose "$image" "$image" run --rm --no-deps migrate npx tsx scripts/scene-capacity-rollback-preflight.ts >/dev/null || die 'scene-capacity rollback barrier refused'
+  prod_compose "$image" "$image" run --rm --no-deps migrate npx tsx scripts/event-editor-rollback-preflight.ts >/dev/null || die 'event-editor rollback barrier refused'
 }
 
 assert_recovery_migration_state() {

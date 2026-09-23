@@ -13,7 +13,8 @@ Account, enrolment, payments, credits, media or participant profile changes.
 2. Use existing AuditLog rows, isolated action and deterministic minute bucket
    IDs. No migration. Store only issuer/subject and surface, with server time;
    no token, email, private real name, narrative or enrolment permission.
-3. The campaign cutoff is 2026-09-23T21:00:00Z (18ART), not19ART. Earlier
+3. The campaign cutoff is 2026-09-23T21:00:00Z (18ART). The actual event
+   starts at 19ART (22UTC); this one-hour margin is observation only. Earlier
    observations are not recorded. This is app activity, not attendance duration
    or proven LiveKit connection. A previously open visible page is included by
    its next heartbeat; hidden pages are not evidence of active arrival.

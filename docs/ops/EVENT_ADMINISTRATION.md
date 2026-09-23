@@ -43,6 +43,13 @@ does not grant roles by a matching display name or email.
 
 ## Acceptance
 
+Old-binary rollback is available before the editor is used. After an editor
+mutation, hidden event or custom checkout URL exists, the migration bridge
+refuses old-binary recovery and retains its fence: roll forward with an
+editor-aware candidate instead. This conservative barrier never deletes or
+rewrites event data to make rollback pass. Old binaries ignore publication
+and custom admission semantics; a healthy process alone is not compatibility.
+
 Focused tests cover role denial, input validation, duplicate creation, stale
 updates, publication, hidden/paid admission, browser-form conversion and copy.
 `scripts/event-editor-postgres-test.ts` is explicitly restricted to loopback
