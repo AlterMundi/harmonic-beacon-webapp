@@ -106,6 +106,11 @@ function validateEnvironment(env, kind, allowPlaceholders, stagingDatabaseEnv) {
   const active = production
     ? ['BEACON_ACCOUNT_CLIENT_SECRET_HB_LISTENER', 'BEACON_ACCOUNT_CLIENT_SECRET_HB_LIVE']
     : ['BEACON_ACCOUNT_CLIENT_SECRET_HB_LISTENER_STAGING', 'BEACON_ACCOUNT_CLIENT_SECRET_HB_LIVE_STAGING'];
+  const psicopompo = env.get('BEACON_ACCOUNT_PSICOPOMPO_ENABLED') || '0';
+  if (!['0', '1'].includes(psicopompo) || (!production && psicopompo === '1')) {
+    throw new Error('Psicopompo client requires an explicit production-only gate');
+  }
+  if (psicopompo === '1') active.push('BEACON_ACCOUNT_CLIENT_SECRET_HB_PSICOPOMPO');
   const inactive = production
     ? ['BEACON_ACCOUNT_CLIENT_SECRET_HB_LISTENER_STAGING', 'BEACON_ACCOUNT_CLIENT_SECRET_HB_LIVE_STAGING']
     : ['BEACON_ACCOUNT_CLIENT_SECRET_HB_LISTENER', 'BEACON_ACCOUNT_CLIENT_SECRET_HB_LIVE'];

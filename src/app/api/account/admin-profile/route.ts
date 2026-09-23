@@ -39,7 +39,8 @@ export async function POST(request: Request): Promise<Response> {
     }
     const presented = confidentialClient(request);
     const definition = presented && activeAccountStaticClients().find((client) =>
-        client.clientId === presented.clientId && client.requiresCompleteProfile);
+        client.clientId === presented.clientId &&
+        (client.clientId === 'hb-live' || client.clientId === 'hb-live-staging'));
     const expected = definition && accountStaticClientSecrets().find((client) =>
         client.clientId === definition.clientId)?.clientSecret;
     if (!presented || !definition || !expected || !equal(presented.secret, expected)) {
@@ -70,4 +71,3 @@ export async function POST(request: Request): Promise<Response> {
         emailVerified: account.emailVerified && !account.email.endsWith('@identity.invalid'),
     });
 }
-

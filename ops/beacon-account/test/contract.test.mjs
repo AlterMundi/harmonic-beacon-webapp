@@ -193,6 +193,19 @@ test('validator rejects a shared staging database schema', () => {
   assert.throws(() => validatePair(PROD, bad, STAGING_DB, true), /isolated account-staging-postgres/);
 });
 
+test('Psicopompo activation requires a dedicated production secret and valid gate', () => {
+  const enabled = mutate(PROD, 'BEACON_ACCOUNT_PSICOPOMPO_ENABLED=0', 'BEACON_ACCOUNT_PSICOPOMPO_ENABLED=1');
+  assert.throws(() => validatePair(enabled, STAGING, STAGING_DB, true), /HB_PSICOPOMPO/);
+  const configured = mutate(enabled, 'BEACON_ACCOUNT_CLIENT_SECRET_HB_PSICOPOMPO=',
+    'BEACON_ACCOUNT_CLIENT_SECRET_HB_PSICOPOMPO=synthetic-dedicated-psicopompo-secret-32-characters');
+  validatePair(configured, STAGING, STAGING_DB, true);
+  const invalid = mutate(PROD, 'BEACON_ACCOUNT_PSICOPOMPO_ENABLED=0', 'BEACON_ACCOUNT_PSICOPOMPO_ENABLED=yes');
+  assert.throws(() => validatePair(invalid, STAGING, STAGING_DB, true), /production-only gate/);
+  const staging = mutate(STAGING, 'BEACON_ACCOUNT_RUNTIME=1',
+    'BEACON_ACCOUNT_RUNTIME=1\nBEACON_ACCOUNT_PSICOPOMPO_ENABLED=1');
+  assert.throws(() => validatePair(PROD, staging, STAGING_DB, true), /production-only gate/);
+});
+
 test('validator pins the production runtime role and bounded database password shape', () => {
   const wrongRole = mutate(PROD, 'postgresql://account_prod:', 'postgresql://earlybirds_preview:');
   assert.throws(() => validatePair(wrongRole, STAGING, STAGING_DB, true), /dedicated account_prod role/);

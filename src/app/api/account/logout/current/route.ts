@@ -26,7 +26,7 @@ export async function POST(request: Request): Promise<Response> {
     const secrets = new Map(accountStaticClientSecrets().map((client) => [client.clientId, client.clientSecret]));
     const frontchannel = activeAccountStaticClients().flatMap((client) => {
         const clientSecret = secrets.get(client.clientId);
-        return clientSecret ? [accountFrontchannelURL({
+        return clientSecret && client.postLogoutRedirectUri ? [accountFrontchannelURL({
             url: client.postLogoutRedirectUri, issuer: accountOrigin(),
             audience: client.clientId, sid: session.session.id, clientSecret,
         })] : [];
