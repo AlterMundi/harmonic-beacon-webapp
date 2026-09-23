@@ -124,12 +124,11 @@ describe('distributed LiveKit capacity workflow contract', () => {
             expect(source).toContain('path: ${{ runner.temp }}/livekit-load-cli/lk');
             expect(source).toContain(`key: ${exactKey}`);
             expect(source).not.toContain('restore-keys:');
-            expect(source).toMatch(
-                /uses: actions\/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff\n\s+if: steps\.livekit-cli-cache\.outputs\.cache-hit != 'true'/,
-            );
-            expect(source).toMatch(
-                /name: Build verified LiveKit load tester(?: once)?\n\s+if: steps\.livekit-cli-cache\.outputs\.cache-hit != 'true'/,
-            );
+            const condition = source === e2eWorkflow
+                ? "steps.load-scope.outputs.required == 'true' && steps.livekit-cli-cache.outputs.cache-hit != 'true'"
+                : "steps.livekit-cli-cache.outputs.cache-hit != 'true'";
+            expect(source.match(/uses: actions\/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff\n\s+if: ([^\n]+)/)?.[1]).toBe(condition);
+            expect(source.match(/name: Build verified LiveKit load tester(?: once)?\n\s+if: ([^\n]+)/)?.[1]).toBe(condition);
             expect(source).toContain('test -x "$RUNNER_TEMP/livekit-load-cli/lk"');
             expect(source).toContain("'lk version 2.16.3-hb-vp8.1'");
         }
