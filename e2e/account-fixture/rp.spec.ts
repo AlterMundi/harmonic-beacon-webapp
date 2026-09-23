@@ -6,6 +6,40 @@ import { FIXTURE_PASSWORD } from './protocol';
 import { SESSION_ES } from '../fixtures/test-data';
 import { withSessionStatus, withReconciledPublicationGrant } from '../fixtures/db';
 
+test('Account RP observes landing and waiting room with an existing authenticated cookie', async ({ page }) => {
+    requireAccountFixture();
+    await authorizeViaAccountFixture(page, 'ATTENDEE');
+    const original = await accountSessionRow(page);
+    for (const [path, surface] of [['/', 'landing'], [`/session/${SESSION_ES.id}`, 'session']]) {
+        await withSessionStatus(process.env.E2E_DATABASE_URL!, SESSION_ES.id, 'SCHEDULED', async () => {
+            const observation = page.waitForResponse(r =>
+                new URL(r.url()).pathname === '/api/cohort-visits' &&
+                r.request().postDataJSON()?.surface === surface);
+            await page.goto(path);
+            const response = await observation;
+            expect(response.status()).toBe(202);
+            expect(response.headers()['cache-control']).toContain('no-store');
+            const body = await response.json();
+            expect(body.accepted).toBe(true);
+            expect(typeof body.observed).toBe('boolean');
+            expect((await accountSessionRow(page)).id).toBe(original.id);
+            if (body.observed) {
+                const db = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+                await db.connect();
+                try {
+                    const rows = await db.query(`SELECT metadata FROM audit_logs
+                        WHERE action='pmp_cohort_authenticated_visit_v2'
+                        AND metadata->>'issuer'=$1 AND metadata->>'subject'=$2
+                        AND metadata->>'surface'=$3 AND created_at >= $4`,
+                    [process.env.E2E_ACCOUNT_ISSUER, original.account_subject, surface, '2026-09-23T21:00:00Z']);
+                    expect(rows.rows.length).toBeGreaterThan(0);
+                    expect(Object.keys(rows.rows[0].metadata).sort()).toEqual(['issuer', 'subject', 'surface']);
+                } finally { await db.end(); }
+            }
+        });
+    }
+});
+
 async function currentAccountSession(page: Parameters<typeof authorizeViaAccountFixture>[0], db: pg.Client) {
     const token = (await page.context().cookies()).find(cookie => cookie.name === 'hb_session')?.value;
     expect(token).toBeTruthy();
