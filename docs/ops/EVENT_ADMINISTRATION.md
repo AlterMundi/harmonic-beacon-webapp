@@ -34,6 +34,13 @@ blocked after tickets are issued. Mutations produce audit entries without
 participant content. API writes require same-origin requests and a current
 staff principal; data responses are private/no-store.
 
+The owner-authorized initial OPERATOR → FACILITATOR_OP promotion uses
+`scripts/live-production/promote-event-manager.ts`: root-only fixed private
+request, exact existing staff ID/binding/subject, dry-run by default and explicit
+`--apply`. It rejects disabled or mismatched bindings, preserves identity, locks
+the row, records an audit entry and is idempotent. It creates no Account and
+does not grant roles by a matching display name or email.
+
 ## Acceptance
 
 Focused tests cover role denial, input validation, duplicate creation, stale
