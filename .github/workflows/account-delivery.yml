@@ -60,34 +60,6 @@ env:
   HB_GITHUB_REF: ${{ github.ref }}
 
 jobs:
-  account-regression:
-    name: Account OIDC regression
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_PASSWORD: account_synthetic_test
-          POSTGRES_DB: account_synthetic_test
-        ports: ["55434:5432"]
-        options: >-
-          --health-cmd "pg_isready -U postgres -d account_synthetic_test"
-          --health-interval 5s --health-timeout 5s --health-retries 12
-    env:
-      DATABASE_URL: postgresql://postgres:account_synthetic_test@localhost:55434/account_synthetic_test
-      LISTENER_TEST_DATABASE_URL: postgresql://postgres:account_synthetic_test@localhost:55434/account_synthetic_test
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.sha || github.sha }}
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        with:
-          node-version: '22.22'
-          cache: npm
-      - run: npm ci
-      - run: npx prisma migrate deploy
-      - run: npx vitest run src/lib/account src/app/api/account --maxWorkers=1 --no-file-parallelism
-
   validate-contract:
     name: Account adapter validation
     runs-on: ubuntu-latest
@@ -122,6 +94,35 @@ jobs:
           node ops/beacon-account/delivery/validate-receipt.mjs \
             ops/beacon-account/delivery/receipt.synthetic.json
           python3 -m json.tool ops/beacon-account/delivery/receipt.schema.json >/dev/null
+
+  account-regression:
+    name: Account OIDC regression
+    needs: validate-contract
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: account_synthetic_test
+          POSTGRES_DB: account_synthetic_test
+        ports: ["55434:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d account_synthetic_test"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      DATABASE_URL: postgresql://postgres:account_synthetic_test@localhost:55434/account_synthetic_test
+      LISTENER_TEST_DATABASE_URL: postgresql://postgres:account_synthetic_test@localhost:55434/account_synthetic_test
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.sha || github.sha }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22.22'
+          cache: npm
+      - run: npm ci
+      - run: npx prisma migrate deploy
+      - run: npx vitest run src/lib/account src/app/api/account --maxWorkers=1 --no-file-parallelism
 
   staging-delivery:
     if: github.event_name == 'workflow_dispatch' && inputs.target == 'staging'
