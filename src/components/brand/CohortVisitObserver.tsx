@@ -17,11 +17,12 @@ export function CohortVisitObserver() {
             if (stopped || busy || document.visibilityState !== 'visible') return;
             busy = true;
             try {
-                await fetch('/api/cohort-visits', {
+                const response = await fetch('/api/cohort-visits', {
                     method: 'POST', credentials: 'same-origin', cache: 'no-store',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ surface }), signal: controller.signal,
                 });
+                await response.arrayBuffer();
             } catch { /* Best effort; never interrupt entry/audio/navigation. */ }
             finally { busy = false; }
         };

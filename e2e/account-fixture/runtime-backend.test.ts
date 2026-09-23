@@ -22,6 +22,7 @@ test('clean runtime env carries CI and capped heap, rejects secrets and validate
         assert.equal((await backend.runtimeEnv({ ...source, E2E_INCLUDE_FIREFOX: 'true' }, dir)).E2E_INCLUDE_FIREFOX, undefined);
         assert.equal(env.NEXT_PUBLIC_E2E_CONTINUITY_OBSERVER, '1');
         assert.equal(env.NODE_OPTIONS, '--max-old-space-size=2048');
+        assert.equal(env.TZ, 'UTC');
         assert.equal(env.PULSE_SERVER, `unix:${socket}`);
         assert.equal(env.DATABASE_URL, undefined); assert.equal(env.AWS_SECRET_ACCESS_KEY, undefined); assert.equal(env.UNRELATED_INHERITED_VARIABLE, undefined);
         assert.equal((await backend.runtimeEnv({ ...source, NEXT_PUBLIC_E2E_CONTINUITY_OBSERVER: 'true' }, dir)).NEXT_PUBLIC_E2E_CONTINUITY_OBSERVER, undefined);

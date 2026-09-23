@@ -8,7 +8,7 @@ describe('visible authenticated visit observer', () => {
     beforeEach(() => {
         vi.useFakeTimers(); path.value = '/';
         Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
-        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ status: 202 }));
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ status: 202, arrayBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(0)) }));
     });
     afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
     it('observes mount and heartbeat without relying on a new login', async () => {
