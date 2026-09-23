@@ -114,6 +114,7 @@ describe('landing page', () => {
             expect.objectContaining({
                 where: {
                     isTest: false,
+                    isPublished: true,
                     endedAt: null,
                     OR: [
                         {
@@ -131,7 +132,7 @@ describe('landing page', () => {
         // No paid-mode or attendee-cap columns leak into the public page.
         const select = findMany.mock.calls[0][0].select;
         expect(Object.keys(select).sort()).toEqual([
-            'description', 'id', 'language', 'publicAccess', 'scheduledAt', 'title',
+            'checkoutUrl', 'description', 'id', 'language', 'publicAccess', 'scheduledAt', 'title',
         ]);
     });
 
@@ -217,6 +218,19 @@ describe('landing page', () => {
         expect(screen.getAllByText(/USD \$50 Norte Global.*USD \$20 Sur Global/)).toHaveLength(2);
     });
 
+    it('shows custom paid event details without inventing a legacy ticket price', async () => {
+        mountDb(vi.fn().mockResolvedValue([{
+            ...SATURDAY, title: 'Nuevo encuentro', description: 'Descripción propia',
+            checkoutUrl: 'https://tickets.harmonicbeacon.com/events/new',
+        }]));
+        await renderPage();
+        expect(screen.getByRole('heading', { name: 'Nuevo encuentro' })).toBeInTheDocument();
+        expect(screen.getByText('Descripción propia')).toBeInTheDocument();
+        expect(screen.getByText('Consultar precio')).toBeInTheDocument();
+        expect(screen.queryByText(/US.*\$20/)).toBeNull();
+        expect(screen.getByRole('link', { name: /Comprar entrada/ })).toHaveAttribute('href', 'https://tickets.harmonicbeacon.com/events/new');
+    });
+
     it('presents a free public event with the required Account and name-confirmation step', async () => {
         mountDb(vi.fn().mockResolvedValue([{
             ...SATURDAY,
@@ -264,7 +278,8 @@ describe('landing page', () => {
         await renderPage();
 
         expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Próximos encuentros.');
-        expect(screen.getByText(/Cuatro sábados para participar desde cualquier lugar/)).toBeInTheDocument();
+        expect(screen.getByText(/Encuentros gratuitos y sincrónicos en castellano/)).toBeInTheDocument();
+        expect(screen.getByRole('heading', { level: 2, name: 'PRÓXIMOS ENCUENTROS EN VIVO' })).toBeInTheDocument();
         expect(screen.getByRole('link', { name: /Conocer la Proyección del Mito/ })).toHaveAttribute(
             'href',
             'https://harmonicbeacon.com/proyeccion-armonica-del-mito/',
@@ -319,7 +334,8 @@ describe('landing page', () => {
         await renderPage();
 
         expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Upcoming gatherings.');
-        expect(screen.getByText(/Four Saturdays to join from anywhere/)).toBeInTheDocument();
+        expect(screen.getByText(/Free live gatherings in Spanish/)).toBeInTheDocument();
+        expect(screen.getByRole('heading', { level: 2, name: 'UPCOMING LIVE GATHERINGS' })).toBeInTheDocument();
         expect(screen.getByText('English')).toBeInTheDocument();
         expect(screen.getByText('Spanish')).toBeInTheDocument();
         expect(screen.getByLabelText('Show times for')).toHaveValue('America/Argentina/Buenos_Aires');

@@ -22,6 +22,7 @@ test('clean runtime env carries CI and capped heap, rejects secrets and validate
         assert.equal((await backend.runtimeEnv({ ...source, E2E_INCLUDE_FIREFOX: 'true' }, dir)).E2E_INCLUDE_FIREFOX, undefined);
         assert.equal(env.NEXT_PUBLIC_E2E_CONTINUITY_OBSERVER, '1');
         assert.equal(env.NODE_OPTIONS, '--max-old-space-size=2048');
+        assert.equal(env.TZ, 'UTC');
         assert.equal(env.PULSE_SERVER, `unix:${socket}`);
         assert.equal(env.DATABASE_URL, undefined); assert.equal(env.AWS_SECRET_ACCESS_KEY, undefined); assert.equal(env.UNRELATED_INHERITED_VARIABLE, undefined);
         assert.equal((await backend.runtimeEnv({ ...source, NEXT_PUBLIC_E2E_CONTINUITY_OBSERVER: 'true' }, dir)).NEXT_PUBLIC_E2E_CONTINUITY_OBSERVER, undefined);
@@ -194,6 +195,7 @@ for (const includeFirefox of ['0', '1']) test(`Account collection preserves exac
     } };
     walk(report.suites);
     const common = [
+        'Account RP observes landing and waiting room with an existing authenticated cookie',
         ...['ATTENDEE', 'OPERATOR', 'FACILITATOR'].map(role => `Account RP ${role}: real callback, entitlement, stale identity revalidation and fail-closed binding`),
         'Account RP rejects a correctly authenticated but unbound staff identity',
         'Account RP incomplete profile gates new entry, preserves active presence, and retains participation through same-account OIDC',
@@ -212,7 +214,7 @@ for (const includeFirefox of ['0', '1']) test(`Account collection preserves exac
         if (['chromium-account', 'firefox-account'].includes(project)) titles.push('live continuity without capture: Staff open drawer survives a cancelled browser reload @desktop-native-staff');
         return titles.map(title => `${project}: ${title}`);
     });
-    assert.equal(expected.length, includeFirefox === '1' ? 74 : 55);
+    assert.equal(expected.length, includeFirefox === '1' ? 78 : 58);
     assert.deepEqual(actual.sort(), expected.sort());
 });
 

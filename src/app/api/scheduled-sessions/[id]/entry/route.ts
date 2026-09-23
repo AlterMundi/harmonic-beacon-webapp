@@ -42,6 +42,7 @@ async function resolveEntry(request: NextRequest, id: string) {
             status: true,
             facilitatorId: true,
             publicAccess: true,
+            isPublished: true,
         },
     });
     if (!session) {
@@ -57,7 +58,7 @@ async function resolveEntry(request: NextRequest, id: string) {
         return { ok: false as const, error: response({ error: 'profile_required' }, 428) };
     }
 
-    if (!principal && account && cookieValue && session.publicAccess) {
+    if (!principal && account && cookieValue && session.publicAccess && session.isPublished) {
         const attached = await attachPublicSessionAccess(cookieValue, session, account);
         if (attached) principal = await principalFromToken(cookieValue);
     }

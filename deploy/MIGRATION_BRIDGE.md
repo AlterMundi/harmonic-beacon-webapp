@@ -130,7 +130,10 @@ sudo -u beacon-runner sudo -n /usr/local/sbin/hb-migration-bridge apply
 Failure cleanup and explicit `recover` accept only the permit-bound candidate
 or prior app/worker endpoints. Once a production migration may have started,
 the helper rereads real migration state and runs the durable-grant and scene
-capacity rollback barriers when any permitted migration applied. It never
+capacity and event-editor rollback barriers when any permitted migration applied.
+The event-editor barrier refuses legacy recovery after editor mutations or
+publication/custom-checkout state that old binaries cannot interpret; retain
+the fence and roll forward to an editor-aware candidate. It never
 restores the Live database from the dump. It restores both exact prior binaries
 against the forward schema and retains the fence if that cannot be proved.
 Permit expiry does not disable bound rollback, recovery, or status.
@@ -145,3 +148,17 @@ capacity, PostgreSQL contains exactly the permitted pending migrations, the
 v1/v2 shared lock is a secure root-owned regular file, no bridge command is in
 flight, and both prior images remain available. Never overwrite either bridge's
 state or use the backup as an automatic production rollback.
+
+## Subsequent delivery
+
+After acceptance, root can run `hb-migration-bridge retire`. It is deliberately
+absent from runner sudoers. This accepts only an applied, unfenced transaction
+whose worker still matches and whose app is either the same candidate or its
+receipt-bound app-only successor. Both must be healthy. It preserves permit,
+activation, rehearsal receipt, helper and state under the original transaction's
+`completed/` directory before vacating the state slot. Source, image and backup
+remain intact. No service or database is changed. A partial archive requires
+inspection, not a blind retry. Install a new exact permit only after completion;
+the next delivery binds the actual current app and worker as its recovery pair.
+Retirement ends the old slot's executable rollback authority; archived evidence
+does not imply that an older binary remains compatible with later migrations.

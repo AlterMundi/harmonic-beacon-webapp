@@ -5,14 +5,14 @@ import { prisma } from '@/lib/db';
 import {
     accountIdentityFromToken,
 } from '@/lib/principal';
-import { isPublicCycleSession } from '@/lib/public-cycle';
+import { UUID } from '@/lib/event-editor';
 import { attachPublicSessionAccess } from '@/lib/public-session-access';
 import { SESSION_COOKIE_NAME } from '@/lib/session-auth';
 
 export const dynamic = 'force-dynamic';
 
 /**
- * Account-bound admission for the four reviewed public-cycle rooms. Public
+ * Account-bound admission for explicitly reviewed complimentary rooms. Public
  * means free and listed; it does not mean anonymous. Every attendee crosses
  * the same durable Account boundary before receiving an event entitlement,
  * confirming their room alias, materializing presence or becoming eligible
@@ -23,8 +23,15 @@ export async function GET(
     { params }: { params: Promise<{ id: string }> },
 ) {
     const { id } = await params;
-    if (!isPublicCycleSession(id)) {
+    if (!UUID.test(id)) {
         return NextResponse.json({ error: 'Session not found' }, { status: 404 });
+    }
+    const session = await prisma.scheduledSession.findUnique({
+        where: { id },
+        select: { id:true, scheduledAt:true, status:true, isTest:true, publicAccess:true, isPublished:true },
+    });
+    if (!session || session.isTest || !session.publicAccess || !session.isPublished || !['SCHEDULED','LIVE'].includes(session.status)) {
+        return NextResponse.json({ error:'Session unavailable' }, { status:404 });
     }
     if (!beaconAccountEnabled()) {
         return NextResponse.json(
@@ -61,16 +68,6 @@ export async function GET(
     }
 
     const now = new Date();
-    const session = await prisma.scheduledSession.findUnique({
-        where: { id },
-        select: {
-            id: true,
-            scheduledAt: true,
-            status: true,
-            isTest: true,
-            publicAccess: true,
-        },
-    });
     if (
         !session ||
         session.isTest ||
