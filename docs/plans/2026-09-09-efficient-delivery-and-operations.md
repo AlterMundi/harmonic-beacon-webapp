@@ -1,5 +1,7 @@
 # Harmonic Beacon: entrega eficiente y operación transferible
 
+> **Historical proposal, reviewed 2026-09-27.** Current operations follow [OPERATING_CONTRACT.md](../ops/OPERATING_CONTRACT.md) and [OPERATOR_LOOP.md](../ops/OPERATOR_LOOP.md). Delivery and remaining work are recorded in [#590](https://github.com/AlterMundi/harmonic-beacon-webapp/issues/590#issuecomment-5853431560). Several recommendations below have shipped; old hosts, SHAs, permissions, role assignments and suggested commands are not current instructions. Continue the existing queue rather than restarting lots A–F.
+
 Fecha: 2026-09-09. Autor: Codex, a pedido de Nicolás. Estado: **propuesta de implementación, no cambio de política ya aplicado**.
 
 Este documento permite continuar en reasoning medium sin reconstruir la investigación. La evidencia fechada no reemplaza consultar el estado al ejecutar. En este turno sólo se hicieron lecturas, actualización local de referencias Git y escritura de este plan; no se disparó CI, merge, deploy, restart, migración ni cambio de configuración productiva.

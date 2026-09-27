@@ -105,6 +105,8 @@ jobs:
             impact-plan.json >> "$GITHUB_OUTPUT"
           jq -r '(.files | index(".github/CODEOWNERS")) != null | "ownership_changed=\(.)"' \
             impact-plan.json >> "$GITHUB_OUTPUT"
+          jq -r '(.files | length > 0 and all(.[]; . == "README.md" or test("^(docs|deploy)/.+\\.md$"))) | "documentation_only=\(.)"' \
+            impact-plan.json >> "$GITHUB_OUTPUT"
           for pair in \
             lint_and_build:lint-and-build test:test analytics:analytics tapestry:tapestry playlist:playlist \
             commerce_contract:commerce-contract e2e:e2e frozen_audio_paths:frozen-audio-paths \
@@ -137,16 +139,17 @@ jobs:
           jq -e '.errors | type == "array" and length == 0' codeowners-errors.json >/dev/null
       - name: Verify generated agent skill distributions
         run: python3 .agents/skills/scripts/render_distributions.py --check
-      - if: steps.classify.outputs.governance_only != 'true'
+      - if: steps.classify.outputs.governance_only != 'true' && steps.classify.outputs.documentation_only != 'true' && steps.equivalence.outputs.reuse_run == ''
         run: npm ci
       - name: Verify shared operations tooling
-        if: steps.classify.outputs.governance_only != 'true'
+        if: steps.classify.outputs.governance_only != 'true' && steps.classify.outputs.documentation_only != 'true' && steps.equivalence.outputs.reuse_run == ''
         run: npm run test:ops-tooling
-      - name: Verify focused ownership, selection, workflow and evaluator contracts
-        if: steps.classify.outputs.governance_only == 'true'
+      - name: Verify focused selection and evidence contracts
+        if: steps.classify.outputs.governance_only == 'true' || steps.classify.outputs.documentation_only == 'true' || steps.equivalence.outputs.reuse_run != ''
         run: >-
           node --test
           scripts/ci/__tests__/validate-codeowners.test.mjs
+          scripts/ci/__tests__/reuse-documentation-evidence.test.mjs
           scripts/ci/__tests__/impact-recovery.test.mjs
           scripts/ops/__tests__/change-impact.test.mjs
           scripts/ops/__tests__/delivery-efficiency.test.mjs
