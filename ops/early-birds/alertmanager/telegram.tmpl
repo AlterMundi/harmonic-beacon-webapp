@@ -1,6 +1,7 @@
 {{ define "telegram.default.message" -}}
 [Harmonic Beacon {{ .Status | toUpper }}]
-{{ range .Alerts }}{{ .Labels.alertname }} — {{ .Annotations.summary }}
+{{ range .Alerts }}{{ .Labels.alertname }} — {{ if eq .Status "resolved" }}La alerta dejó de estar activa.
+Último diagnóstico registrado (no es una medición actual): {{ end }}{{ .Annotations.summary }}
 Servicio: {{ .Labels.service }} | {{ .Labels.environment }}{{ if .Labels.host }} | {{ .Labels.host }}{{ end }}
 Runbook: {{ .Annotations.runbook }}
 {{ end }}{{ end }}

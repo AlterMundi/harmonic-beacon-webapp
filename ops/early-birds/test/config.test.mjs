@@ -150,7 +150,7 @@ test('routes bounded reminders and keeps critical alerts immediate', async () =>
 
 test('disk alerts report their measured free-space percentage', async () => {
   const alerts = await read('prometheus/alerts.yml');
-  assert.match(alerts, /EarlyBirdsDiskPrepare[\s\S]*\{\{ \$value \| humanizePercentage \}\} free \(warning below 30%\)/);
+  assert.match(alerts, /EarlyBirdsDiskPrepare[\s\S]*\{\{ \$value \| humanizePercentage \}\} free \(warning below 20%\)/);
   assert.match(alerts, /EarlyBirdsDiskCritical[\s\S]*\{\{ \$value \| humanizePercentage \}\} free \(critical below 15%\)/);
 });
 

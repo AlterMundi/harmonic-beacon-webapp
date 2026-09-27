@@ -138,10 +138,10 @@ groups:
         labels: { severity: critical, service: host, environment: production, host: mona }
         annotations: { summary: "Host memory has exceeded the 85% critical threshold", runbook: "early-birds-capacity" }
       - alert: EarlyBirdsDiskPrepare
-        expr: node_filesystem_avail_bytes{mountpoint="/",fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{mountpoint="/",fstype!~"tmpfs|overlay"} < 0.30
+        expr: node_filesystem_avail_bytes{mountpoint="/",fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{mountpoint="/",fstype!~"tmpfs|overlay"} < 0.20
         for: 15m
         labels: { severity: warning, service: host, environment: production, host: mona }
-        annotations: { summary: "Host root disk has {{ $value | humanizePercentage }} free (warning below 30%)", runbook: "early-birds-capacity" }
+        annotations: { summary: "Host root disk has {{ $value | humanizePercentage }} free (warning below 20%)", runbook: "early-birds-capacity" }
       - alert: EarlyBirdsDiskCritical
         expr: node_filesystem_avail_bytes{mountpoint="/",fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{mountpoint="/",fstype!~"tmpfs|overlay"} < 0.15
         for: 2m
