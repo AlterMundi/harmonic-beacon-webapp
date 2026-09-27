@@ -39,7 +39,7 @@ try {
   await room.connect('wss://live-staging.harmonicbeacon.com/rtc',token,{autoSubscribe:true});
   await new Promise(resolve=>setTimeout(resolve,10000));
   const bot=room.remoteParticipants.get('playlist-bot');
-  metadata=JSON.parse(bot?.metadata??'{}');
+  metadata=JSON.parse(bot?.metadata?.trim() || '{}');
   const telemetryFresh=metadata.schema==='hb.bed-audio.v1' && Date.now()-metadata.reportedAt<5000;
   console.log(JSON.stringify({room:'staging-beacon',publisher:legacy?'legacy-without-audio-telemetry':'candidate',frames,audibleFrames,receivedMs,audibleMs,telemetryFresh,sourceAudible:metadata.sourceAudible,bedFrameAgeMs:Date.now()-metadata.bedAudibleAt}));
   if(receivedMs<9000 || audibleMs/receivedMs<0.98 || (!legacy && (!telemetryFresh || metadata.sourceAudible!==false))) process.exitCode=1;
