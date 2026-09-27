@@ -3,10 +3,10 @@ name: Delivery gate dispatcher
 on:
   pull_request_target:
     branches: [main, release]
-    types: [opened, synchronize, reopened, edited, ready_for_review, labeled, unlabeled, closed]
+    types: [opened, synchronize, reopened, edited, labeled, unlabeled]
   workflow_run:
     workflows: [CI, E2E quality gates, Audio boundary]
-    types: [requested, in_progress, completed]
+    types: [in_progress, completed]
   schedule:
     - cron: '17,47 * * * *'
   workflow_dispatch:
@@ -32,6 +32,11 @@ concurrency:
 jobs:
   dispatch:
     name: Dispatch exact-base delivery authority
+    # Text edits do not change admission. Reruns must invalidate old success;
+    # first attempts are already covered by the PR identity/label event.
+    if: >-
+      (github.event_name != 'pull_request_target' || github.event.action != 'edited' || github.event.changes.base != null) &&
+      (github.event_name != 'workflow_run' || github.event.action == 'completed' || github.event.workflow_run.run_attempt > 1)
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -81,6 +86,24 @@ jobs:
             [[ "$base_sha" =~ ^[0-9a-f]{40}$ ]] || return 1
             [[ "$head_sha" =~ ^[0-9a-f]{40}$ ]] || return 1
             if [ "$EVENT_NAME" = workflow_run ] && [ "$head_sha" != "$WORKFLOW_HEAD" ]; then return 1; fi
+
+            # A completion while another constituent is still running cannot
+            # establish success. Its later completion will evaluate the head.
+            # Never defer rerun-start invalidation or PR identity changes.
+            if [ "$EVENT_NAME" = workflow_run ] && [ "$EVENT_ACTION" = completed ]; then
+              local workflows active_count
+              workflows="$(api --paginate --slurp \
+                "repos/$REPOSITORY/actions/runs?head_sha=$head_sha&event=pull_request&per_page=100")" || return 1
+              active_count="$(jq '[.[]?.workflow_runs[]? | select(
+                (.path == ".github/workflows/ci.yml"
+                  or .path == ".github/workflows/e2e.yml"
+                  or .path == ".github/workflows/audio-boundary.yml")
+                and .status != "completed")] | length' <<<"$workflows")" || return 1
+              if [ "$active_count" -gt 0 ]; then
+                echo "constituent checks still active; evaluation follows their completion"
+                return 0
+              fi
+            fi
 
             api --method POST \
               "repos/$REPOSITORY/actions/workflows/delivery-gate.yml/dispatches" \

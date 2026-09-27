@@ -869,12 +869,11 @@ test('closed PRs and wrong target branches fail closed', () => {
   assertState(evaluateRequiredChecks(input({ currentBaseRef: 'early-birds' })), 'failure', 'unexpected-base');
 });
 
-test('description edits do not restart CI; retargeting still invalidates authority', () => {
-  const ci = readFileSync(resolve(ROOT, '.github/workflows/ci.yml'), 'utf8');
-  assert.match(ci, /types: \[opened, synchronize, reopened\]/);
-  for (const path of ['audio-boundary.yml']) {
+test('qualification refreshes on synchronize or reopen, not description edits', () => {
+  for (const path of ['ci.yml', 'audio-boundary.yml']) {
     const workflow = readFileSync(resolve(ROOT, '.github', 'workflows', path), 'utf8');
-    assert.match(workflow, /pull_request:\n(?:.|\n)*?types: \[[^\]]*edited[^\]]*\]/, path);
+    assert.match(workflow, /pull_request:\n(?:.|\n)*?types: \[[^\]]*synchronize, reopened[^\]]*\]/, path);
+    assert.doesNotMatch(workflow, /types: \[[^\]]*edited[^\]]*\]/, path);
   }
   const e2eWorkflow = readFileSync(resolve(ROOT, '.github/workflows/e2e.yml'), 'utf8');
   assert.match(e2eWorkflow, /^ {2}workflow_call:/m);
@@ -996,7 +995,7 @@ test('rerun attempt two posts pending over attempt-one aggregate success at reru
   const workflowRunBlock = dispatcher.match(/^ {2}workflow_run:\n((?: {4}.*\n)+)/m)?.[1];
   const subscribed = workflowRunBlock?.match(/^ {4}types: \[([^\]]+)\]/m)?.[1]
     .split(',').map((action) => action.trim());
-  assert.deepEqual(subscribed, ['requested', 'in_progress', 'completed']);
+  assert.deepEqual(subscribed, ['in_progress', 'completed']);
 
   const lifecycle = [
     { action: 'in_progress', run_attempt: 2 },
