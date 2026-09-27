@@ -157,7 +157,7 @@ describe('Live continuity batch browser qualification', () => {
         expect(step).toBeDefined();
         expect(step).toContain('e2e/tests/audio-activation.spec.ts');
         expect(step).toContain('e2e/tests/continuity-navigation.spec.ts');
-        expect(step).not.toContain('if:');
+        expect(step).toContain("if: inputs.reuse_run == ''\n");
     });
 
     for (const name of [
@@ -167,7 +167,7 @@ describe('Live continuity batch browser qualification', () => {
             const workflow = readFileSync('.github/workflows/e2e.yml', 'utf8');
             const step = workflow.split(`      - name: ${name}\n`)[1]?.split('\n      - ')[0];
             expect(step).toBeDefined();
-            expect(step).not.toContain('if:');
+            expect(step).toContain("if: inputs.reuse_run == ''\n");
         });
     }
 });

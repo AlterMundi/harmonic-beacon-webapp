@@ -5,6 +5,20 @@ PostgreSQL, LiveKit, playlist fallback, tapestry and the durable commerce media
 reconciler. Host Nginx terminates TLS for `live.harmonicbeacon.com` and proxies
 only the public application and LiveKit signaling ports.
 
+## Current owner-operated delivery
+
+The qualified #590 app/tapestry/bot images were delivered and verified on Mona
+through the bounded root procedure in [LIVE_MEDIA_RELEASE.md](LIVE_MEDIA_RELEASE.md).
+It preserves effective production configuration and rollback snapshots. It does
+not require completing OCI activation and does not enable the legacy runner
+path. The owning issue contains the exact runtime receipt.
+
+CI qualifies protected Live PRs once. Ordinary Live/documentation release merges
+do not repeat that suite. Analytics retains a path-filtered release push run
+for its existing build-provenance chain; artifact qualification can also call
+CI explicitly. The disabled legacy deploy
+workflow is manual-only, so routine merges do not emit a guaranteed failure.
+
 ## Immutable OCI candidate and promotion lane
 
 OPS-D adds a fail-closed artifact lane without replacing the existing release path during shadow:

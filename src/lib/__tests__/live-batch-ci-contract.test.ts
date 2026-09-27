@@ -15,7 +15,7 @@ describe('job-local PostgreSQL allocation', () => {
         const services = job.services as { postgres: { ports: number[] } };
         expect(services.postgres.ports).toEqual([5432]);
         expect(job.env?.E2E_DATABASE_URL).toBeUndefined();
-        const step = job.steps[0];
+        const step = job.steps.find(step => step.name === 'Resolve isolated PostgreSQL port')!;
         expect(step.name).toBe('Resolve isolated PostgreSQL port');
         expect(step.env?.FIXTURE_POSTGRES_PORT).toBe('${{ job.services.postgres.ports[5432] }}');
         const root = mkdtempSync('/tmp/hb-ci-port-');
@@ -48,12 +48,12 @@ function assertHelperBrowserInstallOrder(steps: Step[]) {
     expect(chromium?.run).toContain('playwright test');
     expect(chromium?.run).toContain('--retries=0 --workers=1');
     expect(chromium?.run).not.toMatch(/--list|--grep/);
-    expect(chromium?.if).toBeUndefined();
+    expect(chromium?.if).toBe("inputs.reuse_run == ''");
     expect(firefoxInstall?.run).toBe('npx playwright install --with-deps firefox');
     expect(firefoxHelper?.run).toContain("--test-name-pattern='^Firefox automation reload'");
     expect(firefoxHelper?.run).not.toMatch(/--list|--grep/);
-    expect(firefoxHelper?.if).toBe('inputs.include_firefox == true');
-    expect(firefoxInstall?.if).toBe('inputs.include_firefox == true');
+    expect(firefoxHelper?.if).toBe("inputs.reuse_run == '' && (inputs.include_firefox == true)");
+    expect(firefoxInstall?.if).toBe("inputs.reuse_run == '' && (inputs.include_firefox == true)");
     expect(steps.indexOf(chromiumInstall!)).toBeLessThan(steps.indexOf(chromium!));
     expect(steps.indexOf(chromium!)).toBeLessThan(steps.indexOf(firefoxInstall!));
     expect(steps.indexOf(firefoxInstall!)).toBeLessThan(steps.indexOf(firefoxHelper!));
@@ -219,7 +219,7 @@ describe('Isolated Account CI gate', () => {
         }
         expect(config.env.E2E_INCLUDE_FIREFOX).toBe("${{ inputs.include_firefox && '1' || '0' }}");
         for (const step of config.jobs.e2e.steps.filter((step: Step) => step.name?.includes('Firefox'))) {
-            expect(step.if).toBe('inputs.include_firefox == true');
+            expect(step.if).toBe("inputs.reuse_run == '' && (inputs.include_firefox == true)");
         }
         expect(readFileSync('e2e/helpers/continuity-stack.test.ts', 'utf8')).toContain("skip: process.env.E2E_INCLUDE_FIREFOX !== '1'");
     });
@@ -231,9 +231,9 @@ describe('Isolated Account CI gate', () => {
         const commands = job.steps.map((step) => step.run ?? '').join('\n');
         expect(commands).toContain('node --import tsx --test e2e/account-fixture/protocol.test.ts e2e/account-fixture/runtime-backend.test.ts');
         expect(commands).toContain('playwright install --with-deps chromium webkit');
-        expect(job.steps.find(step => step.name === 'Install optional Account Firefox engine')?.if).toBe('inputs.include_firefox == true');
+        expect(job.steps.find(step => step.name === 'Install optional Account Firefox engine')?.if).toBe("inputs.reuse_run == '' && (inputs.include_firefox == true)");
         const gate = job.steps.find((step) => step.run?.includes('node --import tsx e2e/account-fixture/run.ts'));
-        expect(gate?.if).toBeUndefined();
+        expect(gate?.if).toBe("inputs.reuse_run == ''");
         expect(gate?.run).toContain('E2E_ACCOUNT_BACKEND=docker');
         for (const project of ['chromium-account', 'android-chrome-account', 'firefox-account', 'iphone-webkit-account']) {
             expect(gate?.run).toContain(`--project=${project}`);
@@ -258,7 +258,7 @@ describe('Isolated Account CI gate', () => {
         expect(gate?.run).toContain('trap');
         expect(gate?.run).not.toMatch(/sudo pulseaudio|auth-anonymous=1/);
         const artifact = job.steps.find((step) => step.uses === 'actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02');
-        expect(artifact?.if).toBe('always() && github.event.repository.private == true');
+        expect(artifact?.if).toBe("inputs.reuse_run == '' && (always() && github.event.repository.private == true)");
         expect(artifact?.with?.['retention-days']).toBe(3);
         expect(String(artifact?.with?.path).trim().split('\n')).toEqual([
             '${{ env.BEACON_CI_ROOT }}/**/runtime.json',
@@ -285,7 +285,7 @@ describe('Main browser CI execution policy', () => {
         expect(proxy?.run).not.toMatch(/NODE_TLS_REJECT_UNAUTHORIZED|--insecure|-k\b/);
 
         const cleanup = job.steps.find((step) => step.name === 'Stop LiveKit fixtures');
-        expect(cleanup?.if).toBe('always()');
+        expect(cleanup?.if).toBe("inputs.reuse_run == '' && (always())");
         expect(cleanup?.run).toContain('/proc/$LIVEKIT_TLS_PROXY_PID/cmdline');
         expect(cleanup?.run).toContain('docker rm --force e2e-livekit');
 
@@ -330,13 +330,13 @@ describe('Main browser CI execution policy', () => {
         expect(workflow().jobs.account.env?.NEXT_PUBLIC_E2E_CONTINUITY_OBSERVER).toBe('1');
         const contracts = steps.find((step) => step.run?.includes('src/lib/__tests__/live-batch-ci-contract.test.ts'));
         expect(contracts?.run).toContain('src/lib/__tests__/live-batch-browser-contract.test.ts');
-        expect(contracts?.if).toBeUndefined();
+        expect(contracts?.if).toBe("inputs.reuse_run == ''");
         for (const step of steps.filter((entry) => entry.run?.includes('playwright test'))) {
             expect(step.run, step.name).toContain('--retries=0 --workers=1');
             expect(step.run, step.name).not.toMatch(/--list|--grep/);
         }
         const artifacts = steps.find((step) => step.with?.name === 'playwright-report');
-        expect(artifacts?.if).toBe('always() && github.event.repository.private == true');
+        expect(artifacts?.if).toBe("inputs.reuse_run == '' && (always() && github.event.repository.private == true)");
         expect(artifacts?.with?.['retention-days']).toBe(3);
         expect(artifacts?.with?.path).toContain('test-results/helpers/');
     });

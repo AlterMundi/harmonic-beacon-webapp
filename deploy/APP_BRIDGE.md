@@ -108,9 +108,11 @@ sudo -u beacon-runner sudo -n /usr/local/sbin/hb-app-bridge stage-reapply
 networks. It neither starts nor migrates staging PostgreSQL. The exact image ID
 built from the root-owned source is retained for production. Complete the
 candidate's browser, Account, continuity, and rollback acceptance against
-staging before proceeding. Live staging intentionally has no LiveKit service;
-it proves application/identity/readiness and app-image rollback only. It does
-not prove audio continuity.
+staging before proceeding. The original identity-only staging profile has no LiveKit service and proves
+application/identity/readiness only. Current media staging is documented in
+[LIVE_STAGING.md](LIVE_STAGING.md); do not run this identity-only `stage` operation
+over that active profile. The #590 app/media delivery and recovery procedure is
+[LIVE_MEDIA_RELEASE.md](LIVE_MEDIA_RELEASE.md).
 
 After the successful stage rollback and reapply plus external acceptance, the
 operator records a compact, non-secret rehearsal receipt at

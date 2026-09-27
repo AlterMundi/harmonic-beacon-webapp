@@ -82,3 +82,22 @@ test('legacy release fails closed during the security hold', () => {
   assert.match(deployWorkflow, /exit 1/u);
   assert.doesNotMatch(deployWorkflow, /sudo|self-hosted/u);
 });
+
+// Protected PR qualification is authoritative; merging it must not duplicate
+// all browser/runtime checks or launch the intentionally disabled deploy lane.
+test('release merges do not repeat PR CI or auto-run disabled deployment', () => {
+  assert.match(ciWorkflow, /push:\n    branches: \[release\]\n    paths:/);
+  const push = ciWorkflow.split('  push:')[1].split('  workflow_call:')[0];
+  assert.match(push, /services\/analytics\/\*\*/);
+  assert.match(push, /'!\*\*\/\*\.md'/);
+  assert.doesNotMatch(push, /'src\/|\.github\/workflows\/\*'/);
+  assert.match(ciWorkflow, /^ {2}pull_request:/m);
+  assert.match(ciWorkflow, /^ {2}workflow_call:/m);
+  assert.doesNotMatch(deployWorkflow, /^ {2}push:/m);
+  assert.match(deployWorkflow, /^ {2}workflow_dispatch:/m);
+});
+
+test('the reusable CI caller permits the read-only evidence API required by CI', () => {
+  assert.match(ciWorkflow, /permissions:\n  contents: read\n  actions: read/);
+  assert.match(candidateWorkflow, /permissions:\n      contents: read\n      actions: read\n    uses: \.\/\.github\/workflows\/ci\.yml/);
+});

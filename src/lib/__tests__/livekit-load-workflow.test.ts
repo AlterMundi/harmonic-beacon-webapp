@@ -125,7 +125,7 @@ describe('distributed LiveKit capacity workflow contract', () => {
             expect(source).toContain(`key: ${exactKey}`);
             expect(source).not.toContain('restore-keys:');
             const condition = source === e2eWorkflow
-                ? "steps.load-scope.outputs.required == 'true' && steps.livekit-cli-cache.outputs.cache-hit != 'true'"
+                ? "inputs.reuse_run == '' && (steps.load-scope.outputs.required == 'true' && steps.livekit-cli-cache.outputs.cache-hit != 'true')"
                 : "steps.livekit-cli-cache.outputs.cache-hit != 'true'";
             expect(source.match(/uses: actions\/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff\n\s+if: ([^\n]+)/)?.[1]).toBe(condition);
             expect(source.match(/name: Build verified LiveKit load tester(?: once)?\n\s+if: ([^\n]+)/)?.[1]).toBe(condition);

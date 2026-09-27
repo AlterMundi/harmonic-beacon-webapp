@@ -17,6 +17,10 @@ name: E2E quality gates
 on:
   workflow_call:
     inputs:
+      reuse_run:
+        description: Same-PR successful run with identical non-documentation bytes, verified by CI impact
+        type: string
+        default: ""
       include_firefox:
         type: boolean
         default: false
@@ -32,6 +36,7 @@ env:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: e2e-${{ github.workflow }}-${{ github.head_ref || github.run_id }}
@@ -63,7 +68,13 @@ jobs:
       E2E_LIVEKIT_API_SECRET: secret
       NEXT_PUBLIC_E2E_CONTINUITY_OBSERVER: '1'
     steps:
+      - name: Reuse unchanged-source qualification
+        if: inputs.reuse_run != ''
+        env:
+          QUALIFIED_RUN: ${{ inputs.reuse_run }}
+        run: echo "Reusing unchanged-source qualification from Actions run $QUALIFIED_RUN; see caller ci-equivalence.json."
       - name: Resolve isolated PostgreSQL port
+        if: inputs.reuse_run == ''
         env:
           FIXTURE_POSTGRES_PORT: ${{ job.services.postgres.ports[5432] }}
         run: |
@@ -73,6 +84,7 @@ jobs:
           printf 'E2E_DATABASE_URL=postgresql://postgres:e2e@127.0.0.1:%s/beacon_test\n' \
             "$FIXTURE_POSTGRES_PORT" >> "$GITHUB_ENV"
       - name: Prepare private short socket root
+        if: inputs.reuse_run == ''
         # Never nest socket-bearing TMPDIR under RUNNER_TEMP (unbounded UTF-8).
         # run.ts nests navigation-account-XXXXXX and makes that child TMPDIR.
         # Keep the canonical root short even after browser profile nesting.
@@ -88,10 +100,12 @@ jobs:
           printf 'BEACON_CI_ROOT=%s\nTMPDIR=%s\nXDG_RUNTIME_DIR=%s/xdg\n' "$root" "$root" "$root" >> "$GITHUB_ENV"
 
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        if: inputs.reuse_run == ''
         with:
           fetch-depth: 0
 
       - name: Select LiveKit load coverage from the complete delta
+        if: inputs.reuse_run == ''
         id: load-scope
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
@@ -99,38 +113,44 @@ jobs:
         run: node scripts/ci/livekit-load-scope.mjs >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        if: inputs.reuse_run == ''
         with:
           node-version: '22.22'
           cache: 'npm'
 
       - name: Restore verified LiveKit load tester cache
         id: livekit-cli-cache
-        if: steps.load-scope.outputs.required == 'true'
+        if: inputs.reuse_run == '' && (steps.load-scope.outputs.required == 'true')
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: ${{ runner.temp }}/livekit-load-cli/lk
           key: livekit-load-cli-v1-${{ runner.os }}-${{ runner.arch }}-go-1.25.8-${{ hashFiles('scripts/install-livekit-load-cli.sh', 'scripts/patches/livekit-cli-v2.16.3-vp8-depacketizer.patch') }}
 
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
-        if: steps.load-scope.outputs.required == 'true' && steps.livekit-cli-cache.outputs.cache-hit != 'true'
+        if: inputs.reuse_run == '' && (steps.load-scope.outputs.required == 'true' && steps.livekit-cli-cache.outputs.cache-hit != 'true')
         with:
           go-version: '1.25.8'
           cache: false
 
       - run: npm ci
+        if: inputs.reuse_run == ''
 
       - name: Install Chromium browser
+        if: inputs.reuse_run == ''
         run: npx playwright install --with-deps chromium
 
       - name: Verify executable browser CI selection contracts
+        if: inputs.reuse_run == ''
         run: npx vitest run --no-file-parallelism src/lib/__tests__/live-batch-browser-contract.test.ts src/lib/__tests__/live-batch-ci-contract.test.ts
 
       - name: Run isolated Chromium room-exit helper regressions
+        if: inputs.reuse_run == ''
         run: |
           node --import tsx --test --test-name-pattern='^chromium two identified native RTC sources:' e2e/helpers/continuity-stack.test.ts
           npx playwright test --config e2e/helpers/playwright.config.ts --retries=0 --workers=1
 
       - name: Start LiveKit dev server
+        if: inputs.reuse_run == ''
         run: |
           docker run -d --rm --name e2e-livekit --network host \
             livekit/livekit-server:v1.13.4 --dev --bind 0.0.0.0
@@ -142,6 +162,7 @@ jobs:
           exit 1
 
       - name: Start private TLS signaling proxy
+        if: inputs.reuse_run == ''
         run: |
           set -euo pipefail
           umask 077
@@ -169,11 +190,11 @@ jobs:
           exit 1
 
       - name: Build verified LiveKit load tester
-        if: steps.load-scope.outputs.required == 'true' && steps.livekit-cli-cache.outputs.cache-hit != 'true'
+        if: inputs.reuse_run == '' && (steps.load-scope.outputs.required == 'true' && steps.livekit-cli-cache.outputs.cache-hit != 'true')
         run: scripts/install-livekit-load-cli.sh "$RUNNER_TEMP/livekit-load-cli/lk"
 
       - name: Verify cached or built LiveKit load tester
-        if: steps.load-scope.outputs.required == 'true'
+        if: inputs.reuse_run == '' && (steps.load-scope.outputs.required == 'true')
         run: |
           test -x "$RUNNER_TEMP/livekit-load-cli/lk"
           test "$("$RUNNER_TEMP/livekit-load-cli/lk" --version)" = \
@@ -181,7 +202,7 @@ jobs:
           echo "$RUNNER_TEMP/livekit-load-cli" >> "$GITHUB_PATH"
 
       - name: Run small dual-LiveKit load profile
-        if: steps.load-scope.outputs.required == 'true'
+        if: inputs.reuse_run == '' && (steps.load-scope.outputs.required == 'true')
         run: npm run load:livekit -- --profile ci --run-id "ci-${GITHUB_RUN_ID}"
         env:
           LIVEKIT_URL: ${{ env.E2E_LIVEKIT_URL }}
@@ -189,7 +210,7 @@ jobs:
           LIVEKIT_API_SECRET: ${{ env.E2E_LIVEKIT_API_SECRET }}
 
       - name: Qualify bounded Stage-only 6/9/12 paired audio and video
-        if: steps.load-scope.outputs.required == 'true'
+        if: inputs.reuse_run == '' && (steps.load-scope.outputs.required == 'true')
         run: |
           set -euo pipefail
           for capacity in 6 9 12; do
@@ -208,12 +229,13 @@ jobs:
           LIVEKIT_API_SECRET: ${{ env.E2E_LIVEKIT_API_SECRET }}
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        if: always()
+        if: inputs.reuse_run == '' && (always())
         with:
           name: livekit-load-manifest
           path: artifacts/load-test/
 
       - name: Restore fixture database
+        if: inputs.reuse_run == ''
         run: |
           npm run db:fixture:load
           DATABASE_URL="$E2E_DATABASE_URL" npx prisma migrate deploy
@@ -224,6 +246,7 @@ jobs:
           LIVEKIT_API_SECRET: ${{ env.E2E_LIVEKIT_API_SECRET }}
 
       - name: Verify session contributions contract in PostgreSQL
+        if: inputs.reuse_run == ''
         # Real-database proof of the CHAT-01 guarantees: idempotency unique
         # index, replay/conflict, concurrent-submission race, stable
         # (createdAt, id) order, public anonymity, cross-session isolation,
@@ -236,12 +259,14 @@ jobs:
           CONTRIBUTIONS_INTEGRATION_TEST: '1'
 
       - name: Verify staging staff Account binding contract in PostgreSQL
+        if: inputs.reuse_run == ''
         run: npx vitest run --no-file-parallelism scripts/live-staging/__tests__/bind-staff-account.integration.test.ts
         env:
           DATABASE_URL: ${{ env.E2E_DATABASE_URL }}
           STAFF_BINDING_INTEGRATION_TEST: '1'
 
       - name: Verify every migration against a clean database
+        if: inputs.reuse_run == ''
         # The fixture proves migrations apply on an existing database; this
         # proves the whole chain also builds from zero. The scratch database
         # lives and dies inside the job's ephemeral Postgres service — the
@@ -254,6 +279,7 @@ jobs:
           DATABASE_URL="$CLEAN_URL" npx prisma migrate deploy
 
       - name: Verify concurrent room token finalization in PostgreSQL
+        if: inputs.reuse_run == ''
         # A login burst shares the event session lock. This catches isolation
         # regressions that unit mocks and a single browser cannot reproduce.
         run: npx vitest run --no-file-parallelism src/lib/__tests__/room-token-issue.integration.test.ts
@@ -262,24 +288,28 @@ jobs:
           ROOM_TOKEN_ISSUE_INTEGRATION_TEST: '1'
 
       - name: Verify facilitator grant and capacity serialization in PostgreSQL
+        if: inputs.reuse_run == ''
         run: npx vitest run --no-file-parallelism src/lib/__tests__/room-entitlement.integration.test.ts
         env:
           DATABASE_URL: ${{ env.E2E_DATABASE_URL }}
           ROOM_ENTITLEMENT_INTEGRATION_TEST: '1'
 
       - name: Verify concurrent free Account admission in PostgreSQL
+        if: inputs.reuse_run == ''
         run: npx vitest run --no-file-parallelism src/lib/__tests__/public-session-access.integration.test.ts
         env:
           DATABASE_URL: ${{ env.E2E_DATABASE_URL }}
           PUBLIC_SESSION_ACCESS_INTEGRATION_TEST: '1'
 
       - name: Verify old-binary scene-capacity rollback compatibility in PostgreSQL
+        if: inputs.reuse_run == ''
         run: npx vitest run --no-file-parallelism src/lib/__tests__/scene-capacity-rollback.integration.test.ts
         env:
           DATABASE_URL: ${{ env.E2E_DATABASE_URL }}
           SCENE_CAPACITY_ROLLBACK_INTEGRATION_TEST: '1'
 
       - name: Run Chromium and Android gates
+        if: inputs.reuse_run == ''
         run: >-
           npx playwright test --retries=0 --workers=1
           --project=chromium
@@ -291,14 +321,15 @@ jobs:
           --project=android-chrome
 
       - name: Install Firefox after Chromium screenshot gates
-        if: inputs.include_firefox == true
+        if: inputs.reuse_run == '' && (inputs.include_firefox == true)
         run: npx playwright install --with-deps firefox
 
       - name: Run isolated Firefox room-exit helper regression
-        if: inputs.include_firefox == true
+        if: inputs.reuse_run == '' && (inputs.include_firefox == true)
         run: node --import tsx --test --test-name-pattern='^Firefox automation reload' e2e/helpers/continuity-stack.test.ts
 
       - name: Start isolated browser audio backend
+        if: inputs.reuse_run == ''
         # Firefox needs a real audio backend even for synthesized RTP. Without
         # one, AudioContext.resume() can remain pending after a genuine click.
         # Use a job-private socket and null sink, not a browser-policy override.
@@ -316,15 +347,17 @@ jobs:
           printf 'PULSE_SERVER=unix:%s\n' "$socket" >> "$GITHUB_ENV"
 
       - name: Run Firefox functional and accessibility gates
-        if: inputs.include_firefox == true
+        if: inputs.reuse_run == '' && (inputs.include_firefox == true)
         run: npx playwright test --retries=0 --workers=1 --project=firefox
         env:
           E2E_REUSE_NEXT_BUILD: '1'
 
       - name: Install WebKit after Chromium screenshot gates
+        if: inputs.reuse_run == ''
         run: npx playwright install --with-deps webkit
 
       - name: Run iPhone/WebKit media gate
+        if: inputs.reuse_run == ''
         run: >-
           npx playwright test --retries=0 --workers=1
           e2e/tests/media-continuity.spec.ts
@@ -335,6 +368,7 @@ jobs:
           E2E_REUSE_NEXT_BUILD: '1'
 
       - name: Verify grant, migration, commerce, and invitation durable outbox contracts
+        if: inputs.reuse_run == ''
         # Real-PostgreSQL proof that grant revisions are serialized across two
         # workers and that stage, commerce, and invitation revocations all
         # commit their durable effects before LiveKit delivery.
@@ -348,6 +382,7 @@ jobs:
           LIVEKIT_API_SECRET: commerce-ci-livekit-secret-at-least-32-characters
 
       - name: Smoke production worker and stabilization entrypoints
+        if: inputs.reuse_run == ''
         run: |
           docker build -t beacon-runtime-smoke \
             --build-arg NEXT_PUBLIC_LIVEKIT_URL=ws://localhost:7880 .
@@ -363,11 +398,11 @@ jobs:
             npx tsx scripts/stage-grant-rollback-preflight.ts --help
 
       - name: Capture LiveKit diagnostics
-        if: failure()
+        if: inputs.reuse_run == '' && (failure())
         run: docker logs --tail 300 e2e-livekit
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        if: always() && github.event.repository.private == true
+        if: inputs.reuse_run == '' && (always() && github.event.repository.private == true)
         with:
           name: playwright-report
           retention-days: 3
@@ -377,7 +412,7 @@ jobs:
             ${{ env.BEACON_CI_ROOT }}/logs/livekit-tls-proxy.log
 
       - name: Stop LiveKit fixtures
-        if: always()
+        if: inputs.reuse_run == '' && (always())
         run: |
           set -euo pipefail
           if [[ "${LIVEKIT_TLS_PROXY_PID:-}" =~ ^[0-9]+$ ]] && \
@@ -400,32 +435,44 @@ jobs:
       CI: '1'
       NEXT_PUBLIC_E2E_CONTINUITY_OBSERVER: '1'
     steps:
+      - name: Reuse unchanged-source qualification
+        if: inputs.reuse_run != ''
+        env:
+          QUALIFIED_RUN: ${{ inputs.reuse_run }}
+        run: echo "Reusing unchanged-source qualification from Actions run $QUALIFIED_RUN; see caller ci-equivalence.json."
       - name: Prepare private Account socket and evidence root
+        if: inputs.reuse_run == ''
         run: *prepare-private-socket-root
 
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        if: inputs.reuse_run == ''
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        if: inputs.reuse_run == ''
         with:
           node-version: '22.22'
           cache: 'npm'
 
       - run: npm ci
+        if: inputs.reuse_run == ''
 
       - name: Verify Account protocol and isolated runtime contracts
+        if: inputs.reuse_run == ''
         run: node --import tsx --test e2e/account-fixture/protocol.test.ts e2e/account-fixture/runtime-backend.test.ts
 
       - name: Install all Account browser engines and private audio dependencies
+        if: inputs.reuse_run == ''
         run: |
           npx playwright install --with-deps chromium webkit
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends pulseaudio pulseaudio-utils
 
       - name: Install optional Account Firefox engine
-        if: inputs.include_firefox == true
+        if: inputs.reuse_run == '' && (inputs.include_firefox == true)
         run: npx playwright install --with-deps firefox
 
       - name: Run isolated real Account browser matrix
+        if: inputs.reuse_run == ''
         # run.ts owns Docker PG16 + LiveKit v1.13.4, migrations, HTTPS issuer,
         # isolated build, runtime/source/results receipts and bounded cleanup.
         # No RP-only filter, list-only qualification or shared-stack fallback.
@@ -471,7 +518,7 @@ jobs:
         # Test credentials, session-bearing traces and logs must not become
         # public artifacts. Never upload the copied app, keys or PG data.
         # Public forks still run the gate, but do not publish these receipts.
-        if: always() && github.event.repository.private == true
+        if: inputs.reuse_run == '' && (always() && github.event.repository.private == true)
         with:
           name: account-private-runtime
           retention-days: 3

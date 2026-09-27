@@ -75,9 +75,14 @@ The protected evaluator remains the authority for trusted required evidence.
 
 Evidence can carry forward only for what it proves. A diagnostic reproduction
 does not expire because a README changed; a review of a security boundary does
-not cover newly changed authorization logic. Equivalent source trees can guide
-revalidation, but do not permit copying a status to a new ref or bypassing the
-configured head/base/attempt checks.
+not cover newly changed authorization logic. For a documentation-only follow-up, CI may reuse a successful full run from the
+same PR and exact protected base within 24 hours when every non-documentation
+byte is unchanged. `ci-equivalence.json` records the source run/attempt and
+comparison. Missing evidence runs normal checks; reuse cannot chain or accept
+failed/skipped selected jobs. Fresh jobs on the new head report that reuse;
+commit statuses are never copied. Description edits and ordinary Live/documentation release merges do not launch
+duplicate CI (Analytics retains its own path-filtered release qualification); after
+retargeting a PR, synchronize or reopen it to qualify the new base.
 
 ## Waiting, handoff and recovery after interruption
 
