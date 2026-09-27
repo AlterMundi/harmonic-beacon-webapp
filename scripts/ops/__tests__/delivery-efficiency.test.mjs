@@ -86,7 +86,11 @@ test('legacy release fails closed during the security hold', () => {
 // Protected PR qualification is authoritative; merging it must not duplicate
 // all browser/runtime checks or launch the intentionally disabled deploy lane.
 test('release merges do not repeat PR CI or auto-run disabled deployment', () => {
-  assert.doesNotMatch(ciWorkflow, /^ {2}push:/m);
+  assert.match(ciWorkflow, /push:\n    branches: \[release\]\n    paths:/);
+  const push = ciWorkflow.split('  push:')[1].split('  workflow_call:')[0];
+  assert.match(push, /services\/analytics\/\*\*/);
+  assert.match(push, /'!\*\*\/\*\.md'/);
+  assert.doesNotMatch(push, /'src\/|\.github\/workflows\/\*'/);
   assert.match(ciWorkflow, /^ {2}pull_request:/m);
   assert.match(ciWorkflow, /^ {2}workflow_call:/m);
   assert.doesNotMatch(deployWorkflow, /^ {2}push:/m);

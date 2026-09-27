@@ -13,8 +13,10 @@ It preserves effective production configuration and rollback snapshots. It does
 not require completing OCI activation and does not enable the legacy runner
 path. The owning issue contains the exact runtime receipt.
 
-CI qualifies protected PRs once. A release merge does not repeat that suite;
-artifact qualification can still call CI explicitly. The disabled legacy deploy
+CI qualifies protected Live PRs once. Ordinary Live/documentation release merges
+do not repeat that suite. Analytics retains a path-filtered release push run
+for its existing build-provenance chain; artifact qualification can also call
+CI explicitly. The disabled legacy deploy
 workflow is manual-only, so routine merges do not emit a guaranteed failure.
 
 ## Immutable OCI candidate and promotion lane

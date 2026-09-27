@@ -4,6 +4,16 @@ on:
   pull_request:
     branches: [main, release]
     types: [opened, synchronize, reopened]
+  # Analytics still binds its build provenance to an exact release push run.
+  # Keep that owning lane, without repeating CI for Live/documentation merges.
+  push:
+    branches: [release]
+    paths:
+      - 'services/analytics/**'
+      - 'ops/analytics/**'
+      - 'contracts/analytics/**'
+      - '.github/workflows/analytics-*.yml'
+      - '!**/*.md'
   workflow_call:
     inputs:
       base_sha:
