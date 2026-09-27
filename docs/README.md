@@ -41,6 +41,10 @@ ROADMAP.md               ← long-term development project, phases 1–4+
 
 The detail docs and phase docs are reference material; read them when you need the specifics.
 
+## Historical research
+
+- [Sustainable Development and Community Strategy — 2026-08-07](research/sustainable-development-community-strategy-2026-08-07.md): preserved working research on patronage, community and citizen science. Its recommendations and 90-day sequence are not approved policy; dated external facts need revalidation before use.
+
 ## Editing these docs
 
 - These docs are living. A policy change ships with a docs change.

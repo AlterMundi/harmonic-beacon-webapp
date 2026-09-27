@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import test from 'node:test';
 
 const read = (path) => readFileSync(new URL(`../../../${path}`, import.meta.url), 'utf8');
@@ -53,7 +54,7 @@ test('governance-only impact uses local ownership and focused control-plane chec
   assert.match(ciWorkflow, /"ownership_changed=\\\(\.\)"/u);
   assert.match(ciWorkflow, /if: steps\.classify\.outputs\.ownership_changed == 'true'\n\s+run: node scripts\/ci\/validate-codeowners/u);
   assert.match(ciWorkflow, /if: steps\.classify\.outputs\.governance_only == 'true'[\s\S]*scripts\/ci\/__tests__\/validate-codeowners\.test\.mjs/u);
-  assert.match(ciWorkflow, /if: steps\.classify\.outputs\.governance_only != 'true'\n\s+run: npm ci/u);
+  assert.match(ciWorkflow, /if: steps\.classify\.outputs\.governance_only != 'true'[^\n]*\n\s+run: npm ci/u);
   assert.match(ciWorkflow, /name: Verify generated agent skill distributions\n\s+run: python3 \.agents\/skills\/scripts\/render_distributions\.py --check/u);
   assert.match(ciWorkflow, /commerce_contract:commerce-contract[\s\S]*if: needs\.impact\.outputs\.commerce_contract == 'true'/u);
   assert.doesNotMatch(e2eWorkflow, /^ {2}pull_request:/m);
@@ -100,4 +101,33 @@ test('release merges do not repeat PR CI or auto-run disabled deployment', () =>
 test('the reusable CI caller permits the read-only evidence API required by CI', () => {
   assert.match(ciWorkflow, /permissions:\n  contents: read\n  actions: read/);
   assert.match(candidateWorkflow, /permissions:\n      contents: read\n      actions: read\n    uses: \.\/\.github\/workflows\/ci\.yml/);
+});
+
+
+test('ordinary docs and proven unchanged source avoid dependency installation in impact', () => {
+  const impact = ciWorkflow.split('  impact:')[1].split('  lint-and-build:')[0];
+  assert.match(impact, /documentation_only=/);
+  const full = "steps.classify.outputs.governance_only != 'true' && steps.classify.outputs.documentation_only != 'true' && steps.equivalence.outputs.reuse_run == ''";
+  assert.ok(impact.includes(`if: ${full}\n        run: npm ci`));
+  assert.ok(impact.includes(`if: ${full}\n        run: npm run test:ops-tooling`));
+  assert.match(impact, /if: steps\.classify\.outputs\.governance_only == 'true' \|\| steps\.classify\.outputs\.documentation_only == 'true' \|\| steps\.equivalence\.outputs\.reuse_run != ''/);
+  assert.match(impact, /scripts\/ci\/__tests__\/reuse-documentation-evidence\.test\.mjs/);
+});
+
+
+test('the executed Markdown selector rejects mixed, executable and special-contract deltas', () => {
+  const expression = ciWorkflow.split('\n').find(line => line.includes('documentation_only=')).match(/jq -r '(.+)'/)[1];
+  for (const [files, expected] of [
+    [['README.md'], true],
+    [['docs/research/note.md', 'deploy/README.md'], true],
+    [[], false],
+    [['docs/note.md', 'src/app/page.tsx'], false],
+    [['docs/check.mjs'], false],
+    [['.agents/skills/scripts/render_distributions.py'], false],
+    [['contracts/commerce-entitlement/README.md'], false],
+    [['.github/workflows/ci.yml'], false],
+    [['unknown'], false],
+  ]) {
+    assert.equal(execFileSync('jq', ['-r', expression], { input: JSON.stringify({files}), encoding: 'utf8' }).trim(), `documentation_only=${expected}`, JSON.stringify(files));
+  }
 });
