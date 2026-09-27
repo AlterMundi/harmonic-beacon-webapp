@@ -96,15 +96,64 @@ do not expose the unauthenticated Alertmanager API through public nginx.
 
 ## Capacity and safe cleanup
 
-Check `df -h / /mnt/beacon-data`, `docker system df`, then inventory cache with
-`docker buildx du --format json`. Build cache and rollback images are different
-objects. Select reviewed, reclaimable, unshared cache IDs older than 72 hours;
-recheck that exact set before `docker buildx prune --filter 'id~=^(ID1|ID2)$'
---filter until=72h --force`. Compare the complete image-ID set before/after.
-Never use `docker system prune`, volume pruning or blanket image removal.
-Retain all active and rollback images; any archive/removal of old images is a
-separate explicit selection with verified recovery. Warning is below 20% and critical below 15% (owner choice);
+Warning is below 20% for 15 minutes; critical is below 15% for two minutes.
+Maintenance targets 35% free space, but never deletes recovery/data to meet it.
+If retained data exceeds capacity, expand storage or explicitly review artifacts;
 a quieter reminder schedule does not resolve a low-disk condition.
+
+`storage-maintenance.py` is a fixed host policy, not a general-purpose prune
+interface. Default invocation is a read-only plan; `--apply` is root-only.
+The systemd path unit schedules it on Account/Listener/Live delivery-state
+changes, including Account attempt records. The timer retries every 15 minutes,
+covering failed builds and changes that happened while a delivery lock was held.
+No new GitHub jobs, Docker builds, caller-supplied paths or sudo grants are needed.
+
+The policy:
+
+- Retire only exact reclaimable, unshared BuildKit cache IDs older than 72 hours
+  (24 hours below 20% free), with a second inventory check. Verify image IDs did
+  not change. Never prune volumes, containers, shared cache or unrelated repos.
+- Retain all container-bound images, explicit rollback tags, the newest three
+  images per service repository, and images younger than three days. Resolve
+  rollback images from Account delivery records bound to active images,
+  Listener production/staging records, and the fixed Live/media transaction.
+  Preserve an entire repository when any active image lacks recovery evidence.
+  A running container whose image-store metadata is missing also stays protected;
+  it is not a usable recovery image. Analytics/PMP images remain untouched until
+  their own delivery records can be bound by a supported adapter.
+- Below 35% free, archive at most two eligible historical images per run onto
+  `/mnt/beacon-data/archives/runtime-images`. Verify all OCI blob hashes, a
+  Docker load roundtrip, zstd integrity and archive checksum; sync the archive,
+  manifest and directories before removing exact local image references.
+  Acquire existing delivery locks first, including creating missing lock files.
+  Busy delivery defers cleanup; no force removal is allowed.
+- Keep verified archives for at least seven days after their latest retirement,
+  normally 30 days, with a 20 GiB budget and 10 GiB data-disk reserve. Protected
+  recovery images do not expire. Count partial archives against the budget and
+  preserve them for inspection; a partial candidate does not stop other eligible
+  candidates. Existing manual archives and database backups are outside this
+  policy and retain their separate recovery/retention contracts.
+
+Install the reviewed script as root:root 0755 at
+`/usr/local/libexec/harmonic-beacon/storage-maintenance.py`. Create the archive
+and `/var/lib/harmonic-beacon/storage-maintenance` directories root:root 0700;
+the data disk must be mounted. Install its `.service`, `.timer` and `.path` from
+`systemd/` under `/etc/systemd/system/`, validate with `systemd-analyze verify`,
+and run the read-only plan before starting the service. Inspect its private
+`last-result.json`, exact before/after container image bindings and public
+readiness. Enable the timer/path only after that first successful run. Apply
+Prometheus rules after the initial metrics exist. Failure and two-hour staleness
+use the same shared alert transport; low disk remains independently monitored.
+
+Rollback disables/stops only the maintenance timer/path, then stops the service
+if necessary. It does not restore retired images automatically: verify the
+selected `verified.json` checksum, decompress to a private file on the data
+mount, `docker image load`, and inspect the exact image ID before any service
+rollback. Preserve partial archives when stopping an in-progress run.
+
+Check `df -h / /mnt/beacon-data`, `docker system df`, and the read-only plan when
+investigating capacity. Never use `docker system prune`, volume pruning or
+blanket image removal.
 
 ## Configuration delivery and rollback
 

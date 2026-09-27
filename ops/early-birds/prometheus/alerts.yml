@@ -117,6 +117,16 @@ groups:
         annotations: { summary: "HLS decoder canary has not completed a probe for 90 seconds", runbook: "early-birds-canary" }
   - name: early-birds-capacity
     rules:
+      - alert: BeaconStorageMaintenanceFailed
+        expr: beacon_storage_maintenance_up == 0
+        for: 5m
+        labels: { severity: warning, service: host, environment: production, host: mona }
+        annotations: { summary: "Automatic storage maintenance failed; inspect its private receipt", runbook: "early-birds-capacity" }
+      - alert: BeaconStorageMaintenanceStale
+        expr: absent(beacon_storage_maintenance_timestamp_seconds) or (time() - beacon_storage_maintenance_timestamp_seconds > 7200)
+        for: 5m
+        labels: { severity: warning, service: host, environment: production, host: mona }
+        annotations: { summary: "Automatic storage maintenance has not completed for two hours", runbook: "early-birds-capacity" }
       - alert: EarlyBirdsHostCpuPrepare
         expr: 1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) > 0.50
         for: 15m

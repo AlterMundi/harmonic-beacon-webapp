@@ -1,0 +1,11 @@
+[Unit]
+Description=Check Harmonic Beacon disk retention every fifteen minutes
+
+[Timer]
+OnBootSec=10min
+OnUnitInactiveSec=15min
+RandomizedDelaySec=1min
+Persistent=false
+
+[Install]
+WantedBy=timers.target

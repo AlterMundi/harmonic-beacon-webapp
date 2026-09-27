@@ -3,9 +3,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test test/*.test.mjs",
+    "test": "node --test test/*.test.mjs && python3 -m unittest discover -s scripts/tests -v",
     "check": "node --check canary/canary-exporter.mjs && node --check scripts/validate-config.mjs",
     "validate": "node scripts/validate-config.mjs"
   },
-  "engines": { "node": ">=22" }
+  "engines": {
+    "node": ">=22"
+  }
 }
