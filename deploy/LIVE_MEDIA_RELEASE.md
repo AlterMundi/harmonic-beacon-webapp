@@ -15,7 +15,10 @@ transition before delivering #590. No new sudo grant is needed.
 
 Install the reviewed script as root, mode 0755, at
 `/usr/local/sbin/hb-live-media-release-590`. Its only inputs are
-`staging|production` and `prepare|apply|rollback|recover|status`.
+`staging|production` and `prepare|apply|rollback|recover|status`. A bounded
+`production refresh-provenance` repair updates an inherited app OCI revision
+label using the same image/configuration, with continuity/readiness checks;
+it is not a new deploy target.
 It shares the existing application/migration bridge lock.
 
 1. Verify the release source, existing successful CI and staging receipt in
@@ -51,3 +54,13 @@ create intents contain environment values.
 The procedure does not claim OCI registry/signature qualification or generic
 future deployment support. Further workflow simplification is a separate
 iteration, not a prerequisite to this delivery.
+
+## Verified operation
+
+The production receipt is in [#590](https://github.com/AlterMundi/harmonic-beacon-webapp/issues/590#issuecomment-5853431560).
+The private Staff journey passed capture/composition/audio and ended with no
+active participants. An external listener decoded 10 seconds of production PCM
+with 9.99 seconds audible. App/media image IDs and OCI source labels agree;
+production mounts, ports, networks and environment are unchanged except image
+build/source metadata. Original app rollback has the additional preservation
+tag `harmonic-beacon/live:rollback-590-3ea86853`.
