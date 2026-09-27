@@ -42,7 +42,7 @@ per session and only when the frame set changed.
 | Env var | Required | Default | Meaning |
 |---|---|---|---|
 | `TAPESTRY_INTERNAL_SECRET` | yes | — | Shared secret with the app (≥16 chars) |
-| `TAPESTRY_SESSION_IDS` | yes | — | Comma-separated seeded session IDs; ingest for any other session is rejected |
+| `TAPESTRY_SESSION_IDS` | no | empty | Optional comma-separated seed IDs; the authorized app registers new sessions dynamically |
 | `TAPESTRY_PORT` | no | `3100` | Listen port |
 | `TAPESTRY_HOST` | no | `127.0.0.1` (`0.0.0.0` in the Dockerfile) | Bind address |
 

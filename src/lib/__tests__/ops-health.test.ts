@@ -19,6 +19,7 @@ const SCHEDULED_SESSION: WatchedSession = { ...LIVE_SESSION, status: 'SCHEDULED'
 /** A fully healthy production: live session, room up, bot publishing, 6/6 grants. */
 function healthyDeps(overrides: Partial<OperatorHealthDeps> = {}): OperatorHealthDeps {
     return {
+        getUnopenedEvents: async () => ({ count: 0, oldestId: null }),
         checkDatabase: async () => [{ '?column?': 1 }],
         getWatchedSession: async () => LIVE_SESSION,
         countActivePublishGrants: async () => 6,
@@ -59,6 +60,22 @@ describe('collectOperatorHealth', () => {
             expect(check.error).toBeUndefined();
         }
         expect(report.checks.publisherGrants.detail).toContain('6/6');
+    });
+
+    it('keeps overdue doors red even while a different event is live', async () => {
+        const report = await collectOperatorHealth(healthyDeps({
+            getUnopenedEvents: async () => ({ count: 2, oldestId: 'overdue-event' }),
+        }));
+        expect(report.session?.status).toBe('LIVE');
+        expect(report.status).toBe('red');
+        expect(report.checks.eventDoors).toMatchObject({ status: 'red', actionHref: '/ops/events/overdue-event' });
+    });
+
+    it('does not report green when the doors query fails', async () => {
+        const report = await collectOperatorHealth(healthyDeps({
+            getUnopenedEvents: async () => { throw new Error('unavailable'); },
+        }));
+        expect(report.checks.eventDoors.status).toBe('red');
     });
 
     it('reports the configured twelve-publisher capacity as health truth', async () => {

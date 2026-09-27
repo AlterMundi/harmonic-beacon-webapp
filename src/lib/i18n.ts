@@ -400,7 +400,8 @@ export type Messages = {
             headlines: Record<'green' | 'yellow' | 'red', string>;
             levels: Record<'green' | 'yellow' | 'red', string>;
             sessionStatuses: Record<'SCHEDULED' | 'LIVE' | 'ENDED' | 'CANCELLED', string>;
-            checks: Record<'postgres' | 'livekit' | 'stageRoom' | 'publisherGrants' | 'grantDelivery' | 'bedPublisher' | 'tapestry', string>;
+            checks: Record<'eventDoors' | 'postgres' | 'livekit' | 'stageRoom' | 'publisherGrants' | 'grantDelivery' | 'bedPublisher' | 'tapestry', string>;
+            reviewEvent: string;
             endpointHttp: string;
             endpointUnavailable: string;
             endpointAlarm: string;
@@ -989,11 +990,13 @@ export const messages: Record<UiLocale, Messages> = {
                     postgres: 'PostgreSQL',
                     livekit: 'API de LiveKit',
                     stageRoom: 'Sala de Escena',
+                    eventDoors: 'Apertura del evento',
                     publisherGrants: 'Permisos de publicación',
                     grantDelivery: 'Entrega durable de permisos',
                     bedPublisher: 'Fuente del Beacon (playlist bot)',
                     tapestry: 'Tapiz (prescindible)',
                 },
+                reviewEvent: 'Revisar evento',
                 endpointHttp: 'El endpoint respondió HTTP {status}',
                 endpointUnavailable: 'No se pudo contactar el endpoint de salud',
                 endpointAlarm: 'ROJO — no se puede consultar la salud: {error}',
@@ -1606,11 +1609,13 @@ export const messages: Record<UiLocale, Messages> = {
                     postgres: 'PostgreSQL',
                     livekit: 'LiveKit API',
                     stageRoom: 'Stage room',
+                    eventDoors: 'Event opening',
                     publisherGrants: 'Publisher grants',
                     grantDelivery: 'Durable grant delivery',
                     bedPublisher: 'Bed publisher (playlist bot)',
                     tapestry: 'Tapestry (cuttable)',
                 },
+                reviewEvent: 'Review event',
                 endpointHttp: 'Endpoint answered HTTP {status}',
                 endpointUnavailable: 'Health endpoint unreachable',
                 endpointAlarm: 'RED — health endpoint unreachable: {error}',

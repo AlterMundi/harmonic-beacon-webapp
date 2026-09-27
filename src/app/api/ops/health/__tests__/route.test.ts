@@ -18,7 +18,8 @@ const GREEN_REPORT: OperatorHealthReport = {
     checkedAt: '2026-07-30T12:00:00.000Z',
     session: { id: 'session-1', title: 'Saturday EN session', status: 'LIVE', maxPublishers: 6 },
     checks: {
-        postgres: { status: 'green', detail: 'PostgreSQL answered SELECT 1', latencyMs: 4 },
+        eventDoors: { status: 'green', detail: 'No overdue public event', latencyMs: 0 },
+            postgres: { status: 'green', detail: 'PostgreSQL answered SELECT 1', latencyMs: 4 },
         livekit: { status: 'green', detail: 'LiveKit API answered (2 room(s))', latencyMs: 12 },
         stageRoom: { status: 'green', detail: 'Stage room exists', latencyMs: 0 },
         publisherGrants: { status: 'green', detail: '6/6 active publish grants', latencyMs: 3 },

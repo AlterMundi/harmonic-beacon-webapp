@@ -1,7 +1,7 @@
 /**
  * Operator event health — the subsystem checks behind `/api/ops/health`.
  *
- * One report, seven subsystems, three states:
+ * One report, eight subsystems, three states:
  *
  *   green  — verified working within the timeout.
  *   yellow — degraded but still within a bounded recovery window. Tapestry
@@ -33,6 +33,7 @@ export interface SubsystemCheck {
     /** What was verified, or what is wrong — safe to show an operator. */
     detail: string;
     latencyMs: number;
+    actionHref?: string;
     /** Redacted one-liner, present only when the check is not green. */
     error?: string;
 }
@@ -57,6 +58,8 @@ export interface RoomParticipantSummary {
 
 export interface OperatorHealthDeps {
     checkDatabase: () => Promise<unknown>;
+    /** Public, published, non-test events whose scheduled start passed without opening. */
+    getUnopenedEvents: () => Promise<{ count: number; oldestId: string | null }>;
     /** The LIVE session, or the next SCHEDULED one when nothing is live. */
     getWatchedSession: () => Promise<WatchedSession | null>;
     /** Participants holding an unrevoked publish grant for the session. */
@@ -89,6 +92,7 @@ export interface OperatorHealthReport {
     } | null;
     checks: {
         postgres: SubsystemCheck;
+        eventDoors: SubsystemCheck;
         livekit: SubsystemCheck;
         stageRoom: SubsystemCheck;
         publisherGrants: SubsystemCheck;
@@ -143,7 +147,17 @@ export async function collectOperatorHealth(
     const timeout = deps.timeoutMs;
 
     // PostgreSQL and tapestry are independent; probe them in parallel.
-    const [postgres, tapestry] = await Promise.all([
+    const [eventDoors, postgres, tapestry] = await Promise.all([
+        probe(async () => {
+            const started = Date.now();
+            const unopened = await withTimeout(deps.getUnopenedEvents(), timeout, 'Event doors check');
+            return unopened.count > 0 ? {
+                status: 'red' as const,
+                detail: `${unopened.count} public event(s) past start time with doors still closed. Open the correct event or explicitly cancel/reschedule it.`,
+                latencyMs: Date.now() - started,
+                actionHref: unopened.oldestId ? `/ops/events/${encodeURIComponent(unopened.oldestId)}` : '/ops/events',
+            } : ok('No overdue public event with doors closed', Date.now() - started);
+        }, 'red', 'Cannot verify whether scheduled event doors are open'),
         probe(async () => {
             const started = Date.now();
             await withTimeout(deps.checkDatabase(), timeout, 'PostgreSQL check');
@@ -214,6 +228,7 @@ export async function collectOperatorHealth(
     const bedPublisher: SubsystemCheck = await evaluateBedPublisher(deps, livekit, timeout);
 
     const checks = {
+        eventDoors,
         postgres,
         livekit,
         stageRoom,
@@ -447,6 +462,24 @@ export function productionDeps(options: {
 
         checkDatabase: () => prisma.$queryRaw`SELECT 1`,
 
+        getUnopenedEvents: async () => {
+            const where = {
+                status: 'SCHEDULED' as const,
+                isTest: false,
+                publicAccess: true,
+                isPublished: true,
+                scheduledAt: { lt: options.now ?? new Date() },
+                ...(options.sessionId ? { id: options.sessionId } : {}),
+            };
+            // There is deliberately no lower date bound: age cannot resolve an
+            // unopened event. The owning operator must give it a disposition.
+            const [count, oldest] = await Promise.all([
+                prisma.scheduledSession.count({ where }),
+                prisma.scheduledSession.findFirst({ where, orderBy: { scheduledAt: 'asc' }, select: { id: true } }),
+            ]);
+            return { count, oldestId: oldest?.id ?? null };
+        },
+
         getWatchedSession: async (): Promise<WatchedSession | null> => {
             const select = {
                 id: true,
@@ -481,7 +514,7 @@ export function productionDeps(options: {
                 (await prisma.scheduledSession.findFirst({
                     where: {
                         status: 'SCHEDULED',
-                        scheduledAt: { gte: new Date(now.getTime() - 60 * 60 * 1000) },
+                        scheduledAt: { gte: now },
                     },
                     orderBy: { scheduledAt: 'asc' },
                     select,
