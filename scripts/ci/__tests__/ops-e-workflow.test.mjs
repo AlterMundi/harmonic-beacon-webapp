@@ -152,7 +152,8 @@ test('isolated workflow review installs locked dependencies before parser-depend
   const install = steps.findIndex(step => step.run === 'npm ci --ignore-scripts');
   const tests = steps.findIndex(step => step.run?.includes('scripts/ci/__tests__/ops-e-workflow.test.mjs'));
   assert.ok(install >= 0 && tests > install, 'workflow-review must install its own locked dependencies before running tests');
-  assert.equal(steps[install].if, undefined);
+  assert.equal(steps[install].if, "needs.impact.outputs.reuse_run == ''");
+  assert.equal(steps[tests].if, steps[install].if);
   assert.equal(steps[install]['continue-on-error'], undefined);
 });
 

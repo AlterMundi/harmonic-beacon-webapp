@@ -76,6 +76,18 @@ dump is first restored only to `hb_restore_<run-id>` and is never automatically
 written over Live Postgres. No measured production RTO or real restore drill is
 claimed by this repository change.
 
+## Owner-operated fixed-image delivery #590
+
+For the already rehearsed #590 candidate, the owner-authorized procedure in
+[deploy/LIVE_MEDIA_RELEASE.md](../../deploy/LIVE_MEDIA_RELEASE.md) is an admitted
+root-operated path. It replaces only the three fixed app/media image pairs,
+retains production configuration and worker, uses the installed bridge lock,
+checks DB/media continuity and preserves recovery snapshots. It does not grant
+runner authority or require OCI genesis. The following OCI contract continues
+to apply to the separate OCI automation; it is not a prerequisite to this
+bounded delivery. Nicolás explicitly requested completing production and
+withdrew the inferred preventive freeze on 27 September.
+
 ## Delivery authority and OCI transition
 
 Live delivery has one branch-qualified aggregate on the PR head:
