@@ -5,14 +5,14 @@ import { prisma } from '@/lib/db';
 import {
     accountIdentityFromToken,
 } from '@/lib/principal';
-import { isPublicCycleSession } from '@/lib/public-cycle';
+import { isPublicFreeSession } from '@/lib/public-cycle';
 import { attachPublicSessionAccess } from '@/lib/public-session-access';
 import { SESSION_COOKIE_NAME } from '@/lib/session-auth';
 
 export const dynamic = 'force-dynamic';
 
 /**
- * Account-bound admission for the four reviewed public-cycle rooms. Public
+ * Account-bound admission for explicitly reviewed complimentary rooms. Public
  * means free and listed; it does not mean anonymous. Every attendee crosses
  * the same durable Account boundary before receiving an event entitlement,
  * confirming their room alias, materializing presence or becoming eligible
@@ -23,7 +23,7 @@ export async function GET(
     { params }: { params: Promise<{ id: string }> },
 ) {
     const { id } = await params;
-    if (!isPublicCycleSession(id)) {
+    if (!isPublicFreeSession(id)) {
         return NextResponse.json({ error: 'Session not found' }, { status: 404 });
     }
     if (!beaconAccountEnabled()) {

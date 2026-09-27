@@ -14,11 +14,11 @@ import { requireDirectDb, withSessionStatus } from '../fixtures/db';
  */
 
 test.describe('public surfaces (no stack required)', () => {
-    test('landing renders the four-gathering cycle and its wider practice', async ({ page }) => {
+    test('landing renders the reviewed public gatherings and their wider practice', async ({ page }) => {
         await page.goto(ROUTES.landing);
         await expect(page).toHaveTitle(/harmonic beacon/i);
         await expect(page.getByRole('heading', { level: 1 })).toContainText(/Próximos\s+encuentros/i);
-        await expect(page.getByRole('link', { name: 'Ingresar al evento' })).toHaveCount(4);
+        await expect(page.getByRole('link', { name: 'Ingresar al evento' })).toHaveCount(6);
         await expect(page.getByRole('link', { name: /Conocer la Proyección del Mito/ })).toHaveAttribute(
             'href',
             'https://harmonicbeacon.com/proyeccion-armonica-del-mito/',

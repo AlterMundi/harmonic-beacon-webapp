@@ -30,7 +30,7 @@ test.describe('responsive public surfaces', () => {
         await page.goto(ROUTES.landing);
         await expectNoHorizontalScroll(page);
         // Long bilingual strings must not break the layout either.
-        await expect(page.getByRole('link', { name: 'Ingresar al evento' })).toHaveCount(4);
+        await expect(page.getByRole('link', { name: 'Ingresar al evento' })).toHaveCount(6);
     });
 
     test('event entry controls stay reachable inside the viewport', async ({ page }) => {
@@ -39,8 +39,8 @@ test.describe('responsive public surfaces', () => {
         expect(viewport).not.toBeNull();
 
         const entries = page.getByRole('link', { name: 'Ingresar al evento' });
-        await expect(entries).toHaveCount(4);
-        for (let index = 0; index < 4; index += 1) {
+        await expect(entries).toHaveCount(6);
+        for (let index = 0; index < 6; index += 1) {
             const control = entries.nth(index);
             await expect(control).toBeVisible();
             const box = await control.boundingBox();

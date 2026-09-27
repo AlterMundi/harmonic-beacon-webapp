@@ -1,12 +1,14 @@
-export const PUBLIC_CYCLE_SESSION_IDS = [
+export const PUBLIC_FREE_SESSION_IDS = [
     '50000000-0000-4000-8000-202608220001',
     '50000000-0000-4000-8000-202608290001',
     '50000000-0000-4000-8000-202609050001',
     '50000000-0000-4000-8000-202609120001',
+    '50000000-0000-4000-8000-202609230001',
+    '50000000-0000-4000-8000-202609230002',
 ] as const;
 
-const PUBLIC_CYCLE_SESSION_ID_SET = new Set<string>(PUBLIC_CYCLE_SESSION_IDS);
+const PUBLIC_FREE_SESSION_ID_SET = new Set<string>(PUBLIC_FREE_SESSION_IDS);
 
-export function isPublicCycleSession(sessionId: string): boolean {
-    return PUBLIC_CYCLE_SESSION_ID_SET.has(sessionId);
+export function isPublicFreeSession(sessionId: string): boolean {
+    return PUBLIC_FREE_SESSION_ID_SET.has(sessionId);
 }
