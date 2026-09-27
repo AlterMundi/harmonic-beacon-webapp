@@ -1,3 +1,6 @@
-{{ define "telegram.default.message" }}
-[EarlyBirds {{ .Status | toUpper }}] {{ range .Alerts }}{{ .Labels.alertname }} — {{ .Annotations.summary }} ({{ .Labels.service }}; runbook: {{ .Annotations.runbook }}){{ end }}
-{{ end }}
+{{ define "telegram.default.message" -}}
+[Harmonic Beacon {{ .Status | toUpper }}]
+{{ range .Alerts }}{{ .Labels.alertname }} — {{ .Annotations.summary }}
+Servicio: {{ .Labels.service }} | {{ .Labels.environment }}{{ if .Labels.host }} | {{ .Labels.host }}{{ end }}
+Runbook: {{ .Annotations.runbook }}
+{{ end }}{{ end }}
