@@ -18,9 +18,46 @@ is the common envelope. Host capacity is labeled `production`, `host=mona`;
 Listener preview and authority metrics retain their own environment labels.
 
 Current Prometheus coverage: host capacity, Listener origin/canary, membership
-Authority and consumer-request queue. A shared receiver does **not** imply that
-Live, Account, Analytics or Home already have complete alert rules. Connect
-those producers through the same transport as their checks are implemented.
+Authority and consumer-request queue, plus the fixed host observer:
+
+- HTTPS readiness for Live, Account and Listener;
+- existing Analytics/PMP monitor outcome and freshness (including Analytics
+  container/database/source-quality checks through its existing monitor);
+- Analytics/PMP scheduled backup job outcomes;
+- nonempty backup artifact freshness for Live, Account, Analytics and PMP;
+- published public Live events still SCHEDULED after their start, excluding test
+  events, plus independent schedule-probe and observer-freshness alerts.
+
+`platform-observer.py` runs every minute via the versioned systemd service/timer.
+It publishes atomic, aggregate-only metrics to the existing node-exporter
+textfile directory. It accepts no arguments, secrets or caller-selected targets.
+The fixed Live SQL is a read-only transaction with statement/command timeouts;
+it checks the database container's Compose identity first. It reports only
+counts and a next-event timestamp, never event titles, identities or credentials.
+Root is required for the existing Docker socket and private backup metadata;
+the script/unit must remain root-owned and not writable by applications.
+
+Install the reviewed script mode 0755 under
+`/usr/local/libexec/harmonic-beacon/platform-observer.py`, and the two units from
+`ops/early-birds/systemd/` under `/etc/systemd/system/`. Validate with
+`systemd-analyze verify`, `daemon-reload`, then enable/start only
+`harmonic-beacon-platform-observer.timer` and start its service. Inspect finite
+metrics and Prometheus series before enabling rules. Missing/failed checks stay
+unhealthy; they must not publish zero overdue events or healthy backups.
+Rollback stops/disables that timer, restores the prior rule file and reloads
+Prometheus, then removes only this observer's installed files/metrics.
+
+An overdue event does not become healthy by aging out: use authenticated Staff
+to open the right event or explicitly cancel/reschedule it after determining
+what happened. A historic SCHEDULED row needs disposition, not silent filtering.
+The next-event timestamp is zero when no future published public event exists;
+that does not disprove an event announced outside the database.
+
+Artifact freshness is not integrity, off-host replication or restore proof.
+Live/Account currently have release-time artifacts; this observer does not add a
+recurring backup job for them. Home and total-Mona outages still need independent
+off-host monitoring. A common receiver does not imply those checks exist.
+
 Transactional email (login links, receipts, customer messages) remains on its
 own delivery path: never send those payloads to this operational group.
 
@@ -34,7 +71,8 @@ python3 /usr/local/libexec/harmonic-beacon/beacon-notify.py \
   --summary 'Scheduled public event has started with doors closed'
 ```
 
-This example is a submission interface, not an installed event-schedule monitor.
+The installed observer supplies the event-schedule monitor; this example shows
+how another producer can use the same notification transport.
 Use `--dry-run` for validation. Producers refresh ongoing alerts before `--ttl`
 (default 900 seconds), and send `--resolve` with the **same service, name,
 severity and environment** after verifying recovery. Alert expiry means the
