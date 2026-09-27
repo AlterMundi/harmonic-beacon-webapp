@@ -1,8 +1,11 @@
 # Harmonic Beacon Sustainable Development and Community Strategy Research
 
-Status: Historical working research (2026-08-07); recommendations are not ratified product policy. Preserved on 2026-09-27 from a local draft. Repository state, fees, laws, platform rules and the proposed schedule below describe that research date and were not revalidated during preservation.  
-Research date: 2026-08-07  
-Scope: Product Zero, Founding Listener membership, continuous crowdfunding, citizen science, community governance, distribution, X, and the path toward ecosystem sustainability  
+Status: Historical working research (2026-08-07); recommendations are not ratified product policy. Preserved on 2026-09-27 from a local draft. Repository state, fees, laws, platform rules and the proposed schedule below describe that research date and were not revalidated during preservation.
+
+Research date: 2026-08-07
+
+Scope: Product Zero, Founding Listener membership, continuous crowdfunding, citizen science, community governance, distribution, X, and the path toward ecosystem sustainability
+
 Primary repositories reviewed:
 
 - `harmonic-beacon-webapp`
