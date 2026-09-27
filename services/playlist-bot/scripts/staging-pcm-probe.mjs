@@ -1,7 +1,8 @@
 import { Room, RoomEvent, AudioStream, dispose } from '@livekit/rtc-node';
 import { readFileSync } from 'node:fs';
 
-if (process.argv.length !== 2) throw new Error('This fixed staging probe accepts only a read-only token through stdin.');
+const legacy=process.argv.length===3 && process.argv[2]==='--legacy-publisher';
+if (process.argv.length !== 2 && !legacy) throw new Error('This fixed staging probe accepts only a read-only token through stdin.');
 const room = new Room();
 const readers = [];
 let frames = 0;
@@ -40,8 +41,8 @@ try {
   const bot=room.remoteParticipants.get('playlist-bot');
   metadata=JSON.parse(bot?.metadata??'{}');
   const telemetryFresh=metadata.schema==='hb.bed-audio.v1' && Date.now()-metadata.reportedAt<5000;
-  console.log(JSON.stringify({room:'staging-beacon',frames,audibleFrames,receivedMs,audibleMs,telemetryFresh,sourceAudible:metadata.sourceAudible,bedFrameAgeMs:Date.now()-metadata.bedAudibleAt}));
-  if(receivedMs<9000 || audibleMs/receivedMs<0.98 || !telemetryFresh || metadata.sourceAudible!==false) process.exitCode=1;
+  console.log(JSON.stringify({room:'staging-beacon',publisher:legacy?'legacy-without-audio-telemetry':'candidate',frames,audibleFrames,receivedMs,audibleMs,telemetryFresh,sourceAudible:metadata.sourceAudible,bedFrameAgeMs:Date.now()-metadata.bedAudibleAt}));
+  if(receivedMs<9000 || audibleMs/receivedMs<0.98 || (!legacy && (!telemetryFresh || metadata.sourceAudible!==false))) process.exitCode=1;
 } catch (error) {
   console.log(JSON.stringify({status:'probe-failed',frames,audibleFrames,error:String(error).replaceAll(providedToken||'unused-redaction-sentinel','[token]').replace(/eyJ[A-Za-z0-9_.-]+/g,'[token]').slice(0,500)}));
   process.exitCode=1;

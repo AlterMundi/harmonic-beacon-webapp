@@ -457,3 +457,90 @@ ssh mona 'docker exec -e STAGING_MEDIA_PROBE=1 -i hb-live-staging-tapestry node 
 Repeat both after recovery/forward. They do not exercise Staff authorization,
 camera permissions, browser playback or mobile background handling; the complete
 synthetic event remains a separate acceptance requirement.
+
+
+### Installed bot lifecycle rehearsal
+
+The following guarded probe uses the installed staging bot image and its native
+SDK, a synthetic source and a decoded PCM observer. It refuses to start unless
+`staging-beacon` contains only `playlist-bot`. It exercises no publication,
+published-without-frames, audible source, sustained zero PCM, remote mute,
+unpublish and removal/reconnection of the bot's LiveKit participant. It does
+not restart a container, alter the database or use production credentials.
+The room is unavailable for another rehearsal during its roughly one-minute
+run. Confirm exclusive staging ownership and exact image IDs first.
+
+```bash
+ssh mona 'docker exec -e STAGING_MEDIA_PROBE=1 -i hb-live-staging-playlist-bot node --input-type=module' \
+  < services/playlist-bot/scripts/staging-lifecycle-probe.mjs
+```
+
+Every phase must report `passed`, the process must exit zero, and cleanup must
+leave only the bot. This is native PCM evidence inside the remote media network,
+not browser playback or public-route transition evidence. Repeat the external
+TLS PCM probe above afterwards to establish public reception of the restored
+fallback. Retain that distinction in the issue receipt. A failed probe still
+requires readback of participant cleanup and the public fallback; never treat an
+assertion or timeout as successful restoration.
+
+The native SDK in the installed bot does not expose publisher-local mute, and
+staging intentionally disables remote unmute. Do not loosen that server policy
+for a test. Exercise publisher-owned mute/unmute through Chromium with an
+external native PCM observer over the public staging TLS route:
+
+```bash
+set -o pipefail
+ssh mona 'docker exec -e STAGING_MEDIA_PROBE=1 -i hb-live-staging-playlist-bot node --input-type=module' \
+  < services/playlist-bot/scripts/staging-publisher-tokens.mjs \
+  | node services/playlist-bot/scripts/staging-browser-audio-probe.mjs
+```
+
+Run from the repository with root and playlist-bot dependencies installed and
+the pinned Playwright Chromium available. The signer refuses an occupied room,
+issues only two-minute grants for `staging-beacon`, and sends them directly to
+the probe's stdin. Never run it without the pipe or capture its stdout. The
+source has publication permission only; the observer has subscription permission
+only. The probe publishes an oscillator (no microphone/camera), checks source
+sound and bed fades across mute/unmute/unpublish, then disconnects both clients.
+It neither uses nor impersonates a Staff identity. This proves public media
+behavior, not the separate Staff event authorization or camera journey.
+
+### Retained app and media recovery drill
+
+`live-staging-media-recovery.compose.yml` is an optional third overlay. Bind
+`LIVE_STAGING_RECOVERY_APP_IMAGE`, `LIVE_STAGING_RECOVERY_TAPESTRY_IMAGE` and
+`LIVE_STAGING_RECOVERY_PLAYLIST_IMAGE` to retained exact `sha256:` IDs (verify all
+three exist locally). Set `LIVE_STAGING_RECOVERY_SESSION_ID=hb590-legacy-recovery`
+for the media-only probe below. This creates a registry seed inside tapestry;
+it does not create an event or authorize access through the app.
+
+Render base + media + recovery with the same private staging env files and the
+recovery variables. Pass the result through `validate-media-compose.mjs` without
+printing it, and compare the three resolved image IDs against the intended
+retained artifacts. Start **only** `app tapestry playlist-bot` with
+`up -d --no-deps --no-build --pull never`; do not recreate LiveKit/PostgreSQL or
+run migrations. Read the old app SHA and exact image IDs back from the running
+containers, plus public health/readiness and profile provenance.
+
+For a legacy tapestry image that requires explicit registration at startup:
+
+```bash
+ssh mona 'docker exec -e STAGING_MEDIA_PROBE=1 -e STAGING_LEGACY_TAPESTRY=1 -i hb-live-staging-tapestry node --input-type=module' \
+  < services/tapestry/scripts/staging-probe.mjs
+set -o pipefail
+ssh mona 'docker exec -i hb-live-staging-playlist-bot node --input-type=module' \
+  < services/playlist-bot/scripts/staging-listener-token.mjs \
+  | node services/playlist-bot/scripts/staging-pcm-probe.mjs --legacy-publisher
+```
+
+The legacy PCM option still requires the same duration and audible-frame ratio;
+it explicitly does not require audio telemetry that the retained old bot never
+implemented. It is not a candidate health pass. The old image retains its known
+silent-source limitation; recovery does not promise the new VAD behavior.
+
+Restore the candidate using base + media (omit the recovery overlay) with the
+same three selected services and `--no-deps --no-build --pull never`. Verify exact
+image IDs, source/profile, public readiness, normal dynamic tapestry registration
+and the normal external PCM probe. Preserve both sets of images and the recovery
+configuration. This drill proves app startup and media recovery; acceptance of
+Staff permissions and full event lifecycle remains a separate required journey.
