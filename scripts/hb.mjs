@@ -7,6 +7,7 @@ function help() {
 
 Commands:
   doctor         inspect repository, access, service health and operational routing
+  worktrees      inventory worktrees and collect explicitly selected clean merged lanes
   delivery-status inspect PR identities, gate observations and missing review (read-only)
   change-impact  select a conservative verification profile for changed paths`);
 }
@@ -17,6 +18,12 @@ if (!command || command === '--help' || command === '-h') {
 } else if (command === 'doctor') {
   const doctor = await import('./ops/hb-doctor.mjs');
   code = await doctor.main(args);
+} else if (command === 'worktrees') {
+  const worktrees = await import('./ops/worktrees.mjs');
+  try { code = worktrees.main(args); } catch (error) {
+    console.error(`hb worktrees: ${error.message}`);
+    code = 1;
+  }
 } else if (command === 'change-impact') {
   const impact = await import('./ci/change-impact.mjs');
   code = impact.main(args);

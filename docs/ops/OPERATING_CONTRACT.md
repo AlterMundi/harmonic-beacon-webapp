@@ -12,12 +12,19 @@ participant identity, or mutable production value.
 - One operator owns each mutable environment and candidate at a time. Other
   agents may inspect or review from separate worktrees but do not mutate the
   same worktree or environment concurrently.
+- Operators appointed by Nicolás, Mariano or Sai use the same repository
+  contract. Ownership is assigned per task/environment, never permanently by
+  person, model, agent harness or private skillset. The incoming operator must
+  be able to reproduce the current state using versioned commands and the
+  owning issue. See [operator portability](OPERATOR_LOOP.md#operator-portability).
 - GitHub `maintain`, host SSH, sudo, Docker, database, payment-provider, DNS,
   or secret-store access are independent capabilities. Verify only the
   capability required for the operation.
 - DNSExit is outside ordinary Beacon operations. Apple remains hidden until
   its external developer material is available. Real payments are never a
   smoke test.
+- Do not change DNSExit, Meta Pixel or Apple configuration as incidental work.
+  Passwords require at least eight characters, without imposed complexity.
 
 ## Current-state sources
 
@@ -125,6 +132,17 @@ they are loaded at those boundaries instead of repeated in every diagnosis.
   behavior from a unit test or a green workflow that did not exercise it.
 - During an active event, prefer observation and reversible runtime controls;
   do not deploy or restart unless the user explicitly accepts the live impact.
+- No Live or Account deploys within the 24 hours before an event. Confirm the
+  next event from Staff scheduling and the Live database, including timezone;
+  missing scheduled rows do not disprove an event announced elsewhere. Resolve
+  conflicts in the owning issue before promotion. Any explicitly authorized
+  event-day exception requires rehearsal of the exact candidate in staging.
+- Firefox is opt-in, not part of routine verification. Retain the applicable
+  Chromium/Android and WebKit checks. Build Docker images only when the change
+  needs a new artifact; preserve rollback images and reuse compatible caches.
+- Keep at most three active work lanes per repository per host. Follow
+  [WORKTREES.md](WORKTREES.md) for explicit ownership, compatible shared
+  dependencies, post-merge GC and verified recovery before removal.
 
 ## Incidents and alerts
 
