@@ -135,3 +135,15 @@ verify recovery and hand it back with one continuation record. A subsequent
 authorized production delivery demonstrates production operation. Record where
 human action was required and why. Neither Codex nor Hermes is presumed capable
 solely from previous experience or a well-written skill.
+
+
+## Gate event scope
+
+Text-only PR edits do not restart CI/audio qualification or dispatch a delivery
+assessment. A base retarget still invalidates admission; synchronize or reopen
+the PR to qualify the new base. Labels and PR identity changes remain evaluated.
+First workflow starts are covered by those PR events; rerun starts always request
+invalidation. Completion callbacks wait until constituent workflows finish before
+requesting the exact-base evaluator. The periodic reconciler remains recovery for
+missed callbacks. None of these filters grants success or changes the evaluator's
+head/base, attempt, provenance or final-readback checks.
