@@ -1,0 +1,14 @@
+[Unit]
+Description=Schedule retention after Harmonic Beacon delivery state changes
+
+[Path]
+PathChanged=/var/lib/harmonic-beacon/account-delivery
+PathChanged=/var/lib/harmonic-beacon/account-delivery/receipts
+PathChanged=/var/lib/harmonic-beacon/listener-account-production/last-activation
+PathChanged=/var/lib/harmonic-beacon/listener-identity-staging/current-image
+PathChanged=/var/lib/harmonic-beacon/media-release-590/production/state.json
+PathChanged=/var/lib/harmonic-beacon/media-release-590/staging/state.json
+Unit=harmonic-beacon-storage-maintenance.service
+
+[Install]
+WantedBy=multi-user.target
