@@ -3,16 +3,24 @@ global:
 
 route:
   receiver: telegram-warning
-  group_by: [service, alertname, environment]
+  group_by: [service, alertname, environment, host]
   group_wait: 5m
   group_interval: 5m
-  repeat_interval: 1h
+  repeat_interval: 6h
   routes:
+    - receiver: telegram-warning
+      matchers: [alertname="EarlyBirdsDiskPrepare"]
+      repeat_interval: 12h
     - receiver: telegram-critical
       matchers: [severity="critical"]
       group_wait: 0s
       group_interval: 1m
       repeat_interval: 15m
+
+inhibit_rules:
+  - source_matchers: [alertname="EarlyBirdsDiskCritical"]
+    target_matchers: [alertname="EarlyBirdsDiskPrepare"]
+    equal: [instance, mountpoint, environment]
 
 receivers:
   - name: telegram-warning
@@ -20,12 +28,14 @@ receivers:
       - bot_token_file: /runtime-secrets/telegram_bot_token
         chat_id: __TELEGRAM_CHAT_ID__
         send_resolved: true
+        parse_mode: ""
         message: '{{ template "telegram.default.message" . }}'
   - name: telegram-critical
     telegram_configs:
       - bot_token_file: /runtime-secrets/telegram_bot_token
         chat_id: __TELEGRAM_CHAT_ID__
         send_resolved: true
+        parse_mode: ""
         message: '{{ template "telegram.default.message" . }}'
 
 templates:

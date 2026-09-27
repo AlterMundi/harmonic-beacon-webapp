@@ -142,9 +142,9 @@ test('alerts on unavailable payment providers only while their sales lane is ena
   assert.match(sandboxRule, /on\(provider, environment\)/);
 });
 
-test('routes warnings hourly and critical alerts immediately every fifteen minutes', async () => {
+test('routes bounded reminders and keeps critical alerts immediate', async () => {
   const alertmanager = await read('alertmanager/alertmanager.yml.tmpl');
-  assert.match(alertmanager, /group_wait: 5m[\s\S]*repeat_interval: 1h/);
+  assert.match(alertmanager, /group_wait: 5m[\s\S]*repeat_interval: 6h/);
   assert.match(alertmanager, /matchers: \[severity="critical"\][\s\S]*group_wait: 0s[\s\S]*repeat_interval: 15m/);
 });
 
@@ -152,4 +152,28 @@ test('disk alerts report their measured free-space percentage', async () => {
   const alerts = await read('prometheus/alerts.yml');
   assert.match(alerts, /EarlyBirdsDiskPrepare[\s\S]*\{\{ \$value \| humanizePercentage \}\} free \(warning below 30%\)/);
   assert.match(alerts, /EarlyBirdsDiskCritical[\s\S]*\{\{ \$value \| humanizePercentage \}\} free \(critical below 15%\)/);
+});
+
+test('capacity warnings cannot duplicate a critical disk page', async () => {
+  const config = await read('alertmanager/alertmanager.yml.tmpl');
+  assert.match(config, /alertname="EarlyBirdsDiskPrepare"\]\n      repeat_interval: 12h/);
+  assert.match(config, /source_matchers: \[alertname="EarlyBirdsDiskCritical"\]/);
+  assert.match(config, /target_matchers: \[alertname="EarlyBirdsDiskPrepare"\]/);
+  assert.match(config, /equal: \[instance, mountpoint, environment\]/);
+  assert.match(config, /parse_mode: ""/);
+});
+
+test('shared notification client validates input and keeps alert identity through resolution', async () => {
+  const { execFileSync, spawnSync } = await import('node:child_process');
+  const client = path.join(root, 'scripts/beacon-notify.py');
+  const args = [client, '--service', 'live', '--name', 'BeaconTransportCheck',
+    '--summary', 'Synthetic transport check', '--dry-run'];
+  const firing = JSON.parse(execFileSync('python3', args, { encoding: 'utf8' }))[0];
+  const resolved = JSON.parse(execFileSync('python3', [...args, '--resolve'], { encoding: 'utf8' }))[0];
+  assert.deepEqual(firing.labels, resolved.labels);
+  assert.ok(Date.parse(firing.endsAt) > Date.parse(firing.startsAt) + 60_000);
+  assert.ok(Date.parse(resolved.endsAt) <= Date.now());
+  assert.equal(spawnSync('python3', [...args, '--ttl', '0']).status, 2);
+  assert.equal(spawnSync('python3', [...args, '--name', 'unstable user identifier']).status, 2);
+  assert.equal(spawnSync('python3', [...args, '--service', 'arbitrary']).status, 2);
 });

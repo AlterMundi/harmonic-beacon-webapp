@@ -25,7 +25,6 @@ on:
       - src/components/brand/ListenerIdentityCacheBoundary.tsx
       - src/components/brand/__tests__/ListenerIdentityCacheBoundary.test.tsx
       - services/beacon-stream/**
-      - ops/early-birds/**
       - ops/early-birds-preview/**
       - ops/beacon-account/**
       - ops/listener-identity-staging/**
@@ -73,7 +72,6 @@ on:
       - src/components/brand/ListenerIdentityCacheBoundary.tsx
       - src/components/brand/__tests__/ListenerIdentityCacheBoundary.test.tsx
       - services/beacon-stream/**
-      - ops/early-birds/**
       - ops/early-birds-preview/**
       - ops/beacon-account/**
       - ops/listener-identity-staging/**

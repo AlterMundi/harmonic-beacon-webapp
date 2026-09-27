@@ -1,9 +1,87 @@
-# EarlyBirds preview operations
+# Harmonic Beacon operational alerts
 
-This stack is separate from the event compose project. It observes the
+This is the shared Harmonic Beacon operational notification transport, owned
+through this repository on the `early-birds` lane. Any appointed operator can
+maintain it; it does not depend on Hermes or private agent context. The historical
+Compose project/path names stay unchanged to preserve persistent state.
+
+The stack is separate from the event compose project. It observes the
 EarlyBirds origin through its private metrics listener and exposes Prometheus,
 Alertmanager and node-exporter only on host loopback. Access is through a
 ZeroTier/admin tunnel; do not add a public nginx location for metrics or admin.
+
+## Shared transport and current coverage
+
+Use the existing Telegram recipient in Mona's root-owned secret files; do not
+create a second bot/group when taking over. `[Harmonic Beacon FIRING/RESOLVED]`
+is the common envelope. Host capacity is labeled `production`, `host=mona`;
+Listener preview and authority metrics retain their own environment labels.
+
+Current Prometheus coverage: host capacity, Listener origin/canary, membership
+Authority and consumer-request queue. A shared receiver does **not** imply that
+Live, Account, Analytics or Home already have complete alert rules. Connect
+those producers through the same transport as their checks are implemented.
+Transactional email (login links, receipts, customer messages) remains on its
+own delivery path: never send those payloads to this operational group.
+
+On Mona, install the reviewed client with mode 0755 at
+`/usr/local/libexec/harmonic-beacon/beacon-notify.py`. It needs Python 3 and local
+Alertmanager, not a Telegram token, Docker access or sudo at execution time:
+
+```bash
+python3 /usr/local/libexec/harmonic-beacon/beacon-notify.py \
+  --service live --name LiveEventDoorsClosed --severity critical \
+  --summary 'Scheduled public event has started with doors closed'
+```
+
+This example is a submission interface, not an installed event-schedule monitor.
+Use `--dry-run` for validation. Producers refresh ongoing alerts before `--ttl`
+(default 900 seconds), and send `--resolve` with the **same service, name,
+severity and environment** after verifying recovery. Alert expiry means the
+producer lease ended, not proof of service health; persistent monitors also
+need an independent freshness alert. Choose TTL longer than the warning delay.
+Use stable alert names, bounded operational summaries and repository runbook
+paths; no secrets, email addresses, customer/event identifiers or raw errors.
+The script always submits to loopback and ignores HTTP proxy variables.
+
+Delivery drill: submit `BeaconTransportCheck` for `service=ops`,
+`environment=staging`, `severity=critical`, explicitly described as synthetic;
+verify Alertmanager's Telegram success/failure counters, then send the matching
+resolved update and verify another successful notification. API acceptance alone
+is not delivery proof. Telegram acceptance is not proof a human read the message.
+Do not disable a real service to exercise this path.
+
+Alertmanager and Prometheus remain private on Mona. A host/network outage can
+prevent them from reporting their own failure; independent off-host monitoring
+is still needed for that failure mode. Local host access is the trust boundary:
+do not expose the unauthenticated Alertmanager API through public nginx.
+
+## Capacity and safe cleanup
+
+Check `df -h / /mnt/beacon-data`, `docker system df`, then inventory cache with
+`docker buildx du --format json`. Build cache and rollback images are different
+objects. Select reviewed, reclaimable, unshared cache IDs older than 72 hours;
+recheck that exact set before `docker buildx prune --filter 'id~=^(ID1|ID2)$'
+--filter until=72h --force`. Compare the complete image-ID set before/after.
+Never use `docker system prune`, volume pruning or blanket image removal.
+Retain all active and rollback images; any archive/removal of old images is a
+separate explicit selection with verified recovery. Keep the 30%/15% thresholds;
+a quieter reminder schedule does not resolve a low-disk condition.
+
+## Configuration delivery and rollback
+
+No application build or service replacement is needed. Inspect the running
+Prometheus/Alertmanager mounts to find the exact deployed files (they may refer
+to historical release directories). Preserve root-only copies of their current
+configuration and template before applying changes. Render the new Alertmanager
+config using the **existing private recipient**, validate with the deployed
+`amtool check-config`, and validate rules with deployed `promtool check rules`.
+Validate the new template too. Update the mounted file contents (do not rename a
+single-file bind mount), then signal only the affected process with SIGHUP.
+Read back reload-success metrics, exact configuration/rules and the bounded
+Telegram drill. On failure restore those saved bytes and SIGHUP again. Never
+print the rendered config: it contains the private recipient. Record source SHA,
+file hashes, rollback directory and delivery evidence in the owning issue.
 
 ## Bootstrap and secrets
 
@@ -39,8 +117,9 @@ capacity claim so it also exercises an external network path.
 
 ## Alert behavior and immediate action
 
-Warnings wait five minutes, group by service/alert/environment and repeat every
-hour. Critical alerts notify immediately and repeat every 15 minutes. All
+Warnings wait five minutes, group by service/alert/environment/host and repeat every
+six hours. Root-disk capacity warnings repeat every twelve hours; a matching
+critical disk alert inhibits the warning while critical is active. Critical alerts notify immediately and repeat every 15 minutes. All
 receivers set `send_resolved: true`, so recovery messages are mandatory.
 
 | Signal | Warning | Critical | Immediate action |
