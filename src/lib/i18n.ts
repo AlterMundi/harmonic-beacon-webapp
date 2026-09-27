@@ -252,8 +252,11 @@ export type Messages = {
         quality: Record<'excellent' | 'good' | 'poor' | 'lost' | 'unknown', string>;
     };
     tapestry: {
+        captureStatus: Record<'off' | 'requesting' | 'uploading' | 'received' | 'composing' | 'published' | 'failed' | 'paused', string>;
         label: string;
         latestAlt: string;
+        stale: string;
+        unavailable: string;
         waiting: string;
         stopCamera: string;
         shareSnapshot: string;
@@ -814,8 +817,11 @@ export const messages: Record<UiLocale, Messages> = {
             quality: { excellent: 'conexión excelente', good: 'conexión buena', poor: 'conexión débil', lost: 'conexión perdida', unknown: 'conexión desconocida' },
         },
         tapestry: {
+            captureStatus: { off: 'Cámara apagada', requesting: 'Solicitando cámara…', uploading: 'Enviando imagen…', received: 'Imagen recibida; esperando confirmación del tapiz.', composing: 'Imagen recibida; componiendo el tapiz…', published: 'Tu imagen está en el tapiz.', failed: 'No pudimos actualizar tu imagen. Se reintentará mientras la cámara esté activa.', paused: 'Captura pausada.' },
             label: 'Tapiz',
             latestAlt: 'Último tapiz de participantes',
+            stale: 'El tapiz no se está actualizando. Se muestra la última imagen recibida; estamos reintentando.',
+            unavailable: 'No pudimos obtener el tapiz. Estamos reintentando; si persiste, avisá al equipo.',
             waiting: 'Esperando imágenes.',
             stopCamera: 'Dejar de compartir la cámara con el tapiz',
             shareSnapshot: 'Compartir una imagen de cámara',
@@ -1433,8 +1439,11 @@ export const messages: Record<UiLocale, Messages> = {
             quality: { excellent: 'connection excellent', good: 'connection good', poor: 'connection poor', lost: 'connection lost', unknown: 'connection unknown' },
         },
         tapestry: {
+            captureStatus: { off: 'Camera off', requesting: 'Requesting camera…', uploading: 'Sending image…', received: 'Image received; waiting for tapestry confirmation.', composing: 'Image received; composing tapestry…', published: 'Your image is in the tapestry.', failed: 'We could not update your image. Retrying while the camera is active.', paused: 'Capture paused.' },
             label: 'Tapestry',
             latestAlt: 'Latest participant tapestry',
+            stale: 'The tapestry is not updating. Showing the last received image while retrying.',
+            unavailable: 'We could not load the tapestry. Retrying; if this continues, contact the team.',
             waiting: 'Waiting for snapshots.',
             stopCamera: 'Stop sharing your camera with the tapestry',
             shareSnapshot: 'Share a camera snapshot',

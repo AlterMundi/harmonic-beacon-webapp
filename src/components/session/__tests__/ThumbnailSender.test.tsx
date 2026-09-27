@@ -131,6 +131,52 @@ describe('ThumbnailSender', () => {
         await waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(2));
     });
 
+    it('shows upload failures instead of pretending the image was received', async () => {
+        mockCamera();
+        vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 502 }));
+        render(<ThumbnailSender sessionId="session-1" connected isPublishing={false} />);
+        await screen.findByText(messages.en.tapestry.captureStatus.failed);
+        expect(screen.queryByText(messages.en.tapestry.captureStatus.published)).not.toBeInTheDocument();
+    });
+
+    it('shows publication only when the service confirms a completed composite', async () => {
+        mockCamera();
+        vi.mocked(fetch).mockImplementation(async () => Response.json({ state: 'published' }));
+        render(<ThumbnailSender sessionId="session-1" connected isPublishing={false} />);
+        await screen.findByText(messages.en.tapestry.captureStatus.published);
+    });
+
+    it('pauses capture in the background and resumes on return without overriding opt-out', async () => {
+        const { getUserMedia, stops } = mockCamera();
+        const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(false);
+        render(<ThumbnailSender sessionId="session-1" connected isPublishing={false} />);
+        await screen.findByRole('button', { name: messages.en.tapestry.stopCamera });
+        hidden.mockReturnValue(true);
+        fireEvent(document, new Event('visibilitychange'));
+        await waitFor(() => expect(stops[0]).toHaveBeenCalledOnce());
+        hidden.mockReturnValue(false);
+        fireEvent(document, new Event('visibilitychange'));
+        await waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(2));
+        fireEvent.click(await screen.findByRole('button', { name: messages.en.tapestry.stopCamera }));
+        hidden.mockReturnValue(true);
+        fireEvent(document, new Event('visibilitychange'));
+        hidden.mockReturnValue(false);
+        fireEvent(document, new Event('visibilitychange'));
+        expect(getUserMedia).toHaveBeenCalledTimes(2);
+    });
+
+    it('releases a camera that resolves after unmount without starting an upload', async () => {
+        const { getUserMedia } = mockCamera();
+        let resolve!: (stream: MediaStream) => void;
+        getUserMedia.mockImplementation(() => new Promise(r => { resolve = r; }));
+        const view = render(<ThumbnailSender sessionId="session-1" connected isPublishing={false} />);
+        view.unmount();
+        const stop = vi.fn();
+        await act(async () => resolve({ getTracks: () => [{ stop }] } as unknown as MediaStream));
+        expect(stop).toHaveBeenCalledOnce();
+        expect(fetch).not.toHaveBeenCalled();
+    });
+
     it('switches the tapestry camera explicitly without requesting or changing audio', async () => {
         const { stops, getUserMedia } = mockCamera();
 

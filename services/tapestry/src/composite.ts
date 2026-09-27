@@ -117,6 +117,12 @@ export class TapestryCompositor {
     }
   }
 
+  hasPublishedParticipant(sessionId: string, participantId: string): boolean {
+    const entry = this.cache.get(sessionId);
+    return Boolean(entry?.snapshot && this.nowMs() - entry.builtAtMs <= this.config.frameTtlMs
+      && entry.snapshot.layout.cells.some(cell => cell.id === participantId));
+  }
+
   compositesBuiltCount(): number {
     return this.compositesBuilt;
   }

@@ -42,8 +42,14 @@ export async function POST(request: NextRequest) {
     try {
         const contributorId = tapestryParticipantId(entitlement.principal.identity);
         const response = await sendTapestryFrame(internalUrl, sessionId, contributorId, frame);
+        if (response.ok) {
+            const receipt = await response.json().catch(() => null) as { state?: string } | null;
+            const state = receipt?.state === 'published' || receipt?.state === 'composing'
+                ? receipt.state : 'received';
+            return NextResponse.json({ state }, { headers: { 'cache-control': 'no-store' } });
+        }
         return new NextResponse(null, {
-            status: response.ok ? 204 : response.status === 429 ? 429 : 502,
+            status: response.status === 429 ? 429 : 502,
             headers: { 'cache-control': 'no-store' },
         });
     } catch {

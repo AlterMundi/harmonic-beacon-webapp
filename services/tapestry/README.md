@@ -94,3 +94,19 @@ retention, frame replacement, 10-second expiry, composite rate limiting and
 grid layout, health redaction, and a 30-second soak at 60 ingests/second
 across 150 participants (a shortened stand-in for the 10-minute container
 soak — see the comment in `test/soak.test.ts`).
+
+## Appearance receipts
+
+Frame ingest acknowledges `composing` until a completed, recent composite
+contains that participant's opaque tile key, then `published`. This confirms
+appearance in the collective image, not that the most recent upload is already
+rendered. Confirmation expires with the configured frame TTL. Ingest does not
+force composition or bypass the render rate limit. The Next proxy exposes only
+this bounded state; a legacy successful service response becomes `received`,
+never an invented publication confirmation.
+
+The camera UI checks HTTP failures and limits uploads to five seconds. Hidden
+pages release the camera and abort uploads; returning resumes only when the
+attendee has not opted out. Camera denial/revocation requires an explicit retry.
+A disconnected/unmounted capture cannot publish a late success into another
+session's UI. A failed composite refresh labels the retained image as stale.

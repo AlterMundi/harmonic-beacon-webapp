@@ -24,7 +24,7 @@ describe('POST /api/tapestry/frame', () => {
         const { POST } = await import('../route');
         const response = await POST(frameRequest());
 
-        expect(response.status).toBe(204);
+        expect(response.status).toBe(200);
         expect(resolveRoomPrincipal).toHaveBeenCalledWith(expect.anything(), 'session-1');
         const [url, init] = vi.mocked(fetch).mock.calls[0];
         expect(String(url)).toContain('/sessions/session-1/participants/tp-');
@@ -46,7 +46,7 @@ describe('POST /api/tapestry/frame', () => {
             .mockResolvedValueOnce(Response.json({ ok: true }))
             .mockResolvedValueOnce(new Response(null, { status: 201 }));
         const { POST } = await import('../route');
-        expect((await POST(frameRequest())).status).toBe(204);
+        expect((await POST(frameRequest())).status).toBe(200);
         expect(fetch).toHaveBeenCalledTimes(3);
         expect(vi.mocked(fetch).mock.calls[1][0]).toBe('http://tapestry:3100/tapestry/sessions/session-1');
         expect(vi.mocked(fetch).mock.calls[1][1]?.method).toBe('PUT');

@@ -46,3 +46,17 @@ test('inactivity removes dynamic frames and arrangement, retains seeds and permi
   assert.equal(store.participantCount(), 0);
   assert.equal(store.registerSession('fresh', 250, 2), true);
 });
+
+test('appearance confirmation expires with the completed composite', async () => {
+  const { TapestryCompositor } = await import('../src/composite.js');
+  let now = 1_000;
+  const config = testConfig({ frameTtlMs: 100 });
+  const store = new TapestryStore(config.sessionIds, config.maxParticipantsPerSession);
+  const compositor = new TapestryCompositor(config, store, () => now);
+  store.ingest(config.sessionIds[0], 'person', await makeJpeg(10, 20, 30, 100), now);
+  assert.equal(compositor.hasPublishedParticipant(config.sessionIds[0], 'person'), false);
+  await compositor.composite(config.sessionIds[0]);
+  assert.equal(compositor.hasPublishedParticipant(config.sessionIds[0], 'person'), true);
+  now += 101;
+  assert.equal(compositor.hasPublishedParticipant(config.sessionIds[0], 'person'), false);
+});

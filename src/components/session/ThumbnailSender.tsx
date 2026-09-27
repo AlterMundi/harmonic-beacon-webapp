@@ -7,6 +7,7 @@ import { useLocale } from '@/context/LocaleContext';
 // for every attendee — each participant appears in the composite as a small
 // jpeg refreshed at ~1 FPS. Explicit opt-out via the stop button.
 const CAPTURE_INTERVAL_MS = 1_000;
+type CaptureStatus = 'off' | 'requesting' | 'uploading' | 'received' | 'composing' | 'published' | 'failed' | 'paused';
 type CameraFacingMode = 'user' | 'environment';
 
 type Props = { sessionId: string; connected: boolean; isPublishing: boolean };
@@ -17,9 +18,14 @@ export default function ThumbnailSender({ sessionId, connected, isPublishing }: 
     const videoRef = useRef<HTMLVideoElement | null>(null);
     const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const sendingRef = useRef(false);
+    const generationRef = useRef(0);
+    const uploadRef = useRef<AbortController | null>(null);
+    const [visible, setVisible] = useState(true);
+    const [captureStatus, setCaptureStatus] = useState<CaptureStatus>('off');
     // Set only by the explicit opt-out button; lifecycle stops (tab hidden,
     // disconnect, promotion to publisher) never opt the attendee out.
     const optedOutRef = useRef(false);
+    const cameraUnavailableRef = useRef(false);
     const [enabled, setEnabled] = useState(false);
     // Store semantic errors so settled and pending failures use current locale
     // copy without making capture callbacks depend on translated strings.
@@ -34,6 +40,9 @@ export default function ThumbnailSender({ sessionId, connected, isPublishing }: 
     }, []);
 
     const stop = useCallback(() => {
+        generationRef.current += 1;
+        uploadRef.current?.abort();
+        setCaptureStatus('paused');
         if (timerRef.current) clearTimeout(timerRef.current);
         timerRef.current = null;
         releaseStream();
@@ -43,22 +52,36 @@ export default function ThumbnailSender({ sessionId, connected, isPublishing }: 
     const sendFrame = useCallback(async () => {
         const video = videoRef.current;
         if (!video || !streamRef.current || document.hidden || sendingRef.current) return;
-        const canvas = document.createElement('canvas');
-        canvas.width = 100;
-        canvas.height = 100;
-        const context = canvas.getContext('2d');
-        if (!context) return;
-        context.drawImage(video, 0, 0, 100, 100);
-        const frame = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.65));
-        if (!frame || frame.size > 20 * 1024 || !streamRef.current || document.hidden) return;
+        const generation = generationRef.current;
         sendingRef.current = true;
+        const controller = new AbortController();
+        uploadRef.current = controller;
+        const timeout = setTimeout(() => controller.abort(), 5_000);
         try {
-            await fetch(`/api/tapestry/frame?sessionId=${encodeURIComponent(sessionId)}`, {
-                method: 'POST', headers: { 'content-type': 'image/jpeg' }, body: frame, cache: 'no-store',
+            const canvas = document.createElement('canvas');
+            canvas.width = 100;
+            canvas.height = 100;
+            const context = canvas.getContext('2d');
+            if (!context) throw new Error('capture_unavailable');
+            context.drawImage(video, 0, 0, 100, 100);
+            const frame = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.65));
+            if (generation !== generationRef.current || !streamRef.current || document.hidden) return;
+            if (!frame || frame.size > 20 * 1024) throw new Error('capture_unavailable');
+            setCaptureStatus(previous => ['published', 'received', 'composing'].includes(previous) ? previous : 'uploading');
+            const response = await fetch(`/api/tapestry/frame?sessionId=${encodeURIComponent(sessionId)}`, {
+                method: 'POST', headers: { 'content-type': 'image/jpeg' }, body: frame,
+                cache: 'no-store', signal: controller.signal,
             });
+            if (!response.ok) throw new Error('upload_failed');
+            const receipt = await response.json().catch(() => null) as { state?: string } | null;
+            if (generation !== generationRef.current) return;
+            setCaptureStatus(receipt?.state === 'published' ? 'published'
+                : receipt?.state === 'composing' ? 'composing' : 'received');
         } catch {
-            // The tapestry is cuttable
+            if (generation === generationRef.current) setCaptureStatus('failed');
         } finally {
+            clearTimeout(timeout);
+            if (uploadRef.current === controller) uploadRef.current = null;
             sendingRef.current = false;
         }
     }, [sessionId]);
@@ -75,41 +98,60 @@ export default function ThumbnailSender({ sessionId, connected, isPublishing }: 
     }, [connected, enabled, isPublishing, sendFrame]);
 
     useEffect(() => {
-        const onVisibility = () => { if (document.hidden) stop(); };
+        const onVisibility = () => {
+            setVisible(!document.hidden);
+            if (document.hidden) stop();
+        };
         document.addEventListener('visibilitychange', onVisibility);
         return () => document.removeEventListener('visibilitychange', onVisibility);
     }, [stop]);
 
     useEffect(() => { if (isPublishing || !connected) stop(); }, [connected, isPublishing, stop]);
-    useEffect(() => () => stop(), [stop]);
+    useEffect(() => () => stop(), [sessionId, stop]);
 
     const acquireCamera = useCallback(async (requestedFacingMode: CameraFacingMode) => {
-        if (isPublishing) return;
+        if (isPublishing || document.hidden) return;
+        const generation = generationRef.current;
+        setCaptureStatus('requesting');
         const stream = await navigator.mediaDevices.getUserMedia({
             video: { width: 320, height: 320, facingMode: { ideal: requestedFacingMode } },
             audio: false,
         });
-        if (isPublishing || document.hidden) {
+        if (generation !== generationRef.current || isPublishing || document.hidden) {
             stream.getTracks().forEach((track) => track.stop());
             return;
         }
         streamRef.current = stream;
+        for (const track of stream.getTracks()) {
+            track.addEventListener?.('ended', () => {
+                if (streamRef.current !== stream) return;
+                cameraUnavailableRef.current = true;
+                stop();
+                setMessage('permissionDenied');
+            }, { once: true });
+        }
         if (videoRef.current) {
             videoRef.current.srcObject = stream;
             await videoRef.current.play();
         }
+        if (generation !== generationRef.current || streamRef.current !== stream || document.hidden) return;
         setFacingMode(requestedFacingMode);
         setEnabled(true);
-    }, [isPublishing]);
+    }, [isPublishing, stop]);
 
     const enable = useCallback(async () => {
+        const generation = generationRef.current;
         setMessage(null);
         try {
             await acquireCamera(facingMode);
         } catch {
+            if (generation !== generationRef.current) return;
+            cameraUnavailableRef.current = true;
+            releaseStream();
+            setCaptureStatus('failed');
             setMessage('permissionDenied');
         }
-    }, [acquireCamera, facingMode]);
+    }, [acquireCamera, facingMode, releaseStream]);
 
     const switchCamera = useCallback(async () => {
         if (!streamRef.current || switchingCamera) return;
@@ -140,7 +182,7 @@ export default function ThumbnailSender({ sessionId, connected, isPublishing }: 
         if (connected && !isPublishing && !enabled && !switchingCamera && !optedOutRef.current) {
             void enable();
         }
-    }, [connected, isPublishing, enabled, enable, switchingCamera]);
+    }, [connected, visible, isPublishing, enabled, enable, switchingCamera]);
 
     const optOut = useCallback(() => {
         optedOutRef.current = true;
@@ -148,6 +190,7 @@ export default function ThumbnailSender({ sessionId, connected, isPublishing }: 
     }, [stop]);
 
     const optIn = useCallback(() => {
+        cameraUnavailableRef.current = false;
         optedOutRef.current = false;
         void enable();
     }, [enable]);
@@ -172,6 +215,7 @@ export default function ThumbnailSender({ sessionId, connected, isPublishing }: 
             <button type="button" className="inline-flex min-h-11 items-center px-2 text-xs text-[var(--text-muted)] underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--cyan)]" onClick={optOut}>{copy.tapestry.stopCamera}</button>
         </div> :
             <button type="button" className="inline-flex min-h-11 items-center px-2 text-xs text-[var(--gold)] underline" onClick={optIn} disabled={!connected}>{copy.tapestry.shareSnapshot}</button>}
+        {!message && <p className="mt-1 text-xs text-[var(--text-muted)]" role="status">{copy.tapestry.captureStatus[captureStatus]}</p>}
         {message ? <p className="mt-1 text-xs text-[var(--text-muted)]">{message === 'permissionDenied' ? copy.tapestry.permissionDenied : copy.session.cameraSwitchError}</p> : null}
     </section>;
 }

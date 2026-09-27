@@ -175,7 +175,13 @@ export function createTapestryServer(config: TapestryConfig): TapestryServer {
       return;
     }
     compositor.markDirty(sessionId);
-    sendJson(res, result.replaced ? 200 : 201, { ok: true, replaced: result.replaced });
+    // A successful ingest does not force a render or claim a new publication.
+    // Only a recent completed composite containing this identity proves appearance.
+    const published = compositor.hasPublishedParticipant(sessionId, participantId);
+    sendJson(res, result.replaced ? 200 : 201, {
+      ok: true, replaced: result.replaced,
+      state: published ? 'published' : 'composing',
+    });
   }
 
   async function handleComposite(
