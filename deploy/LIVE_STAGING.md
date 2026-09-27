@@ -422,3 +422,38 @@ specified in the [pinned LiveKit configuration](https://github.com/livekit/livek
 They are not connectivity proof: require received PCM outside Mona after any
 network/config change. Apply only to staging and retain the previous config;
 never infer that production needs the same change.
+
+
+### Repeatable probes of the installed media images
+
+From a clean checkout with playlist-bot dependencies installed, run the external
+PCM probe below. The signer executes inside the **staging** bot and emits a
+two-minute, subscribe-only token for `staging-beacon` directly into the probe's
+stdin. Never run the signer alone, log its stdout, put the token in an argument,
+or copy production credentials. The probe connects to the fixed public staging
+origin, checks the grant's room/permissions and reports only frame counts and
+bounded telemetry. Run it with no active primary source: it requires at least nine seconds of
+decoded media and 98% above-threshold PCM during its ten-second observation.
+This exercises media outside Mona, not just its internal Docker bridge. Node/RTC logs do not substitute for its final success JSON.
+
+```bash
+set -o pipefail
+ssh mona 'docker exec -i hb-live-staging-playlist-bot node --input-type=module' \
+  < services/playlist-bot/scripts/staging-listener-token.mjs \
+  | node services/playlist-bot/scripts/staging-pcm-probe.mjs
+```
+
+The tapestry probe runs against the installed service over its staging-only
+container hostname, using only its existing secret in memory and a generated
+color swatch. It checks unauthorized registration, unknown session, registration,
+ingest, composite pixels, layout and the published acknowledgment. The ephemeral
+registry entry and frame expire through the service's ordinary TTLs.
+
+```bash
+ssh mona 'docker exec -e STAGING_MEDIA_PROBE=1 -i hb-live-staging-tapestry node --input-type=module' \
+  < services/tapestry/scripts/staging-probe.mjs
+```
+
+Repeat both after recovery/forward. They do not exercise Staff authorization,
+camera permissions, browser playback or mobile background handling; the complete
+synthetic event remains a separate acceptance requirement.
