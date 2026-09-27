@@ -12,7 +12,7 @@ it('provides an isolated, fail-closed audio backend before Firefox and WebKit', 
     expect(position).toBeLessThan(workflow.indexOf('      - name: Run Firefox functional and accessibility gates\n'));
     expect(position).toBeLessThan(workflow.indexOf('      - name: Run iPhone/WebKit media gate\n'));
     const step = workflow.split(heading)[1].split('\n      - ')[0];
-    expect(step).not.toContain('if:');
+    expect(step).toContain("if: inputs.reuse_run == ''\n");
     expect(step).not.toContain('continue-on-error:');
     const script = step.split('        run: |\n')[1].split('\n').map(line => line.slice(10)).join('\n');
     // Run the actual workflow shell with an isolated PATH, never host services.
