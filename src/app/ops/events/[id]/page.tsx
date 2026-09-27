@@ -3,14 +3,14 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import ConductorCockpit from '@/components/ops/ConductorCockpit';
-import { EventHeading } from '@/components/ops/LiveLocaleSurfaces';
+import { EventHeading, EventSelectionNotice } from '@/components/ops/LiveLocaleSurfaces';
 import { prisma } from '@/lib/db';
 import { messages } from '@/lib/i18n';
 import { requestLocale } from '@/lib/i18n-server';
 import { resolveStaffByToken } from '@/lib/ops-auth';
 import { SESSION_COOKIE_NAME } from '@/lib/session-auth';
 import { eventStaffPolicy } from '@/lib/staff-capabilities';
-import { resolveStaffLanding } from '@/lib/staff-navigation';
+import { listStaffEvents, resolveStaffLanding } from '@/lib/staff-navigation';
 
 export const dynamic = 'force-dynamic';
 
@@ -63,10 +63,20 @@ export default async function EventPage({
 
     const locale = await requestLocale(scheduledSession.language);
     const copy = messages[locale].ops;
+    const now = new Date();
+    const overdue = scheduledSession.status === 'SCHEDULED' && scheduledSession.scheduledAt < now;
+    // Scope alternatives through the same Staff policy as the hub. Never expose
+    // another facilitator's event merely because its media happens to be LIVE.
+    const alternatives = await listStaffEvents(staff);
+    const suggested = alternatives.find(event => event.id !== scheduledSession.id && event.status === 'LIVE')
+        ?? (overdue ? alternatives.find(event => event.id !== scheduledSession.id &&
+            event.status === 'SCHEDULED' && event.scheduledAt >= now) : undefined);
     return (
         <section className="mx-auto max-w-4xl py-4">
             <EventHeading title={scheduledSession.title} language={scheduledSession.language}
                 status={scheduledSession.status} scheduledAt={scheduledSession.scheduledAt.toISOString()} />
+            {(overdue || suggested) && <EventSelectionNotice overdue={overdue}
+                alternative={suggested ? { id: suggested.id, title: suggested.title, status: suggested.status } : null} />}
             <ConductorCockpit
                 key={scheduledSession.id}
                 session={{

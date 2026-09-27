@@ -1286,7 +1286,8 @@ describe('SessionRoomPage - transport-failure disconnect', () => {
             currentRoom().emit('disconnected', DisconnectReason.SIGNAL_CLOSE);
         });
 
-        expect(screen.queryByRole('status')).not.toBeInTheDocument();
+        // The focusable terminal panel is distinct from nonterminal tapestry status.
+        expect(document.querySelector('[role="status"][tabindex="-1"]')).not.toBeInTheDocument();
         expect(screen.getByTestId('connection-state')).toHaveTextContent('Reconnecting');
 
         await waitFor(
@@ -1460,7 +1461,8 @@ describe('SessionRoomPage - intentional disconnects are not terminal states', ()
             currentRoom().emit('disconnected', DisconnectReason.CLIENT_INITIATED);
         });
 
-        expect(screen.queryByRole('status')).not.toBeInTheDocument();
+        // The focusable terminal panel is distinct from nonterminal tapestry status.
+        expect(document.querySelector('[role="status"][tabindex="-1"]')).not.toBeInTheDocument();
         expect(screen.queryByText('Session ended')).not.toBeInTheDocument();
         expect(screen.queryByText('Connection lost')).not.toBeInTheDocument();
     });

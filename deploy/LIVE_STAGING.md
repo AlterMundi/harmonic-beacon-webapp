@@ -19,12 +19,12 @@ the event service. It is not a smaller production stack.
   while the feature is off and mounted only into the app
 - Image: `harmonic-beacon/live-staging:<exact-commit-sha>`
 
-The stack has no LiveKit, playlist bot, tapestry or commerce worker. The
+The default identity profile has no LiveKit, playlist bot, tapestry or commerce worker. The
 loopback deployment covers landing and health/readiness smoke only. Account
 login, profile/display-name and alias acceptance begins after dedicated DNS,
 TLS and Account staging are ready. Room and ticket behavior remain covered by
 the repository PostgreSQL + browser E2E suite. `/rtc` returns `503`
-intentionally. This boundary avoids borrowing event media credentials or
+intentionally. The optional media profile below extends this boundary with isolated services. The default avoids borrowing event media credentials or
 suggesting that remote room audio was tested when it was not.
 
 Beacon Account is default-off. While it is off, every `/api/account/*` entry
@@ -323,3 +323,87 @@ it is never part of automatic image rollback and never targets production.
 
 Never run `compose down -v`, remove the staging data directory, reuse a
 production image tag, or point this compose file at a production environment.
+
+
+## Optional isolated media rehearsal (#590)
+
+`live-staging-media.compose.yml` is an explicit extension of the base staging
+Compose, not of the production stack or `hb-app-bridge-staging.compose.yml`.
+Its presence in Git does not mean it is installed or qualified. The current
+installation and acceptance evidence belong in #590. The app bridge's ordinary
+staging command still restores the identity-only profile; do not run it during
+a media rehearsal or describe its health check as media acceptance.
+
+The extension adds `hb-live-staging-livekit`, `hb-live-staging-tapestry` and
+`hb-live-staging-playlist-bot`. Only the app and these media services join the
+internal `hb_live_staging_media` network. Only LiveKit also joins
+`hb_live_staging_media_egress`; neither tapestry nor the playlist bot has
+Internet egress, database access or Account credentials. LiveKit signaling binds
+to host loopback port 43880; RTC uses dedicated TCP 43881 and UDP 43882. Check
+these ports are free before installing. Never reuse production media keys,
+recordings, networks or room names.
+
+Prepare the exact candidate, retain the prior app/tapestry/playlist image IDs,
+and record the installed staging Compose, public-profile and Nginx checksums.
+Inspect `hb-app-bridge status` for an unfinished operation before assuming
+ownership. Run `hb doctor --service live`; classify missing catalog proofs
+explicitly rather than declaring them healthy. No production helper, service,
+profile or release record changes as part of this rehearsal.
+
+Install the private media environment and LiveKit configuration under
+`/etc/harmonic-beacon/live-staging-media/` (directory root:root 0700, files
+root:root 0600), starting from `live-staging-media.env.example` and
+`live-staging-livekit.yaml.example`. Generate independent staging-only secrets
+without printing them. The key/secret in the two files must match. Resolve each
+media image to an existing immutable image ID or registry digest, never a
+mutable tag. Create only a synthetic audio fixture at
+`/mnt/beacon-data/live-staging/media-records/rehearsal.wav`; no production
+recordings are mounted. This profile introduces no database migration.
+
+Before applying, render the two Compose files together with both private
+`--env-file` arguments and validate the result without logging its contents:
+
+```bash
+set -o pipefail
+docker compose --file deploy/live-staging.compose.yml \
+  --file deploy/live-staging-media.compose.yml \
+  --env-file /etc/harmonic-beacon/live-staging.env \
+  --env-file /etc/harmonic-beacon/live-staging-media/media.env \
+  config --format json | node scripts/live-staging/validate-media-compose.mjs
+```
+
+The validator checks the resolved service/network/mount/port boundary and exact
+media image identities. It does not establish that credentials differ from
+production, the host ports are available, or media behavior works. Verify those
+separately without exposing secrets. Retain existing database and Account
+configuration and use `up -d --no-deps` only for the selected staging services;
+do not recreate PostgreSQL or run `migrate` for this code-only rehearsal.
+
+For remote browser acceptance, replace only the staging TLS vhost's `/rtc`
+denial with `nginx-live-staging-media.location.conf`, retaining the original
+vhost bytes for rollback. Review the resulting exact vhost and run `nginx -t`
+before reload. Keep test-login and internal APIs denied. No DNS or certificate
+change is required. The existing identity-only public profile is not evidence
+for this extension: bind a separately reviewed media profile with tapestry on
+to the candidate before accepting its public provenance.
+
+Acceptance requires actual browser/SDK media over the staging TLS origin:
+synthetic event creation and closure through Staff, correct event selection,
+listener entry, camera denial/revocation/background handling, ingest through
+composite display, and measured bed continuity when a beacon publishes, mutes,
+unpublishes and reconnects. HTTP health, an SDP connection, or track publication
+alone does not prove audible audio. Record exact images, config digests, event
+ID, observed behavior and cleanup in #590.
+
+Rehearse recovery with the retained exact prior app and service images against
+this isolated database. For a legacy tapestry image, explicitly seed the
+synthetic event ID; document that this is a compatibility prerequisite rather
+than claiming dynamic registration works in that image. Then restore the
+candidate and repeat the failed or critical behavior. Keep all recovery images.
+
+To return to identity-only staging, restore the recorded staging vhost and app
+configuration/image, validate and reload Nginx, recreate only the staging app,
+and stop only the three staging media containers. Verify `/rtc` returns 503,
+readiness and provenance match the retained target, and production container
+IDs/images/restart counts are unchanged. Preserve database, media fixture and
+private configuration for diagnosis; never run broad prune or `down -v`.

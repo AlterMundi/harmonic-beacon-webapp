@@ -1,0 +1,11 @@
+# Root-owned /etc/harmonic-beacon/live-staging-media/livekit.yaml, mode 0600.
+port: 7880
+bind_addresses: ["0.0.0.0"]
+rtc:
+  tcp_port: 43881
+  udp_port: 43882
+  use_external_ip: true
+keys:
+  staging-only-key: <same-staging-only-secret-as-media-env>
+room:
+  enable_remote_unmute: false
