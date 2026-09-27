@@ -271,10 +271,10 @@ Read-only inspection on 2026-09-27 found that Mona still had the legacy
 `hb-deploy` helper (SHA-256
 `ad878ecc9dc43894f136367363b9cc38f8adfd14673d501efec3be1eeb136646`)
 and a generic `hb-deploy *` sudo rule for `beacon-runner`. The repository's
-narrower sudo policy passed `visudo` as an inactive candidate; installing it
-requires the owner's pending production approval. This observation does not
-assert current host state indefinitely: re-read installed hashes and effective
-sudo permissions before any operation. The canonical findings and remaining
+narrower sudo policy was subsequently installed with explicit owner approval
+at 14:53 UTC that day; `visudo` and effective-permission readback passed. The
+helper itself remains legacy; narrowing sudo does not activate OCI delivery.
+Re-read installed hashes and effective sudo permissions before any operation. The canonical findings and remaining
 activation gates are recorded in [#590](https://github.com/AlterMundi/harmonic-beacon-webapp/issues/590#issuecomment-5853431560).
 
 ### Historical legacy sequence — disabled
