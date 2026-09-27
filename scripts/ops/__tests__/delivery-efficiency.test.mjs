@@ -82,3 +82,13 @@ test('legacy release fails closed during the security hold', () => {
   assert.match(deployWorkflow, /exit 1/u);
   assert.doesNotMatch(deployWorkflow, /sudo|self-hosted/u);
 });
+
+// Protected PR qualification is authoritative; merging it must not duplicate
+// all browser/runtime checks or launch the intentionally disabled deploy lane.
+test('release merges do not repeat PR CI or auto-run disabled deployment', () => {
+  assert.doesNotMatch(ciWorkflow, /^ {2}push:/m);
+  assert.match(ciWorkflow, /^ {2}pull_request:/m);
+  assert.match(ciWorkflow, /^ {2}workflow_call:/m);
+  assert.doesNotMatch(deployWorkflow, /^ {2}push:/m);
+  assert.match(deployWorkflow, /^ {2}workflow_dispatch:/m);
+});

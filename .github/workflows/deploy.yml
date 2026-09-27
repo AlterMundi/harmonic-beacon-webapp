@@ -1,8 +1,9 @@
 name: Deploy (security safety hold)
 
 on:
-  push:
-    branches: [release]
+  # Legacy mutation stays disabled. Do not emit a guaranteed failure for
+  # every release merge, especially documentation-only changes.
+  workflow_dispatch:
 
 permissions:
   contents: read

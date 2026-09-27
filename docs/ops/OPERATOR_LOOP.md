@@ -80,7 +80,7 @@ same PR and exact protected base within 24 hours when every non-documentation
 byte is unchanged. `ci-equivalence.json` records the source run/attempt and
 comparison. Missing evidence runs normal checks; reuse cannot chain or accept
 failed/skipped selected jobs. Fresh jobs on the new head report that reuse;
-commit statuses are never copied. Description edits do not launch CI; after
+commit statuses are never copied. Description edits and release merges do not launch duplicate CI; after
 retargeting a PR, synchronize or reopen it to qualify the new base.
 
 ## Waiting, handoff and recovery after interruption
