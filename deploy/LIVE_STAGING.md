@@ -411,3 +411,14 @@ and stop only the three staging media containers. Verify `/rtc` returns 503,
 readiness and provenance match the retained target, and production container
 IDs/images/restart counts are unchanged. Preserve database, media fixture and
 private configuration for diagnosis; never run broad prune or `down -v`.
+
+
+For Mona's Docker media profile, LiveKit 1.13.4 discovered the correct public IP
+but its external-IP self-ping timed out. Falling back to one node-IP mapping
+across both interfaces failed external ICE despite reachable ports. The reviewed
+example uses `skip_external_ip_validation: true` and `advertise_internal_ip:
+true` to retain discovered mappings and private candidates. These options are
+specified in the [pinned LiveKit configuration](https://github.com/livekit/livekit/blob/v1.13.4/config-sample.yaml).
+They are not connectivity proof: require received PCM outside Mona after any
+network/config change. Apply only to staging and retain the previous config;
+never infer that production needs the same change.

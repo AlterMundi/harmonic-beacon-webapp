@@ -5,6 +5,11 @@ rtc:
   tcp_port: 43881
   udp_port: 43882
   use_external_ip: true
+  # Mona's published Docker UDP port does not support the discovery self-ping.
+  # Keep the STUN-discovered per-interface mapping; acceptance still requires
+  # received PCM from an external client, never just successful discovery.
+  skip_external_ip_validation: true
+  advertise_internal_ip: true
 keys:
   staging-only-key: <same-staging-only-secret-as-media-env>
 room:
