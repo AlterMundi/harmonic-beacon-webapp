@@ -199,3 +199,8 @@ invalidation. Completion callbacks wait until constituent workflows finish befor
 requesting the exact-base evaluator. The periodic reconciler remains recovery for
 missed callbacks. None of these filters grants success or changes the evaluator's
 head/base, attempt, provenance or final-readback checks.
+
+`workflow_run` loads the dispatcher from the default branch (`main`), while
+`pull_request_target` loads it from the PR target branch. Deliver shared event
+filter changes to both `main` and `release`, preserving unrelated lane changes;
+updating only one branch leaves part of the live behavior unchanged.
