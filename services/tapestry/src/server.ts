@@ -1,6 +1,8 @@
 /**
  * Internal HTTP surface of the tapestry service.
  *
+ *   PUT  /tapestry/sessions/:sessionId
+ *        Authenticated idempotent bounded in-memory registration.
  *   POST /tapestry/sessions/:sessionId/participants/:participantId/frame
  *        Authenticated JPEG ingest (raw image/jpeg body, size-capped).
  *   GET  /tapestry/sessions/:sessionId/composite.jpg
@@ -31,6 +33,11 @@ import { TapestryCompositor, frameToTile } from "./composite.js";
 
 export const INTERNAL_SECRET_HEADER = "x-tapestry-internal-secret";
 
+// These bounds include seeded sessions. Dynamic sessions are recreated by the
+// authorized app after inactivity or restart; no participant images persist.
+export const MAX_REGISTERED_SESSIONS = 64;
+export const DYNAMIC_SESSION_IDLE_TTL_MS = 15 * 60 * 1000;
+const SESSION_ROUTE = /^\/tapestry\/sessions\/([A-Za-z0-9_-]{1,128})$/;
 const FRAME_ROUTE =
   /^\/tapestry\/sessions\/([A-Za-z0-9_-]{1,128})\/participants\/([A-Za-z0-9_-]{1,128})\/frame$/;
 const COMPOSITE_ROUTE = /^\/tapestry\/sessions\/([A-Za-z0-9_-]{1,128})\/composite\.jpg$/;
@@ -96,12 +103,18 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
 }
 
 export function createTapestryServer(config: TapestryConfig): TapestryServer {
+  if (new Set(config.sessionIds).size > MAX_REGISTERED_SESSIONS) {
+    throw new Error("Too many seeded tapestry sessions");
+  }
   const store = new TapestryStore(config.sessionIds, config.maxParticipantsPerSession);
   const compositor = new TapestryCompositor(config, store);
   const startedAtMs = Date.now();
 
   const sweeper = setInterval(() => {
     const now = Date.now();
+    for (const id of store.expireDynamicSessions(now, DYNAMIC_SESSION_IDLE_TTL_MS)) {
+      compositor.forgetSession(id);
+    }
     // Flag exactly the sessions whose frame set changed so their next
     // composite rebuilds instead of serving a stale grid.
     const changed = store.sweepExpiredDetailed(now, config.frameTtlMs);
@@ -330,11 +343,33 @@ export function createTapestryServer(config: TapestryConfig): TapestryServer {
   const server = createServer((req, res) => {
     void (async () => {
       const url = new URL(req.url ?? "/", "http://tapestry.internal");
+      const sessionMatch = url.pathname.match(SESSION_ROUTE);
+      if (req.method === "PUT" && sessionMatch) {
+        if (!secretMatches(req.headers[INTERNAL_SECRET_HEADER] as string | undefined, config.internalSecret)) {
+          sendJson(res, 401, { error: "unauthorized" });
+          return;
+        }
+        // Registration has no request payload and cannot carry frames or PII.
+        req.resume();
+        const id = sessionMatch[1];
+        if (!store.registerSession(id, Date.now(), MAX_REGISTERED_SESSIONS)) {
+          sendJson(res, 429, { error: "session_capacity_reached" });
+          return;
+        }
+        compositor.registerSession(id);
+        sendJson(res, 200, { ok: true });
+        return;
+      }
       const frameMatch = url.pathname.match(FRAME_ROUTE);
       const compositeMatch = url.pathname.match(COMPOSITE_ROUTE);
       const participantsMatch = url.pathname.match(PARTICIPANTS_ROUTE);
       const orderMatch = url.pathname.match(ORDER_ROUTE);
       const tileMatch = url.pathname.match(TILE_ROUTE);
+
+      const activeRoute = frameMatch || compositeMatch || participantsMatch || orderMatch || tileMatch || url.pathname.match(LAYOUT_ROUTE);
+      if (activeRoute && secretMatches(req.headers[INTERNAL_SECRET_HEADER] as string | undefined, config.internalSecret)) {
+        store.touchSession(activeRoute[1], Date.now());
+      }
 
       if (req.method === "POST" && frameMatch) {
         const [, sessionId, participantId] = frameMatch;

@@ -35,10 +35,12 @@ export function staffEventWhere(
 }
 
 /** Keep urgent events first without relying on database enum sort order. */
-export function orderStaffEvents(events: readonly StaffEvent[]): StaffEvent[] {
+export function orderStaffEvents(events: readonly StaffEvent[], now = new Date()): StaffEvent[] {
+    const rank = (event: StaffEvent) => event.status === 'LIVE' ? 0
+        : event.scheduledAt.getTime() >= now.getTime() ? 1 : 2;
     return [...events].sort((a, b) => {
-        const statusDelta = Number(b.status === 'LIVE') - Number(a.status === 'LIVE');
-        return statusDelta || a.scheduledAt.getTime() - b.scheduledAt.getTime();
+        const groupDelta = rank(a) - rank(b);
+        return groupDelta || a.scheduledAt.getTime() - b.scheduledAt.getTime();
     });
 }
 
@@ -67,19 +69,26 @@ export async function listStaffEvents(
  * Post-login and recovery destination.
  *
  * Operators/admins start from the global hub. Facilitator-capable roles enter
- * their assigned live event first, otherwise their next assigned event. A
+ * their assigned live event first, otherwise their next future assigned event.
+ * Overdue scheduled events stay visible in the hub for explicit disposition;
+ * they never silently become the post-login destination. A
  * composite facilitator with no active assignment retains its global hub.
  */
 export function staffLandingPath(
     staff: Pick<StaffPrincipal, 'id' | 'role'>,
     events: readonly Pick<StaffEvent, 'id' | 'facilitatorId' | 'status' | 'scheduledAt'>[],
+    now = new Date(),
 ): string {
     if (staff.role === 'OPERATOR' || staff.role === 'ADMIN') {
         return '/ops/events';
     }
 
     const assigned = [...events]
-        .filter((event) => event.facilitatorId === staff.id)
+        .filter((event) => event.facilitatorId === staff.id && (
+            event.status === 'LIVE' || (
+                event.status === 'SCHEDULED' && event.scheduledAt.getTime() >= now.getTime()
+            )
+        ))
         .sort((a, b) => {
             const statusDelta = Number(b.status === 'LIVE') - Number(a.status === 'LIVE');
             return statusDelta || a.scheduledAt.getTime() - b.scheduledAt.getTime();

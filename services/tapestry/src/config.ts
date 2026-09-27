@@ -1,10 +1,10 @@
 /**
  * Tapestry service configuration.
  *
- * All configuration comes from the environment. The two secrets/settings that
- * must always be present are TAPESTRY_INTERNAL_SECRET (shared with the Next.js
- * app) and TAPESTRY_SESSION_IDS (the seeded session identifiers the service
- * will accept frames for). Everything else has a bounded default; the numeric
+ * All configuration comes from the environment. TAPESTRY_INTERNAL_SECRET is
+ * required and shared with the Next.js app. TAPESTRY_SESSION_IDS optionally
+ * pre-registers sessions; the authorized app registers new ones at runtime.
+ * Everything else has a bounded default; the numeric
  * knobs are overridable in tests via {@link createConfig} partials.
  */
 
@@ -15,7 +15,7 @@ export interface TapestryConfig {
   host: string;
   /** Shared secret the app sends in the x-tapestry-internal-secret header. */
   internalSecret: string;
-  /** Seeded session IDs; ingest for any other session is rejected. */
+  /** Optional seeded session IDs; other sessions require authenticated registration. */
   sessionIds: string[];
   /** Maximum accepted JPEG body size in bytes. */
   maxFrameBytes: number;
@@ -62,7 +62,7 @@ export function isValidOpaqueId(id: string): boolean {
 
 /**
  * Build the runtime configuration from the process environment.
- * Fails closed: a missing secret or session list is a startup error.
+ * Fails closed: a missing secret is a startup error.
  */
 export function configFromEnv(env: NodeJS.ProcessEnv = process.env): TapestryConfig {
   const internalSecret = env.TAPESTRY_INTERNAL_SECRET ?? "";
@@ -70,9 +70,6 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): TapestryCon
 
   if (internalSecret.length < 16) {
     throw new Error("TAPESTRY_INTERNAL_SECRET is required (at least 16 characters)");
-  }
-  if (sessionIds.length === 0) {
-    throw new Error("TAPESTRY_SESSION_IDS is required (comma-separated opaque session IDs)");
   }
   for (const id of sessionIds) {
     if (!isValidOpaqueId(id)) {

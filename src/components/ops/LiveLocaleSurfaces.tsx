@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { formatEventTime } from '@/lib/event-time';
 import { useLocale } from '@/context/LocaleContext';
 import { liveNavigationCopy } from '@/lib/live-navigation-copy';
 import OpsNavLinks from './OpsNavLinks';
@@ -38,8 +39,8 @@ export function EventHeading({ title, language, status, scheduledAt }: {
         </div>
         <p className="mb-6 text-sm text-[var(--text-secondary)]">
             {language === 'SPANISH' ? 'ES' : 'EN'} ·{' '}
-            <span>{status === 'LIVE' ? copy.ops.live : copy.ops.scheduled}</span> ·{' '}
-            {new Intl.DateTimeFormat(locale === 'es' ? 'es-AR' : 'en-GB', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(scheduledAt))}
+            <span>{copy.ops.lifecycle.statuses[status as keyof typeof copy.ops.lifecycle.statuses] ?? status}</span> ·{' '}
+            {formatEventTime(scheduledAt, locale)}
         </p>
     </>;
 }

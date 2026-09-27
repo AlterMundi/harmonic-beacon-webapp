@@ -1,3 +1,16 @@
+> Session registration updated for #462: the initial `TAPESTRY_SESSION_IDS`
+> remains supported. The authenticated app can also `PUT /tapestry/sessions/:id`
+> (empty body) after verifying room entitlement. Registration is idempotent;
+> a total of 64 seeded/dynamic sessions is allowed, with HTTP 429 on exhaustion.
+> Dynamic registrations expire after 15 minutes without an authenticated request;
+> their tiles, ordering and composite cache are discarded. Seeded registrations
+> remain until restart. Images remain memory-only and retain their shorter frame TTL.
+> The app retries a frame exactly once after an explicit `unknown_session` response,
+> registering it within the same three-second request deadline. Generic 404s do not
+> trigger registration. Deploy/rollback qualification must cover both service and app;
+> the old service alone cannot register a new event. This is source behavior under
+> development, not a claim that staging or production has been updated.
+
 # Tapestry service
 
 Bounded in-memory composite of attendee camera snapshots ("the tapestry").

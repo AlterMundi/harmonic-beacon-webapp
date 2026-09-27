@@ -34,6 +34,36 @@ export class TapestryStore {
     }
   }
 
+  /** Dynamic registrations are bounded and expire when no authorized request uses them. */
+  private readonly dynamicLastUsed = new Map<string, number>();
+
+  registerSession(sessionId: string, nowMs: number, maxSessions: number): boolean {
+    if (this.sessions.has(sessionId)) {
+      this.touchSession(sessionId, nowMs);
+      return true;
+    }
+    if (this.sessions.size >= maxSessions) return false;
+    this.sessions.set(sessionId, new Map());
+    this.dynamicLastUsed.set(sessionId, nowMs);
+    return true;
+  }
+
+  touchSession(sessionId: string, nowMs: number): void {
+    if (this.dynamicLastUsed.has(sessionId)) this.dynamicLastUsed.set(sessionId, nowMs);
+  }
+
+  expireDynamicSessions(nowMs: number, idleTtlMs: number): string[] {
+    const expired: string[] = [];
+    for (const [id, lastUsed] of this.dynamicLastUsed) {
+      if (nowMs - lastUsed < idleTtlMs) continue;
+      this.sessions.delete(id);
+      this.orders.delete(id);
+      this.dynamicLastUsed.delete(id);
+      expired.push(id);
+    }
+    return expired;
+  }
+
   /**
    * Store (or replace) the tile for a participant. `firstSeenMs` is preserved
    * across replacements so grid ordering is deterministic by first appearance.

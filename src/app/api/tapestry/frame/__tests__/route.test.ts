@@ -40,6 +40,35 @@ describe('POST /api/tapestry/frame', () => {
         expect(fetch).not.toHaveBeenCalled();
     });
 
+    it('registers an entitled missing session and retries the frame once', async () => {
+        vi.mocked(fetch)
+            .mockResolvedValueOnce(Response.json({ error: 'unknown_session' }, { status: 404 }))
+            .mockResolvedValueOnce(Response.json({ ok: true }))
+            .mockResolvedValueOnce(new Response(null, { status: 201 }));
+        const { POST } = await import('../route');
+        expect((await POST(frameRequest())).status).toBe(204);
+        expect(fetch).toHaveBeenCalledTimes(3);
+        expect(vi.mocked(fetch).mock.calls[1][0]).toBe('http://tapestry:3100/tapestry/sessions/session-1');
+        expect(vi.mocked(fetch).mock.calls[1][1]?.method).toBe('PUT');
+        expect(vi.mocked(fetch).mock.calls[0][1]?.signal).toBe(vi.mocked(fetch).mock.calls[2][1]?.signal);
+    });
+
+    it('does not register on a generic 404 from an incompatible service', async () => {
+        vi.mocked(fetch).mockResolvedValueOnce(Response.json({ error: 'not_found' }, { status: 404 }));
+        const { POST } = await import('../route');
+        expect((await POST(frameRequest())).status).toBe(502);
+        expect(fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('preserves capacity backpressure without repeatedly retrying', async () => {
+        vi.mocked(fetch)
+            .mockResolvedValueOnce(Response.json({ error: 'unknown_session' }, { status: 404 }))
+            .mockResolvedValueOnce(Response.json({ error: 'session_capacity_reached' }, { status: 429 }));
+        const { POST } = await import('../route');
+        expect((await POST(frameRequest())).status).toBe(429);
+        expect(fetch).toHaveBeenCalledTimes(2);
+    });
+
     it('rejects non-JPEG data before reading or proxying it', async () => {
         const { POST } = await import('../route');
         const response = await POST(new NextRequest('http://localhost/api/tapestry/frame?sessionId=session-1', { method: 'POST', body: 'x' }));

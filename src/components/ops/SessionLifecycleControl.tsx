@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { StaffRole } from '@prisma/client';
 import type { Messages, UiLocale } from '@/lib/i18n';
+import { formatEventTime } from '@/lib/event-time';
 import { advanceLifecycleStatus } from '@/lib/lifecycle-status';
 import { hasStaffCapability } from '@/lib/staff-capabilities';
 
@@ -36,9 +37,10 @@ export default function SessionLifecycleControl({
     const [busy, setBusy] = useState(false);
     const [notice, setNotice] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
-    const [nowMs, setNowMs] = useState(() => Date.now());
+    const [nowMs, setNowMs] = useState<number | null>(null);
 
     useEffect(() => {
+        setNowMs(Date.now());
         const timer = setInterval(() => setNowMs(Date.now()), 30_000);
         return () => clearInterval(timer);
     }, []);
@@ -54,6 +56,7 @@ export default function SessionLifecycleControl({
     }, [observedStatus, status]);
 
     const outsideOpenWindow = useMemo(() => {
+        if (nowMs === null) return false;
         const start = new Date(scheduledAt).getTime();
         return nowMs < start - EARLY_MS || nowMs > start + LATE_MS;
     }, [scheduledAt, nowMs]);
@@ -127,13 +130,13 @@ export default function SessionLifecycleControl({
                     </h2>
                     <p className="text-xs text-[var(--text-secondary)]">
                         {copy.status}: <strong>{copy.statuses[status]}</strong> · {copy.scheduled}{' '}
-                        {new Date(scheduledAt).toLocaleString(locale === 'es' ? 'es-AR' : 'en-GB')}
+                        {formatEventTime(scheduledAt, locale)}
                     </p>
                 </div>
                 {status === 'SCHEDULED' ? (
                     <button
                         type="button"
-                        disabled={busy ||
+                        disabled={nowMs === null || busy ||
                             (outsideOpenWindow && !canOverrideWindow) ||
                             (outsideOpenWindow && canOverrideWindow && !reason.trim())}
                         onClick={() => void transition('LIVE')}

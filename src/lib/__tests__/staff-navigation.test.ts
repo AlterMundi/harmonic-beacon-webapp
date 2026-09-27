@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { findMany } = vi.hoisted(() => ({ findMany: vi.fn() }));
 vi.mock('@/lib/db', () => ({
@@ -33,7 +33,12 @@ function event(
 }
 
 describe('staff event navigation', () => {
-    beforeEach(() => findMany.mockReset());
+    beforeEach(() => {
+        findMany.mockReset();
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-08-01T00:00:00Z'));
+    });
+    afterEach(() => vi.useRealTimers());
 
     it('scopes a facilitator to assignments and gives global roles the hub set', () => {
         expect(staffEventWhere({ id: 'fac-1', role: 'FACILITATOR' })).toEqual({
@@ -83,6 +88,16 @@ describe('staff event navigation', () => {
                 .toBe('/ops/events');
         },
     );
+
+    it('does not send a facilitator to a past unopened or terminal event', () => {
+        const staff = { id: 'fac-1', role: 'FACILITATOR' as const };
+        const overdue = event('overdue', 'SCHEDULED', 'fac-1', '2026-07-31T23:00:00Z');
+        const future = event('future', 'SCHEDULED', 'fac-1', '2026-08-02T00:00:00Z');
+        expect(staffLandingPath(staff, [overdue, future])).toBe('/ops/events/future');
+        expect(staffLandingPath(staff, [overdue])).toBe('/ops/events');
+        expect(staffLandingPath(staff, [{ ...future, status: 'ENDED' }])).toBe('/ops/events');
+        expect(orderStaffEvents([overdue, future]).map(e => e.id)).toEqual(['future', 'overdue']);
+    });
 
     it('selects durable test state and facilitator identity for the hub', async () => {
         findMany.mockResolvedValue([]);

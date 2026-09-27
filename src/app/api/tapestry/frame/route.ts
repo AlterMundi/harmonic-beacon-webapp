@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { resolveRoomPrincipal } from '@/lib/room-entitlement';
-import { tapestryInternalUrl, tapestryParticipantId } from '@/lib/tapestry';
+import { sendTapestryFrame, tapestryInternalUrl, tapestryParticipantId } from '@/lib/tapestry';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,19 +41,7 @@ export async function POST(request: NextRequest) {
 
     try {
         const contributorId = tapestryParticipantId(entitlement.principal.identity);
-        const response = await fetch(
-            `${internalUrl}/tapestry/sessions/${encodeURIComponent(sessionId)}/participants/${contributorId}/frame`,
-            {
-                method: 'POST',
-                headers: {
-                    'content-type': 'image/jpeg',
-                    'x-tapestry-internal-secret': process.env.TAPESTRY_INTERNAL_SECRET!,
-                },
-                body: frame,
-                cache: 'no-store',
-                signal: AbortSignal.timeout(3_000),
-            },
-        );
+        const response = await sendTapestryFrame(internalUrl, sessionId, contributorId, frame);
         return new NextResponse(null, {
             status: response.ok ? 204 : response.status === 429 ? 429 : 502,
             headers: { 'cache-control': 'no-store' },

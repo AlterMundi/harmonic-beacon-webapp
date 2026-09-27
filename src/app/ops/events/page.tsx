@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 
+import { formatEventTime } from '@/lib/event-time';
 import { messages } from '@/lib/i18n';
 import { requestLocale } from '@/lib/i18n-server';
 import { resolveStaffByToken } from '@/lib/ops-auth';
@@ -11,7 +12,7 @@ import { listStaffEvents, type StaffEvent } from '@/lib/staff-navigation';
 
 export const dynamic = 'force-dynamic';
 
-function EventCard({ event, locale }: { event: StaffEvent; locale: 'es' | 'en' }) {
+function EventCard({ event, locale, now }: { event: StaffEvent; locale: 'es' | 'en'; now: Date }) {
     const copy = messages[locale].ops;
     return (
         <li>
@@ -24,7 +25,9 @@ function EventCard({ event, locale }: { event: StaffEvent; locale: 'es' | 'en' }
                         <p className={`text-xs font-mono uppercase tracking-[0.12em] ${
                             event.status === 'LIVE' ? 'text-[var(--lime)]' : 'text-[var(--gold)]'
                         }`}>
-                            {event.status === 'LIVE' ? copy.live : copy.scheduled}
+                            {event.status === 'LIVE' ? copy.live : event.scheduledAt < now
+                                ? (locale === 'es' ? 'Horario pasado · sin abrir' : 'Past start time · unopened')
+                                : copy.scheduled}
                             {' · '}{event.language === 'SPANISH' ? 'ES' : 'EN'}
                         </p>
                         <h2 className="mt-2 font-serif text-xl text-[var(--paper)]">{event.title}</h2>
@@ -35,10 +38,7 @@ function EventCard({ event, locale }: { event: StaffEvent; locale: 'es' | 'en' }
                     <span className="text-sm text-[var(--gold)] transition-transform group-hover:translate-x-1" aria-hidden="true">→</span>
                 </div>
                 <p className="mt-4 text-xs text-[var(--text-secondary)]">
-                    {new Intl.DateTimeFormat(locale === 'es' ? 'es-AR' : 'en-GB', {
-                        dateStyle: 'medium',
-                        timeStyle: 'short',
-                    }).format(event.scheduledAt)}
+                    {formatEventTime(event.scheduledAt, locale)}
                     <span className="sr-only"> · {copy.openEvent}</span>
                 </p>
             </Link>
@@ -54,6 +54,7 @@ export default async function EventsHubPage() {
     const locale = await requestLocale();
     const copy = messages[locale].ops;
     const events = await listStaffEvents(staff);
+    const now = new Date();
     const programme = events.filter((event) => !event.isTest);
     const tests = events.filter((event) => event.isTest);
 
@@ -67,7 +68,7 @@ export default async function EventsHubPage() {
 
             {programme.length > 0 ? (
                 <ul className="grid gap-4 md:grid-cols-2">
-                    {programme.map((event) => <EventCard key={event.id} event={event} locale={locale} />)}
+                    {programme.map((event) => <EventCard key={event.id} event={event} locale={locale} now={now} />)}
                 </ul>
             ) : (
                 <p className="rounded-lg border border-[var(--border-subtle)] p-5 text-sm text-[var(--text-secondary)]">
@@ -83,7 +84,7 @@ export default async function EventsHubPage() {
                     <div className="border-t border-[var(--border-subtle)] px-5 py-5">
                         <p className="mb-4 text-xs text-[var(--text-muted)]">{copy.testEventsHint}</p>
                         <ul className="grid gap-3 md:grid-cols-2">
-                            {tests.map((event) => <EventCard key={event.id} event={event} locale={locale} />)}
+                            {tests.map((event) => <EventCard key={event.id} event={event} locale={locale} now={now} />)}
                         </ul>
                     </div>
                 </details>
