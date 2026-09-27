@@ -19,6 +19,7 @@ test('actual bed PCM follows silence, sound, mute, unpublish and bot reconnect',
   skip: !enabled, timeout: 80_000,
 }, async () => {
   const roomName = `hb-bed-pcm-${Date.now()}`;
+  const service = new RoomServiceClient(url!.replace(/^ws/, 'http'), apiKey!, apiSecret!);
   const directory = mkdtempSync(join(tmpdir(), 'hb-bed-pcm-'));
   const observer = new Room();
   const beacon = new Room();
@@ -68,6 +69,15 @@ test('actual bed PCM follows silence, sound, mute, unpublish and bot reconnect',
     const deadline = Date.now() + 12_000;
     while (!lastLoudAt && Date.now() < deadline) await sleep(50);
     assert.ok(lastLoudAt, `bed never delivered decoded audible PCM (${frames} frames); ${botLogs}`);
+    const telemetry = async () => {
+      const publisher = (await service.listParticipants(roomName)).find(p => p.identity === 'playlist-bot');
+      const data = JSON.parse(publisher?.metadata ?? '{}');
+      assert.equal(data.schema, 'hb.bed-audio.v1', 'actual bot must publish its versioned audio telemetry');
+      assert.ok(Date.now() - data.reportedAt < 5000, 'bot telemetry must be fresh');
+      return data;
+    };
+    await sleep(1100);
+    assert.ok(Date.now() - (await telemetry()).bedAudibleAt < 3000, 'audible fallback must be reflected in actual metadata');
     await beacon.connect(url!, await token('beacon01', false), { autoSubscribe: false });
     await sleep(3000);
     assert.ok(Date.now() - lastLoudAt < 500, 'connected beacon without publication suppressed audible bed');
@@ -91,13 +101,15 @@ test('actual bed PCM follows silence, sound, mute, unpublish and bot reconnect',
     })().catch(() => {});
     await sleep(6000);
     assert.ok(Date.now() - lastLoudAt > 1000, `audible beacon failed to fade out bed; ${botLogs}`);
+    assert.equal((await telemetry()).sourceAudible, true);
     loud = false;
     await sleep(7500);
     assert.ok(Date.now() - lastLoudAt < 500, `sustained zero PCM failed to restore bed; ${botLogs}`);
+    assert.equal((await telemetry()).sourceAudible, false);
+    assert.ok(Date.now() - (await telemetry()).bedAudibleAt < 3000);
     loud = true;
     await sleep(6000);
     assert.ok(Date.now() - lastLoudAt > 1000, `resumed source failed to fade out bed; ${botLogs}`);
-    const service = new RoomServiceClient(url!.replace(/^ws/, 'http'), apiKey!, apiSecret!);
     assert.ok(publication.sid);
     await service.mutePublishedTrack(roomName, 'beacon01', publication.sid, true);
     await sleep(3500);

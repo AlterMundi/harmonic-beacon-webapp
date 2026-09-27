@@ -14,7 +14,7 @@ import { AccessToken } from 'livekit-server-sdk';
 import { spawn, execSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { AUDIO_TRACK_KIND } from './beaconAvailability.js';
-import { BeaconAudibility } from './beaconAudibility.js';
+import { BeaconAudibility, hasAudiblePcm } from './beaconAudibility.js';
 import {
   BYTES_PER_FRAME,
   decoderArgs,
@@ -78,6 +78,7 @@ async function createBotToken(): Promise<string> {
     room: ROOM_NAME,
     canPublish: true,
     canSubscribe: true,
+    canUpdateOwnMetadata: true,
   });
 
   return token.toJwt();
@@ -120,6 +121,9 @@ class PlaylistBot {
   private readonly audibility = new BeaconAudibility();
   private readonly beaconReaders = new Map<string, ReadableStreamDefaultReader<AudioFrame>>();
   private audibilityTimer: ReturnType<typeof setInterval> | null = null;
+  private telemetryTimer: ReturnType<typeof setInterval> | null = null;
+  private telemetryInFlight = false;
+  private lastAudibleBedFrameAt = 0;
   private shouldPublish = false;
   private publishGeneration = 0; // incremented on each start; stale loops exit
   private abortController: AbortController | null = null;
@@ -198,6 +202,7 @@ class PlaylistBot {
     this.volume = 1;
     this.fadeDirection = null;
     this.fadeFramesRemaining = 0;
+    this.lastAudibleBedFrameAt = 0;
 
     // Create audio source and track
     this.source = new AudioSource(SAMPLE_RATE, NUM_CHANNELS);
@@ -226,6 +231,9 @@ class PlaylistBot {
       // Mute — beacon is live
       this.volume = 0;
     }
+
+    this.telemetryTimer = setInterval(() => { void this.publishAudioTelemetry(); }, 1000);
+    void this.publishAudioTelemetry();
 
     // Wait for disconnect
     await new Promise<void>((resolve) => {
@@ -308,7 +316,28 @@ class PlaylistBot {
     });
   }
 
+  private async publishAudioTelemetry(): Promise<void> {
+    const participant = this.room?.localParticipant;
+    if (!participant || this.telemetryInFlight) return;
+    this.telemetryInFlight = true;
+    try {
+      // Self metadata carries only bounded operational levels/timestamps, no PCM.
+      await participant.updateMetadata(JSON.stringify({
+        schema: 'hb.bed-audio.v1',
+        reportedAt: Date.now(),
+        sourceAudible: this.beaconAudioAvailable,
+        bedAudibleAt: this.lastAudibleBedFrameAt,
+      }));
+    } catch {
+      // Consumers treat missing/stale telemetry as unknown, never as green.
+    } finally {
+      this.telemetryInFlight = false;
+    }
+  }
+
   private clearBeaconMonitoring(): void {
+    if (this.telemetryTimer) clearInterval(this.telemetryTimer);
+    this.telemetryTimer = null;
     if (this.audibilityTimer) clearInterval(this.audibilityTimer);
     this.audibilityTimer = null;
     for (const reader of this.beaconReaders.values()) void reader.cancel().catch(() => {});
@@ -513,6 +542,7 @@ class PlaylistBot {
 
           try {
             await this.source.captureFrame(frame);
+            if (hasAudiblePcm(frameSamples)) this.lastAudibleBedFrameAt = Date.now();
           } catch {
             ffmpeg.kill('SIGTERM');
             return;

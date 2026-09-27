@@ -54,6 +54,7 @@ export interface RoomSummary {
 export interface RoomParticipantSummary {
     identity: string;
     hasPublishedAudio: boolean;
+    metadata?: string;
 }
 
 export interface OperatorHealthDeps {
@@ -410,16 +411,38 @@ async function evaluateBedPublisher(
             (participant) => participant.identity === deps.bedPublisherIdentity,
         );
         if (bot?.hasPublishedAudio) {
-            return ok(
-                `Bed publisher '${deps.bedPublisherIdentity}' is in '${deps.bedRoomName}' with a live audio track`,
-                Date.now() - started,
-            );
+            // Publication is transport evidence, not proof that either source
+            // is delivering samples. Older bots remain explicitly unverified.
+            let telemetry: unknown;
+            try {
+                if (bot.metadata && bot.metadata.length <= 2048) telemetry = JSON.parse(bot.metadata);
+            } catch { /* unknown */ }
+            const now = Date.now();
+            if (!telemetry || typeof telemetry !== 'object' ||
+                !('schema' in telemetry) || telemetry.schema !== 'hb.bed-audio.v1' ||
+                !('reportedAt' in telemetry) || typeof telemetry.reportedAt !== 'number' ||
+                !Number.isFinite(telemetry.reportedAt) || now - telemetry.reportedAt > 5000 ||
+                telemetry.reportedAt > now + 1000 ||
+                !('sourceAudible' in telemetry) || typeof telemetry.sourceAudible !== 'boolean' ||
+                !('bedAudibleAt' in telemetry) || typeof telemetry.bedAudibleAt !== 'number' ||
+                !Number.isFinite(telemetry.bedAudibleAt) || telemetry.bedAudibleAt < 0 ||
+                telemetry.bedAudibleAt > telemetry.reportedAt) {
+                return { status: 'yellow', latencyMs: now - started,
+                    detail: 'Bed track is published, but fresh audio-level telemetry is unavailable; verify sound before opening' };
+            }
+            if (telemetry.sourceAudible || (telemetry.bedAudibleAt > 0 && now - telemetry.bedAudibleAt < 3000)) {
+                return ok(telemetry.sourceAudible
+                    ? 'Bot reports recently received audible beacon audio; fallback is standing by'
+                    : 'Bot reports recently captured audible fallback samples', now - started);
+            }
+            return { status: 'red', latencyMs: now - started,
+                detail: 'Neither beacon audio nor audible fallback samples are reported; a published track alone does not prove sound' };
         }
         return {
             status: 'red',
             detail: bot
                 ? `Bed publisher '${deps.bedPublisherIdentity}' is present but has no published audio track`
-                : `Bed publisher '${deps.bedPublisherIdentity}' is not in room '${deps.bedRoomName}' — attendees hear no bed audio`,
+                : `Bed publisher '${deps.bedPublisherIdentity}' is not in room '${deps.bedRoomName}' — fallback is unavailable; check primary source audio`,
             latencyMs: Date.now() - started,
         };
     } catch (error) {
@@ -427,7 +450,7 @@ async function evaluateBedPublisher(
         // lands here as a thrown error: same conclusion, nobody is publishing.
         return notOk(
             'red',
-            `No bed audio in room '${deps.bedRoomName}' — attendees hear silence underneath the stage`,
+            `Cannot verify bed audio in room '${deps.bedRoomName}' — check source and fallback`,
             Date.now() - started,
             error,
         );
@@ -583,8 +606,9 @@ export function productionDeps(options: {
             const participants = await getRoomService().listParticipants(roomName);
             return participants.map((participant) => ({
                 identity: participant.identity,
+                metadata: participant.metadata,
                 hasPublishedAudio: participant.tracks.some(
-                    (track) => track.type === TrackType.AUDIO,
+                    (track) => track.type === TrackType.AUDIO && !track.muted,
                 ),
             }));
         },

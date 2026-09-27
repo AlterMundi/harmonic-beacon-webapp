@@ -177,6 +177,18 @@ new sessions still require their separately reviewed owning contract.
 
 ### 5.3 Playlist bot loss → local bed fallback
 
+The #590 candidate distinguishes a published track from audio-level evidence.
+A fresh `hb.bed-audio.v1` bot report with neither source sound nor recent audible
+fallback frames turns the bed check red. Missing/stale telemetry (including an
+older bot during rollback) is yellow/unverified, never inferred green from
+publication. The bot tolerates three seconds of quiet before the existing
+two-second fallback fade; microphone/recording levels below roughly -60 dBFS
+count as silence. Confirm these defaults in the exact staging rehearsal.
+Publisher telemetry proves only what the bot received/captured; confirm sound
+at a subscriber before opening. #590 owns the installed-candidate receipt, so
+this documented capability must not be assumed deployed merely from this file.
+
+
 - **Owner:** Stream/Support Operator.
 - **Detection:** `/ops/health` bed publisher check red ("playlist-bot not in room beacon"); the reviewed status receipt shows the bot unhealthy.
 - **First action:** invoke the reviewed playlist-bot recovery action if it is

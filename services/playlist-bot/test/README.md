@@ -53,3 +53,16 @@ all artistic quiet passages can be distinguished from a failed source.
 
 Local native tests do not replace acceptance of the exact immutable image over
 the staging TLS origin, browser playback, or recovery of the installed stack.
+
+
+The bot updates only its own LiveKit participant metadata once per second with
+`schema: hb.bed-audio.v1`, `reportedAt` (UTC epoch milliseconds),
+`sourceAudible` and `bedAudibleAt` (last successfully captured above-threshold
+fallback frame, UTC epoch milliseconds; zero if none). No recordings, samples,
+participant list or credentials are included. Its room token grants subscription
+and self-metadata updates; automatic subscription remains off and code subscribes
+only to `beacon01` audio. Metadata publication failure is not silently healthy:
+the app treats missing, malformed, future or older-than-five-second telemetry as
+yellow/unverified. Fresh telemetry with neither recent source sound nor a bed
+frame in the last three seconds is red. This is operational publisher evidence;
+it never replaces listening/decoded-PCM acceptance at a subscriber.

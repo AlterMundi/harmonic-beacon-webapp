@@ -34,7 +34,7 @@ function healthyDeps(overrides: Partial<OperatorHealthDeps> = {}): OperatorHealt
             { name: 'stage-room', numParticipants: 42 },
             { name: 'beacon', numParticipants: 1 },
         ],
-        listParticipants: async () => [{ identity: 'playlist-bot', hasPublishedAudio: true }],
+        listParticipants: async () => [{ identity: 'playlist-bot', hasPublishedAudio: true, metadata: JSON.stringify({ schema: 'hb.bed-audio.v1', reportedAt: Date.now(), sourceAudible: false, bedAudibleAt: Date.now() - 100 }) }],
         fetchTapestryHealth: async () => ({ ok: true }),
         tapestryUrl: 'http://tapestry:3100',
         bedRoomName: 'beacon',
@@ -193,6 +193,24 @@ describe('collectOperatorHealth', () => {
 
         expect(report.checks.bedPublisher.status).toBe('red');
         expect(report.checks.bedPublisher.detail).toContain('no published audio');
+    });
+
+    it.each([
+        ['legacy publication only', undefined, 'yellow'],
+        ['invalid metadata', '{bad', 'yellow'],
+        ['stale telemetry', JSON.stringify({ schema: 'hb.bed-audio.v1', reportedAt: 1, sourceAudible: true, bedAudibleAt: 0 }), 'yellow'],
+        ['future telemetry', JSON.stringify({ schema: 'hb.bed-audio.v1', reportedAt: Date.now() + 60000, sourceAudible: true, bedAudibleAt: 0 }), 'yellow'],
+        ['oversized metadata', ' '.repeat(2049), 'yellow'],
+        ['fresh silence', 'silent', 'red'],
+        ['fresh audible source', 'source', 'green'],
+    ])('does not confuse %s with verified fallback audio', async (_name, metadata, status) => {
+        const resolved = metadata === 'silent' || metadata === 'source'
+            ? JSON.stringify({ schema: 'hb.bed-audio.v1', reportedAt: Date.now(), sourceAudible: metadata === 'source', bedAudibleAt: 0 })
+            : metadata;
+        const report = await collectOperatorHealth(healthyDeps({
+            listParticipants: async () => [{ identity: 'playlist-bot', hasPublishedAudio: true, metadata: resolved }],
+        }));
+        expect(report.checks.bedPublisher.status).toBe(status);
     });
 
     it('turns red when the bed room does not exist at all', async () => {

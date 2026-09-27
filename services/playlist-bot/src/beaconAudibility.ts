@@ -1,3 +1,10 @@
+export function hasAudiblePcm(samples: Int16Array): boolean {
+  if (!samples.length) return false;
+  let energy = 0;
+  for (const sample of samples) energy += sample * sample;
+  return Math.sqrt(energy / samples.length) >= BeaconAudibility.minimumRms;
+}
+
 /** Only short-lived level metadata is retained; audio is never recorded. */
 export class BeaconAudibility {
   private readonly lastSound = new Map<string, number>();
@@ -7,10 +14,7 @@ export class BeaconAudibility {
   static readonly silenceGraceMs = 3000;
 
   observe(trackId: string, samples: Int16Array, now = performance.now()): void {
-    if (!samples.length) return;
-    let energy = 0;
-    for (const sample of samples) energy += sample * sample;
-    if (Math.sqrt(energy / samples.length) >= BeaconAudibility.minimumRms) {
+    if (hasAudiblePcm(samples)) {
       this.lastSound.set(trackId, now);
     }
   }
