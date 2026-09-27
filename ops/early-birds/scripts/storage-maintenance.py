@@ -48,7 +48,7 @@ DATA_RESERVE = 10 * 1024**3
 def run(*args, timeout=30):
     return subprocess.check_output(args, text=True, stderr=subprocess.PIPE, timeout=timeout,
                                    env={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin',
-                                        'DOCKER_CONFIG': '/nonexistent', 'LC_ALL': 'C'})
+                                        'DOCKER_CONFIG': str(STATE/'docker-config'), 'LC_ALL': 'C'})
 
 
 def inventory():
@@ -314,6 +314,7 @@ def archive_image(image, budget_used):
 
 def maintain():
     private_directory(STATE)
+    private_directory(STATE/'docker-config')
     handles = []
     try:
         for path in [str(STATE/'operation.lock'), *LOCKS]:
@@ -388,6 +389,9 @@ def main():
         # Command stderr can contain private host data; expose only the exception class.
         result = {'error': 'maintenance failed; inspect protected local state; no broad prune attempted',
                   'errorType': type(exc).__name__}
+        if isinstance(exc, subprocess.CalledProcessError):
+            result['operation'] = list(exc.cmd[:3])
+            result['exitCode'] = exc.returncode
         healthy = 0
     if not result.get('deferred'):
         temporary = METRICS.with_suffix('.tmp')
