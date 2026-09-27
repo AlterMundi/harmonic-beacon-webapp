@@ -178,3 +178,51 @@ groups:
         for: 5m
         labels: { severity: warning, service: host, environment: production, host: mona }
         annotations: { summary: "Host network interface reports errors or dropped packets", runbook: "early-birds-capacity" }
+
+  - name: harmonic-beacon-platform
+    rules:
+      - alert: BeaconServiceUnavailable
+        expr: beacon_platform_health_up == 0
+        for: 2m
+        labels: { severity: critical, environment: production, host: mona }
+        annotations: { summary: "Service readiness probe is failing", runbook: "ops/early-birds/runbook/README.md" }
+      - alert: BeaconServiceMonitorFailed
+        expr: beacon_platform_monitor_up == 0
+        for: 2m
+        labels: { severity: warning, environment: production, host: mona }
+        annotations: { summary: "Service monitor reports a failure; inspect its bounded diagnostics", runbook: "ops/early-birds/runbook/README.md" }
+      - alert: BeaconServiceMonitorStale
+        expr: time() - beacon_platform_monitor_timestamp_seconds > 900
+        for: 2m
+        labels: { severity: critical, environment: production, host: mona }
+        annotations: { summary: "Service monitor has not completed in fifteen minutes", runbook: "ops/early-birds/runbook/README.md" }
+      - alert: BeaconBackupJobFailed
+        expr: beacon_platform_backup_job_up == 0
+        for: 2m
+        labels: { severity: critical, environment: production, host: mona }
+        annotations: { summary: "Scheduled backup job failed or could not be checked", runbook: "ops/early-birds/runbook/README.md" }
+      - alert: BeaconBackupArtifactStale
+        expr: time() - beacon_platform_backup_artifact_timestamp_seconds > 86400
+        for: 5m
+        labels: { severity: warning, environment: production, host: mona }
+        annotations: { summary: "No nonempty backup artifact from the last 24 hours; freshness alone is not restore proof", runbook: "ops/early-birds/runbook/README.md" }
+      - alert: BeaconBackupStorageUnavailable
+        expr: beacon_platform_backup_probe_up == 0
+        for: 2m
+        labels: { severity: critical, environment: production, host: mona }
+        annotations: { summary: "Backup storage could not be inspected", runbook: "ops/early-birds/runbook/README.md" }
+      - alert: BeaconEventDoorsClosed
+        expr: beacon_platform_events_overdue > 0
+        for: 1m
+        labels: { severity: critical, environment: production, host: mona }
+        annotations: { summary: "Published public events are past start time with doors closed; count={{ $value }}", runbook: "ops/early-birds/runbook/README.md" }
+      - alert: BeaconEventScheduleProbeFailed
+        expr: beacon_platform_event_probe_up == 0
+        for: 2m
+        labels: { severity: critical, environment: production, host: mona }
+        annotations: { summary: "Cannot verify the Live event schedule", runbook: "ops/early-birds/runbook/README.md" }
+      - alert: BeaconPlatformObserverStale
+        expr: time() - beacon_platform_observer_timestamp_seconds > 300 or absent(beacon_platform_observer_timestamp_seconds)
+        for: 2m
+        labels: { severity: critical, service: ops, environment: production, host: mona }
+        annotations: { summary: "Shared service observer is missing or stale", runbook: "ops/early-birds/runbook/README.md" }
