@@ -108,7 +108,7 @@ esac
 function reconcile({
   gateCreated = '', gateState = 'success', gateRunState = 'completed',
   workflowUpdated = '2026-09-20T12:00:00Z', workflowStatus = 'completed', trustedGate = true,
-  gateStatuses,
+  gateStatuses, eventName = 'schedule', eventAction = '',
 } = {}) {
   const temp = mkdtempSync(join(tmpdir(), 'delivery-gate-reconcile-'));
   const fakeGh = join(temp, 'gh');
@@ -156,12 +156,12 @@ esac
         PATH: `${temp}:${process.env.PATH}`,
         GH_LOG: log,
         REPOSITORY: 'AlterMundi/harmonic-beacon-webapp',
-        EVENT_NAME: 'schedule',
-        EVENT_ACTION: '',
+        EVENT_NAME: eventName,
+        EVENT_ACTION: eventAction,
         INPUT_PR_NUMBER: '',
-        WORKFLOW_HEAD: '',
-        WORKFLOW_RUN_ID: '',
-        WORKFLOW_RUN_ATTEMPT: '',
+        WORKFLOW_HEAD: HEAD,
+        WORKFLOW_RUN_ID: '9003',
+        WORKFLOW_RUN_ATTEMPT: '2',
       },
     });
     const calls = result.status === 0
@@ -254,12 +254,12 @@ test('every result is rebound to the live PR identity before its status write', 
 
 test('rerun starts, completions, and PR identity changes all wake the bounded evaluator', () => {
   const dispatcher = readFileSync(DISPATCHER_PATH, 'utf8');
-  assert.match(dispatcher, /types: \[requested, in_progress, completed\]/);
-  assert.match(dispatcher, /types: \[opened, synchronize, reopened, edited, ready_for_review, labeled, unlabeled, closed\]/);
+  assert.match(dispatcher, /types: \[in_progress, completed\]/);
+  assert.match(dispatcher, /types: \[opened, synchronize, reopened, edited, labeled, unlabeled\]/);
   assert.match(dispatcher, /schedule:\n\s+- cron:/);
   assert.match(dispatcher, /group: delivery-gate-dispatch-[^\n]+workflow_run\.id/);
   assert.match(dispatcher, /cancel-in-progress: false/);
-  assert.match(dispatcher, /name: Dispatch exact-base delivery authority\n\s+runs-on: ubuntu-24\.04\n\s+timeout-minutes: 10/);
+  assert.match(dispatcher, /name: Dispatch exact-base delivery authority[\s\S]*?runs-on: ubuntu-24\.04\n\s+timeout-minutes: 10/);
   assert.doesNotMatch(dispatcher, /statuses: write|repos\/\$REPOSITORY\/statuses/);
   assert.match(dispatcher, /^  statuses: read$/m);
   assert.match(dispatcher, /creator\.login == "github-actions\[bot\]"/);
@@ -394,5 +394,48 @@ esac
     assert.match(readFileSync(log, 'utf8'), /inputs\[pr_number\]=534/);
   } finally {
     rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+
+test('dispatcher event filter retains retargets, labels and reruns but ignores text edits and first starts', () => {
+  const workflow = readFileSync(DISPATCHER_PATH, 'utf8');
+  const expression = workflow.match(/    if: >-\n([\s\S]*?)    runs-on:/)[1].trim();
+  const selected = (name, action, changes = {}, attempt = 1) => Function('github', `return (${expression});`)({
+    event_name: name, event: { action, changes, workflow_run: { run_attempt: attempt } },
+  });
+  for (const action of ['opened', 'synchronize', 'reopened', 'labeled', 'unlabeled']) {
+    assert.equal(selected('pull_request_target', action), true, action);
+  }
+  assert.equal(selected('pull_request_target', 'edited', {body: {from: 'old'}}), false);
+  assert.equal(selected('pull_request_target', 'edited', {title: {from: 'old'}}), false);
+  assert.equal(selected('pull_request_target', 'edited', {base: {ref: {from: 'main'}}}), true);
+  assert.equal(selected('workflow_run', 'in_progress'), false);
+  assert.equal(selected('workflow_run', 'in_progress', {}, 2), true);
+  assert.equal(selected('workflow_run', 'completed'), true);
+  assert.equal(selected('workflow_run', 'completed', {}, 2), true);
+  assert.equal(selected('schedule', ''), true);
+  assert.equal(selected('workflow_dispatch', ''), true);
+});
+
+test('constituent completion defers while another check runs, but rerun start still invalidates', () => {
+  const pending = reconcile({eventName: 'workflow_run', eventAction: 'completed', workflowStatus: 'in_progress'});
+  assert.equal(pending.result.status, 0, pending.result.stderr);
+  assert.equal(pending.calls.length, 0);
+  const completed = reconcile({eventName: 'workflow_run', eventAction: 'completed'});
+  assert.equal(completed.result.status, 0, completed.result.stderr);
+  assert.equal(completed.calls.length, 1);
+  const rerun = reconcile({eventName: 'workflow_run', eventAction: 'in_progress', workflowStatus: 'in_progress'});
+  assert.equal(rerun.result.status, 0, rerun.result.stderr);
+  assert.equal(rerun.calls.length, 1);
+});
+
+test('description edits cannot replace successful CI or audio evidence with new or skipped jobs', () => {
+  for (const path of ['ci.yml', 'audio-boundary.yml']) {
+    const workflow = readFileSync(resolve(ROOT, '.github/workflows', path), 'utf8');
+    const events = workflow.match(/pull_request:\n[\s\S]*?types: \[([^\]]+)\]/)[1];
+    assert.ok(!events.split(',').map(x => x.trim()).includes('edited'), path);
+    assert.match(events, /synchronize/);
+    assert.match(events, /reopened/);
   }
 });
