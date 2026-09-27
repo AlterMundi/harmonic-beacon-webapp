@@ -126,6 +126,20 @@ stackTest.describe('visual baselines', () => {
 
     stackTest('conductor cockpit', async ({ page }) => {
         await page.route('**/api/ops/health**', (route) => route.fulfill({ json: NOMINAL_HEALTH }));
+        // Pin the nominal empty stage, just as health is pinned above. Earlier
+        // functional tests may reconcile the durable fixture grant; a pending
+        // grant changes the primary action to a longer reconciliation label.
+        await page.route(`**/api/ops/sessions/${SESSION_ES.id}/participants`, (route) => route.fulfill({
+            json: {
+                sessionId: SESSION_ES.id,
+                sessionStatus: 'SCHEDULED',
+                maxPublishers: 6,
+                activePublishers: 0,
+                grantedPublishers: 0,
+                liveStateAvailable: true,
+                participants: [],
+            },
+        }));
         await loginViaDashboard(
             page,
             'FACILITATOR',
@@ -134,6 +148,7 @@ stackTest.describe('visual baselines', () => {
         );
         await expect(page.getByTestId('conductor-cockpit')).toBeVisible();
         await expect(page.locator('[data-signal="stage"]')).toHaveAttribute('data-loaded', 'true');
+        await expect(page.locator('[data-signal="primary"]')).toContainText('Abrir puertas');
         await expect(page.locator('[data-signal="health"]')).toContainText('green', { timeout: 15_000 });
         const persistentRoom = page.locator('iframe[data-testid="persistent-room"]');
         await expect(persistentRoom).toBeVisible();
