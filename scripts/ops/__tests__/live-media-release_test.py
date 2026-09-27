@@ -16,10 +16,12 @@ class Recovery(unittest.TestCase):
 
     def test_provenance_does_not_replace_production_configuration(self):
         old = self.fixture()
-        image = {**old['Config'], 'Env': ['SECRET=staging', 'BEACON_GIT_SHA=new', 'NEW_DEFAULT=1']}
+        image = {**old['Config'], 'Labels': {'org.opencontainers.image.revision': 'new'}, 'Env': ['SECRET=staging', 'BEACON_GIT_SHA=new', 'NEW_DEFAULT=1']}
         result = r.replacement(old, 'sha256:new', image)
         self.assertEqual(r.env_map(result), {'SECRET': 'private', 'BEACON_GIT_SHA': 'new', 'NEW_DEFAULT': '1'})
         self.assertEqual(result['HostConfig'], old['HostConfig'])
+        self.assertEqual(result['Labels']['org.opencontainers.image.revision'], 'new')
+        self.assertEqual(old['Config']['Labels'], {})
         self.assertEqual(old['Config']['Env'][1], 'BEACON_GIT_SHA=old')
 
     def test_interrupted_create_is_recoverable_only_with_exact_intent(self):

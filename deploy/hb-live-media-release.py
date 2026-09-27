@@ -84,6 +84,10 @@ def replacement(snapshot, image, image_config=None):
     if image_config is not None:
         if (config['Cmd'], config['Entrypoint']) != (image_config['Cmd'], image_config['Entrypoint']):
             raise RuntimeError('candidate startup contract changed')
+        labels = config.setdefault('Labels', {})
+        for key, value in (image_config.get('Labels') or {}).items():
+            if key.startswith('org.opencontainers.image.'):
+                labels[key] = value
         environment = env_map(config)
         for key, value in env_map(image_config).items():
             environment.setdefault(key, value)
@@ -262,6 +266,40 @@ def operate(verb, staging):
     state = json.loads(state_path.read_text())
     if state['priorDigest'] != digest(snapshots) or state['targets'] != targets or state['helperSha256'] != hashlib.sha256(Path(__file__).read_bytes()).hexdigest():
         raise RuntimeError('transaction bytes changed')
+    if verb == 'refresh-provenance':
+        if staging or state['phase'] != 'applied':
+            raise RuntimeError('provenance refresh requires applied production transaction')
+        continuity(False)
+        for service, name in names.items():
+            current = inspect(name)
+            if not current or current['Id'] != state['created'][service] or current['Image'] != targets[service]:
+                raise RuntimeError('production changed before provenance refresh')
+        # Only repair image metadata, never configuration or source. The normal
+        # release updated Env provenance, but an inherited OCI label may be old.
+        for service, name in names.items():
+            current = inspect(name)
+            image_config = api('GET', '/images/' + current['Image'] + '/json')['Config']
+            payload = replacement(current, current['Image'], image_config)
+            if payload['Labels'] == current['Config']['Labels']:
+                continue
+            if service != 'app':
+                raise RuntimeError('this repair admits only the app provenance label')
+            state['phase'] = 'applying'
+            state.setdefault('intents', {})[service] = payload
+            save(state_path, state)
+            api('POST', '/containers/' + current['Id'] + '/stop?t=30')
+            continuity(False, app_available=False)
+            created = replace(name, payload, snapshots, state, service)
+            state['created'][service] = created
+            save(state_path, state)
+            api('POST', '/containers/' + created + '/start')
+        health(names, SOURCE, origin)
+        boundary(False)
+        state['phase'] = 'applied'
+        state['provenanceLabelsVerified'] = True
+        save(state_path, state)
+        print('exact candidate provenance labels verified; image/config unchanged')
+        return
     restoring = verb in ('rollback', 'recover')
     if not restoring and state['phase'] != 'prepared':
         raise RuntimeError('apply requires prepared transaction')
@@ -320,8 +358,8 @@ def operate(verb, staging):
         raise
 
 def main():
-    if os.geteuid() != 0 or len(sys.argv) != 3 or sys.argv[1] not in ('staging', 'production') or sys.argv[2] not in ('prepare', 'apply', 'rollback', 'recover', 'status'):
-        raise RuntimeError('usage (root only): hb-live-media-release.py staging|production prepare|apply|rollback|recover|status')
+    if os.geteuid() != 0 or len(sys.argv) != 3 or sys.argv[1] not in ('staging', 'production') or sys.argv[2] not in ('prepare', 'apply', 'rollback', 'recover', 'status', 'refresh-provenance'):
+        raise RuntimeError('usage (root only): hb-live-media-release.py staging|production prepare|apply|rollback|recover|status|refresh-provenance')
     os.umask(0o077)
     safe_path(Path(__file__).resolve())
     # Same mutex as both installed application/migration bridges.
