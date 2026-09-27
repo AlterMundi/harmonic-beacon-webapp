@@ -25,11 +25,11 @@ test('missing refs, deleted paths and unavailable comparison fail to full covera
     return 'src/lib/room-audio.ts\0src/app/layout.tsx\0';
   }), true);
 });
-test('only load tooling and capacity steps are conditional; browser gates remain', () => {
+test('load scope remains conditional and browser gates run unless identical source was qualified', () => {
   const workflow = readFileSync('.github/workflows/e2e.yml', 'utf8');
   for (const title of ['Run small dual-LiveKit load profile', 'Qualify bounded Stage-only 6/9/12 paired audio and video']) {
-    assert.ok(workflow.includes(`- name: ${title}\n        if: steps.load-scope.outputs.required == 'true'`));
+    assert.ok(workflow.includes(`- name: ${title}\n        if: inputs.reuse_run == '' && (steps.load-scope.outputs.required == 'true')`));
   }
-  assert.ok(workflow.includes('- name: Run Chromium and Android gates\n        run:'));
-  assert.ok(workflow.includes('- name: Run isolated Chromium room-exit helper regressions\n        run:'));
+  assert.ok(workflow.includes('- name: Run Chromium and Android gates\n        if: inputs.reuse_run == \'\'\n        run:'));
+  assert.ok(workflow.includes('- name: Run isolated Chromium room-exit helper regressions\n        if: inputs.reuse_run == \'\'\n        run:'));
 });

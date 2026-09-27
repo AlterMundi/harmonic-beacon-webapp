@@ -869,8 +869,10 @@ test('closed PRs and wrong target branches fail closed', () => {
   assertState(evaluateRequiredChecks(input({ currentBaseRef: 'early-birds' })), 'failure', 'unexpected-base');
 });
 
-test('PR entry workflows rerun their base-sensitive evidence after retargeting', () => {
-  for (const path of ['ci.yml', 'audio-boundary.yml']) {
+test('description edits do not restart CI; retargeting still invalidates authority', () => {
+  const ci = readFileSync(resolve(ROOT, '.github/workflows/ci.yml'), 'utf8');
+  assert.match(ci, /types: \[opened, synchronize, reopened\]/);
+  for (const path of ['audio-boundary.yml']) {
     const workflow = readFileSync(resolve(ROOT, '.github', 'workflows', path), 'utf8');
     assert.match(workflow, /pull_request:\n(?:.|\n)*?types: \[[^\]]*edited[^\]]*\]/, path);
   }
