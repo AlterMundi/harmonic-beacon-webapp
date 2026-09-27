@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 
 const exactImage = /^(?:[a-z0-9./_-]+@)?sha256:[a-f0-9]{64}$/;
@@ -41,6 +42,9 @@ export function validateMediaCompose(config) {
   requireCondition(JSON.stringify(ports(config.services.app)) === JSON.stringify(['127.0.0.1:3200:3000/tcp']), 'unexpected app port');
   requireCondition(JSON.stringify(ports(config.services.livekit)) === JSON.stringify(['*:43881:43881/tcp', '*:43882:43882/udp', '127.0.0.1:43880:7880/tcp'].sort()), 'unexpected media ports');
   const app = config.services.app.environment;
+  const profile = readFileSync(new URL('../../deploy/runtime-public-config/live-staging-media.json', import.meta.url));
+  requireCondition(app.BEACON_CONFIG_PROFILE_SHA256 === `sha256:${createHash('sha256').update(profile).digest('hex')}`, 'unexpected media profile digest');
+  requireCondition(app.BEACON_PUBLIC_ORIGIN === 'https://live-staging.harmonicbeacon.com' && app.PROMO_INVITATIONS_ENABLED === 'false', 'unexpected public profile');
   const bot = config.services['playlist-bot'].environment;
   requireCondition(app.LIVEKIT_INTERNAL_URL === 'http://livekit:7880' && bot.LIVEKIT_URL === 'ws://livekit:7880', 'unexpected internal media target');
   requireCondition(app.LIVEKIT_ROOM_NAME === 'staging-beacon' && bot.LIVEKIT_ROOM_NAME === 'staging-beacon', 'unexpected media room');

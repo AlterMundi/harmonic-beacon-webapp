@@ -2,6 +2,9 @@
 services:
   app:
     environment:
+      BEACON_PUBLIC_ORIGIN: https://live-staging.harmonicbeacon.com
+      BEACON_CONFIG_PROFILE_SHA256: ${LIVE_STAGING_MEDIA_PROFILE_SHA256:?exact media profile digest required}
+      PROMO_INVITATIONS_ENABLED: "false"
       LIVEKIT_INTERNAL_URL: http://livekit:7880
       LIVEKIT_API_KEY: ${LIVE_STAGING_MEDIA_API_KEY:?staging-only key required}
       LIVEKIT_API_SECRET: ${LIVE_STAGING_MEDIA_API_SECRET:?staging-only secret required}

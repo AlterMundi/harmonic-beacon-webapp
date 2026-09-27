@@ -384,8 +384,12 @@ denial with `nginx-live-staging-media.location.conf`, retaining the original
 vhost bytes for rollback. Review the resulting exact vhost and run `nginx -t`
 before reload. Keep test-login and internal APIs denied. No DNS or certificate
 change is required. The existing identity-only public profile is not evidence
-for this extension: bind a separately reviewed media profile with tapestry on
-to the candidate before accepting its public provenance.
+for this extension: use `runtime-public-config/live-staging-media.json` with tapestry on. Set
+`LIVE_STAGING_MEDIA_PROFILE_SHA256` to `sha256:` followed by the SHA-256 of its
+exact bytes; the validator binds that value and the overlay applies its public
+settings. Read back the config digest and origin from `/api/health`. For locally
+built images without a registry digest, read back the immutable Docker image ID
+and compiled source SHA separately; do not invent a registry artifact digest.
 
 Acceptance requires actual browser/SDK media over the staging TLS origin:
 synthetic event creation and closure through Staff, correct event selection,

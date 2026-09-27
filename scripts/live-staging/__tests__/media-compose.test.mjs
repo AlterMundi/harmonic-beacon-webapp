@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { validateMediaCompose } from '../validate-media-compose.mjs';
@@ -17,6 +18,7 @@ test('resolved media profile isolates database, credentials, ports and rollback 
       LIVEKIT_PUBLIC_URL: 'wss://live-staging.harmonicbeacon.com/rtc',
       LIVEKIT_PUBLIC_URL_ALLOWLIST: 'wss://live-staging.harmonicbeacon.com/rtc',
       LIVE_STAGING_MEDIA_API_KEY: 'staging-key', LIVE_STAGING_MEDIA_API_SECRET: 'a'.repeat(32),
+      LIVE_STAGING_MEDIA_PROFILE_SHA256: `sha256:${createHash('sha256').update(readFileSync('deploy/runtime-public-config/live-staging-media.json')).digest('hex')}`,
       LIVE_STAGING_TAPESTRY_SECRET: 'b'.repeat(32), LIVE_STAGING_ENV_FILE: file,
       LIVE_STAGING_LIVEKIT_IMAGE: `livekit/livekit-server@sha256:${'1'.repeat(64)}`,
       LIVE_STAGING_TAPESTRY_IMAGE: `sha256:${'2'.repeat(64)}`,
@@ -39,6 +41,7 @@ test('resolved media profile isolates database, credentials, ports and rollback 
       c => { c.services['playlist-bot'].volumes[0].source = '/mnt/beacon-data/records'; },
       c => { c.services.app.environment.TAPESTRY_INTERNAL_SECRET = 'mismatch'; },
       c => { c.services.tapestry.privileged = true; },
+      c => { c.services.app.environment.BEACON_CONFIG_PROFILE_SHA256 = `sha256:${'0'.repeat(64)}`; },
     ];
     for (const mutate of mutations) {
       const bad = structuredClone(config);
