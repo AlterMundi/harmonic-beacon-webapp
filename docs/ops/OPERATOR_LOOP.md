@@ -1,6 +1,7 @@
 # Shared operator loop
 
-Codex and CompAII/Hermes use this same procedure. The user appoints the owner
+All operators, including agents of Nicolás, Mariano and Sai, use this same
+procedure. The user appoints the owner
 of a delivery; the model, machine and tool access do not appoint one. This
 document supplies the working loop; [OPERATING_CONTRACT.md](OPERATING_CONTRACT.md)
 routes to the mandatory delivery invariants at release boundaries. Proposed
@@ -122,6 +123,52 @@ is optional delivery guidance, never a prerequisite for ordinary competent work.
 Historical incident skills are references loaded for a matching incident,
 not a second standing policy. Remove arbitrary repair-round limits from active
 host instructions. Explicit user instructions retain priority.
+
+## Operator portability
+
+The repository and owning issue must be sufficient to resume work without a
+particular model, private memory, installed skill or previous chat. A skill may
+route here; it must not become the only home of an executable procedure.
+Ordinary Git, Node, SSH and the owning service's supported Staff/API/workflow
+interfaces are the common surface. Browser automation is an interchangeable
+adapter to those interfaces, not authorization to bypass authentication.
+
+At takeover, resolve the canonical remote (a fork named `origin` is common),
+fetch and read the contract from the actual owning lane. Preserve a stale or
+dirty checkout and use a dedicated worktree instead of resetting it. Live uses
+`release`, Account/Listen use `early-birds`, and Analytics has its independent
+delivery path. Never merge `early-birds` wholesale into Live. While main/release
+diverge, do not assume a branch created from main contains the deployed Live
+code. Inspect [WORKTREES.md](WORKTREES.md) before adding another active lane.
+
+Record task, environment, owner, lane and intended mutation in the owning issue;
+read ongoing workflows and host transactions before taking the mutable target.
+A claimed lane is not a global production lock. Verify only the capabilities
+needed for the task: canonical GitHub access, service workflow/helper, SSH where
+required and an authorized Staff session for lifecycle actions. Missing access
+is an explicit onboarding dependency, never a reason to share cookies, copy
+another person's credentials or invent SQL substitutes. Record the required
+capability and its provisioning owner, not secrets. An authorized operator may
+already have the access; do not ask for it again without checking.
+
+For residual sessions, use the authenticated Staff lifecycle endpoint documented
+in the route `src/app/api/ops/sessions/[id]/lifecycle/route.ts`, or its cockpit
+control. Re-read exact ID/status, participants and LiveKit room first. Note that
+opening a cockpit can connect its embedded room as the operator: include that
+connection in termination/readback rather than calling it an unknown attendee.
+The API accepts a bounded non-PII reason; normal closure transitions LIVE to
+ENDED and terminates media. An unheld SCHEDULED event needs an explicit
+disposition (preserve it, or authorized CANCELLED with reason); never open it
+just to close it. Verify lifecycle audit, termination result, final database
+state and absence of the event room. Historical participant `left_at` rows are
+not proof of live media and are not to be scrubbed with ad-hoc SQL. A closed
+session removes one deployment blocker; it does not qualify a release.
+
+Before handing off, ensure another operator can reproduce refs, health,
+candidate/rollback, schedule/freeze boundary and remaining blockers from the
+issue and these commands. If a necessary step only exists in private context,
+add the reusable non-secret procedure here or in its service runbook. A merged
+PR or green CI is not a delivery receipt; read back the exact target and behavior.
 
 For Hermes, expose the repository's generated skill in its active catalog or
 explicitly read the repository entry point if discovery is absent. Validate
