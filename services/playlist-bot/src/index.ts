@@ -3,6 +3,7 @@ import {
   RoomEvent,
   RemoteParticipant,
   AudioSource,
+  AudioStream,
   AudioFrame,
   LocalAudioTrack,
   TrackPublishOptions,
@@ -12,7 +13,8 @@ import {
 import { AccessToken } from 'livekit-server-sdk';
 import { spawn, execSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
-import { hasAvailableBeaconAudio } from './beaconAvailability.js';
+import { AUDIO_TRACK_KIND } from './beaconAvailability.js';
+import { BeaconAudibility, hasAudiblePcm } from './beaconAudibility.js';
 import {
   BYTES_PER_FRAME,
   decoderArgs,
@@ -24,13 +26,14 @@ import {
   SAMPLE_RATE,
   SAMPLES_PER_CHANNEL,
 } from './audioFormat.js';
+import { requiredLivekitUrl } from './runtimeConfig.js';
 import { resolvePlaylist } from './playlist.js';
 
 // ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
 
-const LIVEKIT_URL = process.env.LIVEKIT_URL || 'wss://live.altermundi.net';
+const LIVEKIT_URL = requiredLivekitUrl();
 const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY || '';
 const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET || '';
 const ROOM_NAME = process.env.LIVEKIT_ROOM_NAME || 'beacon';
@@ -74,7 +77,8 @@ async function createBotToken(): Promise<string> {
     roomJoin: true,
     room: ROOM_NAME,
     canPublish: true,
-    canSubscribe: false,
+    canSubscribe: true,
+    canUpdateOwnMetadata: true,
   });
 
   return token.toJwt();
@@ -114,6 +118,12 @@ class PlaylistBot {
   private track: LocalAudioTrack | null = null;
 
   private beaconAudioAvailable = false;
+  private readonly audibility = new BeaconAudibility();
+  private readonly beaconReaders = new Map<string, ReadableStreamDefaultReader<AudioFrame>>();
+  private audibilityTimer: ReturnType<typeof setInterval> | null = null;
+  private telemetryTimer: ReturnType<typeof setInterval> | null = null;
+  private telemetryInFlight = false;
+  private lastAudibleBedFrameAt = 0;
   private shouldPublish = false;
   private publishGeneration = 0; // incremented on each start; stale loops exit
   private abortController: AbortController | null = null;
@@ -188,6 +198,12 @@ class PlaylistBot {
     });
     log('INFO', `Connected to room: ${this.room.name}`);
 
+    // A full reconnect starts from audible fallback until new source PCM is measured.
+    this.volume = 1;
+    this.fadeDirection = null;
+    this.fadeFramesRemaining = 0;
+    this.lastAudibleBedFrameAt = 0;
+
     // Create audio source and track
     this.source = new AudioSource(SAMPLE_RATE, NUM_CHANNELS);
     this.track = LocalAudioTrack.createAudioTrack('playlist-audio', this.source);
@@ -206,6 +222,7 @@ class PlaylistBot {
 
     // Presence alone is not enough: beacon01 may connect before publishing.
     this.beaconAudioAvailable = this.isBeaconAudioAvailable();
+    this.audibilityTimer = setInterval(() => this.refreshBeaconAudioAvailability(), 100);
     log('INFO', `beacon01 audio available: ${this.beaconAudioAvailable}`);
 
     if (!this.beaconAudioAvailable) {
@@ -215,11 +232,15 @@ class PlaylistBot {
       this.volume = 0;
     }
 
+    this.telemetryTimer = setInterval(() => { void this.publishAudioTelemetry(); }, 1000);
+    void this.publishAudioTelemetry();
+
     // Wait for disconnect
     await new Promise<void>((resolve) => {
       this.room!.on(RoomEvent.Disconnected, async () => {
         log('WARN', 'Disconnected from room');
         this.stopPublishing();
+        this.clearBeaconMonitoring();
 
         // Close native resources before releasing references
         try { await this.source?.close(); } catch { /* ignore */ }
@@ -235,6 +256,30 @@ class PlaylistBot {
   private setupRoomEvents(): void {
     if (!this.room) return;
 
+    this.room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+      if (participant.identity !== BEACON_IDENTITY || publication.kind !== AUDIO_TRACK_KIND) return;
+      const id = publication.sid;
+      if (!id) return;
+      const old = this.beaconReaders.get(id);
+      if (old) void old.cancel().catch(() => {});
+      const reader = new AudioStream(track, SAMPLE_RATE, NUM_CHANNELS).getReader();
+      this.beaconReaders.set(id, reader);
+      void (async () => {
+        try {
+          while (this.beaconReaders.get(id) === reader) {
+            const { value, done } = await reader.read();
+            if (done || this.beaconReaders.get(id) !== reader) break;
+            if (!publication.muted) this.audibility.observe(id, value.data);
+          }
+        } finally {
+          if (this.beaconReaders.get(id) === reader) {
+            this.beaconReaders.delete(id);
+            this.audibility.forget(id);
+          }
+        }
+      })().catch(() => {});
+    });
+
     this.room.on(RoomEvent.ParticipantConnected, (p: RemoteParticipant) => {
       log('INFO', `Participant joined: ${p.identity}`);
       if (p.identity === BEACON_IDENTITY) {
@@ -245,7 +290,9 @@ class PlaylistBot {
     this.room.on(RoomEvent.ParticipantDisconnected, (p: RemoteParticipant) => {
       log('INFO', `Participant left: ${p.identity}`);
       if (p.identity === BEACON_IDENTITY) {
-        this.setBeaconAudioAvailable(false);
+        // Rebuild from LiveKit's current snapshot: a stale disconnect from a
+        // replaced beacon01 must not fade the playlist in over its successor.
+        this.refreshBeaconAudioAvailability();
       }
     });
 
@@ -269,9 +316,58 @@ class PlaylistBot {
     });
   }
 
+  private async publishAudioTelemetry(): Promise<void> {
+    const participant = this.room?.localParticipant;
+    if (!participant || this.telemetryInFlight) return;
+    this.telemetryInFlight = true;
+    try {
+      // Self metadata carries only bounded operational levels/timestamps, no PCM.
+      await participant.updateMetadata(JSON.stringify({
+        schema: 'hb.bed-audio.v1',
+        reportedAt: Date.now(),
+        sourceAudible: this.beaconAudioAvailable,
+        bedAudibleAt: this.lastAudibleBedFrameAt,
+      }));
+    } catch {
+      // Consumers treat missing/stale telemetry as unknown, never as green.
+    } finally {
+      this.telemetryInFlight = false;
+    }
+  }
+
+  private clearBeaconMonitoring(): void {
+    if (this.telemetryTimer) clearInterval(this.telemetryTimer);
+    this.telemetryTimer = null;
+    if (this.audibilityTimer) clearInterval(this.audibilityTimer);
+    this.audibilityTimer = null;
+    for (const reader of this.beaconReaders.values()) void reader.cancel().catch(() => {});
+    this.beaconReaders.clear();
+    this.audibility.clear();
+  }
+
   private isBeaconAudioAvailable(): boolean {
-    if (!this.room) return false;
-    return hasAvailableBeaconAudio(this.room.remoteParticipants.values(), BEACON_IDENTITY);
+    const activeIds = new Set<string>();
+    const publishedIds = new Set<string>();
+    // Subscribe only to the canonical source, never audience or other stage audio.
+    // Read the current snapshot, so a stale disconnect cannot override a replacement.
+    for (const participant of this.room?.remoteParticipants.values() ?? []) {
+      if (participant.identity !== BEACON_IDENTITY) continue;
+      for (const publication of participant.trackPublications.values()) {
+        if (publication.kind !== AUDIO_TRACK_KIND) continue;
+        if (!publication.subscribed) publication.setSubscribed(true);
+        if (!publication.sid) continue;
+        publishedIds.add(publication.sid);
+        if (!publication.muted) activeIds.add(publication.sid);
+        else this.audibility.forget(publication.sid);
+      }
+    }
+    for (const [id, reader] of this.beaconReaders) {
+      if (publishedIds.has(id)) continue;
+      this.beaconReaders.delete(id);
+      this.audibility.forget(id);
+      void reader.cancel().catch(() => {});
+    }
+    return this.audibility.audible(activeIds);
   }
 
   private refreshBeaconAudioAvailability(): void {
@@ -446,6 +542,7 @@ class PlaylistBot {
 
           try {
             await this.source.captureFrame(frame);
+            if (hasAudiblePcm(frameSamples)) this.lastAudibleBedFrameAt = Date.now();
           } catch {
             ffmpeg.kill('SIGTERM');
             return;
@@ -487,6 +584,7 @@ class PlaylistBot {
       log('INFO', 'Shutting down...');
 
       this.stopPublishing();
+      this.clearBeaconMonitoring();
 
       try { await this.source?.close(); } catch { /* ignore */ }
 

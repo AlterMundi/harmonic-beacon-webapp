@@ -1,10 +1,7 @@
 /**
- * Staff sign-in: Julián, two operators, one admin.
- *
- * Four seeded credentials and no other way in — no signup, no reset link, no
- * "forgot password", no listener account. Credentials are delivered out of band
- * by whoever holds the production secrets (WS6-03); a lost one is re-seeded, not
- * recovered.
+ * Staff sign-in uses Beacon Account when enabled. The legacy seeded-credential
+ * form remains available only while that integration is off; authorization and
+ * post-login event selection are resolved server-side.
  */
 
 import Link from "next/link";

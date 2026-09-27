@@ -82,6 +82,12 @@ export class TapestryCompositor {
     this.gridWidthPx = config.gridColumns * config.tileSizePx;
     this.gridHeightPx = rows * config.tileSizePx;
     for (const sessionId of config.sessionIds) {
+      this.registerSession(sessionId);
+    }
+  }
+
+  registerSession(sessionId: string): void {
+    if (!this.cache.has(sessionId)) {
       this.cache.set(sessionId, {
         snapshot: null,
         builtAtMs: 0,
@@ -91,6 +97,10 @@ export class TapestryCompositor {
         urgentRevision: 0,
       });
     }
+  }
+
+  forgetSession(sessionId: string): void {
+    this.cache.delete(sessionId);
   }
 
   /** Mark a session's composite stale (called on ingest and on expiry sweeps). */
@@ -105,6 +115,12 @@ export class TapestryCompositor {
         entry.urgentRevision = entry.revision;
       }
     }
+  }
+
+  hasPublishedParticipant(sessionId: string, participantId: string): boolean {
+    const entry = this.cache.get(sessionId);
+    return Boolean(entry?.snapshot && this.nowMs() - entry.builtAtMs <= this.config.frameTtlMs
+      && entry.snapshot.layout.cells.some(cell => cell.id === participantId));
   }
 
   compositesBuiltCount(): number {

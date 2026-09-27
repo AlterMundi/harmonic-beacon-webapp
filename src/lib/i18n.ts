@@ -252,8 +252,11 @@ export type Messages = {
         quality: Record<'excellent' | 'good' | 'poor' | 'lost' | 'unknown', string>;
     };
     tapestry: {
+        captureStatus: Record<'off' | 'requesting' | 'uploading' | 'received' | 'composing' | 'published' | 'failed' | 'paused', string>;
         label: string;
         latestAlt: string;
+        stale: string;
+        unavailable: string;
         waiting: string;
         stopCamera: string;
         shareSnapshot: string;
@@ -400,7 +403,8 @@ export type Messages = {
             headlines: Record<'green' | 'yellow' | 'red', string>;
             levels: Record<'green' | 'yellow' | 'red', string>;
             sessionStatuses: Record<'SCHEDULED' | 'LIVE' | 'ENDED' | 'CANCELLED', string>;
-            checks: Record<'postgres' | 'livekit' | 'stageRoom' | 'publisherGrants' | 'grantDelivery' | 'bedPublisher' | 'tapestry', string>;
+            checks: Record<'eventDoors' | 'postgres' | 'livekit' | 'stageRoom' | 'publisherGrants' | 'grantDelivery' | 'bedPublisher' | 'tapestry', string>;
+            reviewEvent: string;
             endpointHttp: string;
             endpointUnavailable: string;
             endpointAlarm: string;
@@ -813,8 +817,11 @@ export const messages: Record<UiLocale, Messages> = {
             quality: { excellent: 'conexión excelente', good: 'conexión buena', poor: 'conexión débil', lost: 'conexión perdida', unknown: 'conexión desconocida' },
         },
         tapestry: {
+            captureStatus: { off: 'Cámara apagada', requesting: 'Solicitando cámara…', uploading: 'Enviando imagen…', received: 'Imagen recibida; esperando confirmación del tapiz.', composing: 'Imagen recibida; componiendo el tapiz…', published: 'Tu imagen está en el tapiz.', failed: 'No pudimos actualizar tu imagen. Se reintentará mientras la cámara esté activa.', paused: 'Captura pausada.' },
             label: 'Tapiz',
             latestAlt: 'Último tapiz de participantes',
+            stale: 'El tapiz no se está actualizando. Se muestra la última imagen recibida; estamos reintentando.',
+            unavailable: 'No pudimos obtener el tapiz. Estamos reintentando; si persiste, avisá al equipo.',
             waiting: 'Esperando imágenes.',
             stopCamera: 'Dejar de compartir la cámara con el tapiz',
             shareSnapshot: 'Compartir una imagen de cámara',
@@ -989,11 +996,13 @@ export const messages: Record<UiLocale, Messages> = {
                     postgres: 'PostgreSQL',
                     livekit: 'API de LiveKit',
                     stageRoom: 'Sala de Escena',
+                    eventDoors: 'Apertura del evento',
                     publisherGrants: 'Permisos de publicación',
                     grantDelivery: 'Entrega durable de permisos',
                     bedPublisher: 'Fuente del Beacon (playlist bot)',
                     tapestry: 'Tapiz (prescindible)',
                 },
+                reviewEvent: 'Revisar evento',
                 endpointHttp: 'El endpoint respondió HTTP {status}',
                 endpointUnavailable: 'No se pudo contactar el endpoint de salud',
                 endpointAlarm: 'ROJO — no se puede consultar la salud: {error}',
@@ -1430,8 +1439,11 @@ export const messages: Record<UiLocale, Messages> = {
             quality: { excellent: 'connection excellent', good: 'connection good', poor: 'connection poor', lost: 'connection lost', unknown: 'connection unknown' },
         },
         tapestry: {
+            captureStatus: { off: 'Camera off', requesting: 'Requesting camera…', uploading: 'Sending image…', received: 'Image received; waiting for tapestry confirmation.', composing: 'Image received; composing tapestry…', published: 'Your image is in the tapestry.', failed: 'We could not update your image. Retrying while the camera is active.', paused: 'Capture paused.' },
             label: 'Tapestry',
             latestAlt: 'Latest participant tapestry',
+            stale: 'The tapestry is not updating. Showing the last received image while retrying.',
+            unavailable: 'We could not load the tapestry. Retrying; if this continues, contact the team.',
             waiting: 'Waiting for snapshots.',
             stopCamera: 'Stop sharing your camera with the tapestry',
             shareSnapshot: 'Share a camera snapshot',
@@ -1606,11 +1618,13 @@ export const messages: Record<UiLocale, Messages> = {
                     postgres: 'PostgreSQL',
                     livekit: 'LiveKit API',
                     stageRoom: 'Stage room',
+                    eventDoors: 'Event opening',
                     publisherGrants: 'Publisher grants',
                     grantDelivery: 'Durable grant delivery',
                     bedPublisher: 'Bed publisher (playlist bot)',
                     tapestry: 'Tapestry (cuttable)',
                 },
+                reviewEvent: 'Review event',
                 endpointHttp: 'Endpoint answered HTTP {status}',
                 endpointUnavailable: 'Health endpoint unreachable',
                 endpointAlarm: 'RED — health endpoint unreachable: {error}',

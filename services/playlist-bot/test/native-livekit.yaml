@@ -1,0 +1,11 @@
+port: 27880
+bind_addresses: ["0.0.0.0"]
+rtc:
+  tcp_port: 27881
+  udp_port: 27882
+  node_ip: 127.0.0.1
+  use_external_ip: false
+keys:
+  hb-native-test: native-test-only-secret-at-least-32
+room:
+  enable_remote_unmute: true

@@ -19,6 +19,7 @@ import ThumbnailTapestry from '@/components/session/ThumbnailTapestry';
 const POLL_INTERVAL_MS = 10_000;
 
 const CHECK_KEYS: Array<keyof OperatorHealthReport['checks']> = [
+    'eventDoors',
     'postgres',
     'livekit',
     'stageRoom',
@@ -82,6 +83,9 @@ function CheckRow({
                     </span>
                 </div>
                 <p className="text-sm text-[var(--text-secondary)]">{check.detail}</p>
+                {check.actionHref && /^\/ops\/events(?:\/[A-Za-z0-9_-]+)?$/.test(check.actionHref) ? (
+                    <a className="mt-2 inline-block text-[var(--gold)] underline" href={check.actionHref}>{copy.reviewEvent}</a>
+                ) : null}
                 {check.error ? (
                     <p className="mt-1 break-words font-mono text-xs text-[var(--text-muted)]">
                         {check.error}

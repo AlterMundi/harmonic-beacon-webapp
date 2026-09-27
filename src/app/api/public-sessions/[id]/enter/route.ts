@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { beaconAccountEnabled, trustedLiveRequestOrigin } from '@/lib/account-rp';
+import { publicEntryFailure } from '@/lib/public-entry-response';
 import { prisma } from '@/lib/db';
 import {
     accountIdentityFromToken,
@@ -24,27 +25,24 @@ export async function GET(
 ) {
     const { id } = await params;
     if (!UUID.test(id)) {
-        return NextResponse.json({ error: 'Session not found' }, { status: 404 });
+        return publicEntryFailure(request, 'event_unavailable', 404);
     }
     const session = await prisma.scheduledSession.findUnique({
         where: { id },
         select: { id:true, scheduledAt:true, status:true, isTest:true, publicAccess:true, isPublished:true },
     });
     if (!session || session.isTest || !session.publicAccess || !session.isPublished || !['SCHEDULED','LIVE'].includes(session.status)) {
-        return NextResponse.json({ error:'Session unavailable' }, { status:404 });
+        return publicEntryFailure(request, 'event_unavailable', 404);
     }
     if (!beaconAccountEnabled()) {
-        return NextResponse.json(
-            { error: 'Beacon Account is required for live events' },
-            { status: 503, headers: { 'Cache-Control': 'private, no-store' } },
-        );
+        return publicEntryFailure(request, 'account_unavailable', 503);
     }
 
     let origin: string;
     try {
         origin = trustedLiveRequestOrigin(request);
     } catch {
-        return NextResponse.json({ error: 'Invalid Live origin' }, { status: 404 });
+        return publicEntryFailure(request, 'invalid_origin', 404);
     }
 
     const currentCookie = request.cookies.get(SESSION_COOKIE_NAME)?.value;
@@ -74,12 +72,12 @@ export async function GET(
         !session.publicAccess ||
         !['SCHEDULED', 'LIVE'].includes(session.status)
     ) {
-        return NextResponse.json({ error: 'Session unavailable' }, { status: 404 });
+        return publicEntryFailure(request, 'event_unavailable', 404);
     }
 
     const attached = await attachPublicSessionAccess(currentCookie, session, currentAccount, now);
     if (!attached) {
-        return NextResponse.json({ error: 'Session unavailable' }, { status: 409 });
+        return publicEntryFailure(request, 'entry_not_attached', 409);
     }
     return NextResponse.redirect(new URL(`/session/${id}`, origin), {
         status: 303,

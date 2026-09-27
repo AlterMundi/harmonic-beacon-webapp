@@ -128,6 +128,7 @@ function ThumbnailTapestryView({
     active = true,
 }: Props & { labels: Messages['tapestry'] }) {
     const [view, setView] = useState<TapestryView | null>(null);
+    const [stale, setStale] = useState(false);
     const pollingControl = useRef<(next: boolean) => void>(() => undefined);
     const activeRef = useRef(active);
     // The session lifecycle effect may restart in the same commit as a
@@ -150,6 +151,7 @@ function ThumbnailTapestryView({
         // first fetch fails, the UI shows ITS waiting state, never the
         // previous session's data.
         setView(null);
+        setStale(false);
 
         const compositeUrl = `/api/tapestry/${encodeURIComponent(sessionId)}`;
         // Raised-hand names ride a cookie-authorized sidecar: the collective
@@ -233,6 +235,7 @@ function ThumbnailTapestryView({
             }
 
             if (!chosen) {
+                setStale(true);
                 // Composite unavailable: keep the previous image, still
                 // refresh names so departures retire them.
                 if (staffOnly) return;
@@ -248,6 +251,7 @@ function ThumbnailTapestryView({
                 return;
             }
 
+            setStale(false);
             setView({
                 compositeUrl: chosen.url,
                 buildRevision: chosen.revision,
@@ -323,7 +327,7 @@ function ThumbnailTapestryView({
                     at natural size (capped by the container) instead of
                     stretching. Percentage-positioned tags scale with it. */}
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={src} alt={labels.latestAlt} className="block max-w-full rounded-lg border border-[var(--border-subtle)]" />
+                <img src={src} onError={() => setStale(true)} alt={labels.latestAlt} className="block max-w-full rounded-lg border border-[var(--border-subtle)]" />
                 {overlayHands.length > 0 && layout ? (
                     <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden rounded-lg">
                         {overlayHands.map((hand) => (
@@ -343,6 +347,7 @@ function ThumbnailTapestryView({
                 ) : null}
             </div>
         ) : <p className="text-xs text-[var(--text-muted)]">{labels.waiting}</p>}
+        {stale ? <p role="status" className="mt-2 text-xs text-[var(--warning)]">{src ? labels.stale : labels.unavailable}</p> : null}
         {names.length > 0 ? (
             <p aria-live="polite" className="mt-2 text-xs text-[var(--gold)]">
                 {labels.raisedHands.replace('{names}', names.join(', '))}

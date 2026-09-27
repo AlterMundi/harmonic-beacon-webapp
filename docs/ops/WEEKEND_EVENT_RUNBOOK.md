@@ -73,7 +73,7 @@ Rules:
 |---|---|---|
 | `GET /api/health` | Liveness: process is up. Stays green even during a DB outage; nginx/docker restart decisions only. | Always 200 if the process serves HTTP. |
 | `GET /api/health/ready` | Readiness: can this replica serve traffic? | 503 when Postgres is unreachable or the query hangs past 3 s. |
-| `/ops/health` (dashboard) → `GET /api/ops/health` | Operator board: Postgres, LiveKit API, stage room, publisher grants, bed publisher, tapestry. Staff-only. Polls every 10 s; each probe is bounded at 3 s, so any subsystem loss shows non-green within ~15 s (30 s worst case). | **Green** all nominal; **yellow** a cuttable subsystem (tapestry) is failing; **red** a launch-blocking subsystem is failing. |
+| `/ops/health` (dashboard) → `GET /api/ops/health` | Operator board: overdue public-event doors, Postgres, LiveKit API, stage room, publisher grants, durable grant delivery, bed publisher, tapestry. Staff-only. Polls every 10 s; each probe is bounded at 3 s, so any subsystem loss shows non-green within ~15 s (30 s worst case). | **Green** all nominal; **yellow** a cuttable subsystem (tapestry) is failing; **red** a launch-blocking subsystem is failing. |
 
 Red invariants, in priority order:
 
@@ -176,6 +176,18 @@ new sessions still require their separately reviewed owning contract.
 - **Raincheck decision owner:** IC — a wrongly revoked paying attendee gets reinstated first, raincheck only if reinstatement fails.
 
 ### 5.3 Playlist bot loss → local bed fallback
+
+The #590 candidate distinguishes a published track from audio-level evidence.
+A fresh `hb.bed-audio.v1` bot report with neither source sound nor recent audible
+fallback frames turns the bed check red. Missing/stale telemetry (including an
+older bot during rollback) is yellow/unverified, never inferred green from
+publication. The bot tolerates three seconds of quiet before the existing
+two-second fallback fade; microphone/recording levels below roughly -60 dBFS
+count as silence. Confirm these defaults in the exact staging rehearsal.
+Publisher telemetry proves only what the bot received/captured; confirm sound
+at a subscriber before opening. #590 owns the installed-candidate receipt, so
+this documented capability must not be assumed deployed merely from this file.
+
 
 - **Owner:** Stream/Support Operator.
 - **Detection:** `/ops/health` bed publisher check red ("playlist-bot not in room beacon"); the reviewed status receipt shows the bot unhealthy.
@@ -355,3 +367,29 @@ One entry per incident, written by its owner during or right after:
 The 30-minute post-event review may change this runbook and content, not
 production code, unless the incident was a Sev-1 safety/access fix under the
 freeze policy.
+
+### Event readiness additions (#590)
+
+These procedures require the corresponding candidate to be deployed and verified;
+this source document is not evidence of runtime delivery.
+
+- `eventDoors` is independent of the watched LIVE/next event. Published public,
+  non-test SCHEDULED events stay red after their start time until opened,
+  explicitly rescheduled or cancelled through the supported Staff lifecycle.
+  Historical unfinished events remain actionable; elapsed time is not resolution.
+  An event-scoped cockpit checks its selected event; the global board checks all.
+  The action link leads to the affected cockpit. This board alone is not proof
+  of notification delivery: configure and rehearse the approved recipient transport.
+- Staff landing chooses assigned LIVE first, then a future assigned event, otherwise
+  the hub. Past unopened events remain listed explicitly. Operational dates use
+  ART, including SSR/hydration, rather than the server/browser default timezone.
+- Public entry failures return stable reason codes to API clients and readable
+  ES/EN HTML with a recovery action to browser navigation. Do not treat a 409 as
+  evidence that Account or media is down; read its reason and verify the event.
+- Playlist bot requires an explicit `LIVEKIT_URL` using ws/wss; there is no fallback
+  to an old hostname. Preserve the approved production endpoint and use a separate
+  isolated endpoint for rehearsal. Current-publication reconciliation is distinct
+  from measured audible output; a non-muted track alone does not certify sound.
+- New tapestry events register after room entitlement, within a bounded retry.
+  See `services/tapestry/README.md` for limits and expiry. Preserve a compatible
+  app/service rollback and prove registration after restart with synthetic frames.

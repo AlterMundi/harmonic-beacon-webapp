@@ -1,7 +1,7 @@
 /**
  * Operator event health — the subsystem checks behind `/api/ops/health`.
  *
- * One report, seven subsystems, three states:
+ * One report, eight subsystems, three states:
  *
  *   green  — verified working within the timeout.
  *   yellow — degraded but still within a bounded recovery window. Tapestry
@@ -33,6 +33,7 @@ export interface SubsystemCheck {
     /** What was verified, or what is wrong — safe to show an operator. */
     detail: string;
     latencyMs: number;
+    actionHref?: string;
     /** Redacted one-liner, present only when the check is not green. */
     error?: string;
 }
@@ -53,10 +54,13 @@ export interface RoomSummary {
 export interface RoomParticipantSummary {
     identity: string;
     hasPublishedAudio: boolean;
+    metadata?: string;
 }
 
 export interface OperatorHealthDeps {
     checkDatabase: () => Promise<unknown>;
+    /** Public, published, non-test events whose scheduled start passed without opening. */
+    getUnopenedEvents: () => Promise<{ count: number; oldestId: string | null }>;
     /** The LIVE session, or the next SCHEDULED one when nothing is live. */
     getWatchedSession: () => Promise<WatchedSession | null>;
     /** Participants holding an unrevoked publish grant for the session. */
@@ -89,6 +93,7 @@ export interface OperatorHealthReport {
     } | null;
     checks: {
         postgres: SubsystemCheck;
+        eventDoors: SubsystemCheck;
         livekit: SubsystemCheck;
         stageRoom: SubsystemCheck;
         publisherGrants: SubsystemCheck;
@@ -143,7 +148,17 @@ export async function collectOperatorHealth(
     const timeout = deps.timeoutMs;
 
     // PostgreSQL and tapestry are independent; probe them in parallel.
-    const [postgres, tapestry] = await Promise.all([
+    const [eventDoors, postgres, tapestry] = await Promise.all([
+        probe(async () => {
+            const started = Date.now();
+            const unopened = await withTimeout(deps.getUnopenedEvents(), timeout, 'Event doors check');
+            return unopened.count > 0 ? {
+                status: 'red' as const,
+                detail: `${unopened.count} public event(s) past start time with doors still closed. Open the correct event or explicitly cancel/reschedule it.`,
+                latencyMs: Date.now() - started,
+                actionHref: unopened.oldestId ? `/ops/events/${encodeURIComponent(unopened.oldestId)}` : '/ops/events',
+            } : ok('No overdue public event with doors closed', Date.now() - started);
+        }, 'red', 'Cannot verify whether scheduled event doors are open'),
         probe(async () => {
             const started = Date.now();
             await withTimeout(deps.checkDatabase(), timeout, 'PostgreSQL check');
@@ -214,6 +229,7 @@ export async function collectOperatorHealth(
     const bedPublisher: SubsystemCheck = await evaluateBedPublisher(deps, livekit, timeout);
 
     const checks = {
+        eventDoors,
         postgres,
         livekit,
         stageRoom,
@@ -395,16 +411,38 @@ async function evaluateBedPublisher(
             (participant) => participant.identity === deps.bedPublisherIdentity,
         );
         if (bot?.hasPublishedAudio) {
-            return ok(
-                `Bed publisher '${deps.bedPublisherIdentity}' is in '${deps.bedRoomName}' with a live audio track`,
-                Date.now() - started,
-            );
+            // Publication is transport evidence, not proof that either source
+            // is delivering samples. Older bots remain explicitly unverified.
+            let telemetry: unknown;
+            try {
+                if (bot.metadata && bot.metadata.length <= 2048) telemetry = JSON.parse(bot.metadata);
+            } catch { /* unknown */ }
+            const now = Date.now();
+            if (!telemetry || typeof telemetry !== 'object' ||
+                !('schema' in telemetry) || telemetry.schema !== 'hb.bed-audio.v1' ||
+                !('reportedAt' in telemetry) || typeof telemetry.reportedAt !== 'number' ||
+                !Number.isFinite(telemetry.reportedAt) || now - telemetry.reportedAt > 5000 ||
+                telemetry.reportedAt > now + 1000 ||
+                !('sourceAudible' in telemetry) || typeof telemetry.sourceAudible !== 'boolean' ||
+                !('bedAudibleAt' in telemetry) || typeof telemetry.bedAudibleAt !== 'number' ||
+                !Number.isFinite(telemetry.bedAudibleAt) || telemetry.bedAudibleAt < 0 ||
+                telemetry.bedAudibleAt > telemetry.reportedAt) {
+                return { status: 'yellow', latencyMs: now - started,
+                    detail: 'Bed track is published, but fresh audio-level telemetry is unavailable; verify sound before opening' };
+            }
+            if (telemetry.sourceAudible || (telemetry.bedAudibleAt > 0 && now - telemetry.bedAudibleAt < 3000)) {
+                return ok(telemetry.sourceAudible
+                    ? 'Bot reports recently received audible beacon audio; fallback is standing by'
+                    : 'Bot reports recently captured audible fallback samples', now - started);
+            }
+            return { status: 'red', latencyMs: now - started,
+                detail: 'Neither beacon audio nor audible fallback samples are reported; a published track alone does not prove sound' };
         }
         return {
             status: 'red',
             detail: bot
                 ? `Bed publisher '${deps.bedPublisherIdentity}' is present but has no published audio track`
-                : `Bed publisher '${deps.bedPublisherIdentity}' is not in room '${deps.bedRoomName}' — attendees hear no bed audio`,
+                : `Bed publisher '${deps.bedPublisherIdentity}' is not in room '${deps.bedRoomName}' — fallback is unavailable; check primary source audio`,
             latencyMs: Date.now() - started,
         };
     } catch (error) {
@@ -412,7 +450,7 @@ async function evaluateBedPublisher(
         // lands here as a thrown error: same conclusion, nobody is publishing.
         return notOk(
             'red',
-            `No bed audio in room '${deps.bedRoomName}' — attendees hear silence underneath the stage`,
+            `Cannot verify bed audio in room '${deps.bedRoomName}' — check source and fallback`,
             Date.now() - started,
             error,
         );
@@ -446,6 +484,24 @@ export function productionDeps(options: {
         bedPublisherIdentity: process.env.BOT_IDENTITY || 'playlist-bot',
 
         checkDatabase: () => prisma.$queryRaw`SELECT 1`,
+
+        getUnopenedEvents: async () => {
+            const where = {
+                status: 'SCHEDULED' as const,
+                isTest: false,
+                publicAccess: true,
+                isPublished: true,
+                scheduledAt: { lt: options.now ?? new Date() },
+                ...(options.sessionId ? { id: options.sessionId } : {}),
+            };
+            // There is deliberately no lower date bound: age cannot resolve an
+            // unopened event. The owning operator must give it a disposition.
+            const [count, oldest] = await Promise.all([
+                prisma.scheduledSession.count({ where }),
+                prisma.scheduledSession.findFirst({ where, orderBy: { scheduledAt: 'asc' }, select: { id: true } }),
+            ]);
+            return { count, oldestId: oldest?.id ?? null };
+        },
 
         getWatchedSession: async (): Promise<WatchedSession | null> => {
             const select = {
@@ -481,7 +537,7 @@ export function productionDeps(options: {
                 (await prisma.scheduledSession.findFirst({
                     where: {
                         status: 'SCHEDULED',
-                        scheduledAt: { gte: new Date(now.getTime() - 60 * 60 * 1000) },
+                        scheduledAt: { gte: now },
                     },
                     orderBy: { scheduledAt: 'asc' },
                     select,
@@ -550,8 +606,9 @@ export function productionDeps(options: {
             const participants = await getRoomService().listParticipants(roomName);
             return participants.map((participant) => ({
                 identity: participant.identity,
+                metadata: participant.metadata,
                 hasPublishedAudio: participant.tracks.some(
-                    (track) => track.type === TrackType.AUDIO,
+                    (track) => track.type === TrackType.AUDIO && !track.muted,
                 ),
             }));
         },

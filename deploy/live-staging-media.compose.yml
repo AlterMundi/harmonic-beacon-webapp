@@ -1,0 +1,80 @@
+# Explicit media extension of live-staging.compose.yml. Never combine with production Compose.
+services:
+  app:
+    environment:
+      BEACON_PUBLIC_ORIGIN: https://live-staging.harmonicbeacon.com
+      BEACON_CONFIG_PROFILE_SHA256: ${LIVE_STAGING_MEDIA_PROFILE_SHA256:?exact media profile digest required}
+      PROMO_INVITATIONS_ENABLED: "false"
+      LIVEKIT_INTERNAL_URL: http://livekit:7880
+      LIVEKIT_API_KEY: ${LIVE_STAGING_MEDIA_API_KEY:?staging-only key required}
+      LIVEKIT_API_SECRET: ${LIVE_STAGING_MEDIA_API_SECRET:?staging-only secret required}
+      LIVEKIT_ROOM_NAME: staging-beacon
+      TAPESTRY_INTERNAL_URL: http://tapestry:3100
+      TAPESTRY_INTERNAL_SECRET: ${LIVE_STAGING_TAPESTRY_SECRET:?staging-only secret required}
+      TAPESTRY_PUBLIC_ENABLED: "true"
+    networks: [database, app_egress, media]
+
+  livekit:
+    image: ${LIVE_STAGING_LIVEKIT_IMAGE:?digest-pinned LiveKit image required}
+    container_name: hb-live-staging-livekit
+    command: [--config, /etc/livekit.yaml]
+    restart: unless-stopped
+    volumes:
+      - /etc/harmonic-beacon/live-staging-media/livekit.yaml:/etc/livekit.yaml:ro
+    ports:
+      - 127.0.0.1:43880:7880
+      - 43881:43881/tcp
+      - 43882:43882/udp
+    networks: [media, media_egress]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    mem_limit: 512m
+    logging: { driver: json-file, options: { max-size: 10m, max-file: "3" } }
+
+  tapestry:
+    image: ${LIVE_STAGING_TAPESTRY_IMAGE:?immutable tapestry image required}
+    container_name: hb-live-staging-tapestry
+    restart: unless-stopped
+    environment:
+      TAPESTRY_PORT: "3100"
+      TAPESTRY_HOST: 0.0.0.0
+      TAPESTRY_INTERNAL_SECRET: ${LIVE_STAGING_TAPESTRY_SECRET:?staging-only secret required}
+      TAPESTRY_SESSION_IDS: ${LIVE_STAGING_TAPESTRY_SESSION_IDS:-}
+    networks: [media]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs: ["/tmp:size=32m,mode=1777"]
+    mem_limit: 256m
+    logging: { driver: json-file, options: { max-size: 10m, max-file: "3" } }
+
+  playlist-bot:
+    image: ${LIVE_STAGING_PLAYLIST_IMAGE:?immutable playlist image required}
+    container_name: hb-live-staging-playlist-bot
+    restart: unless-stopped
+    environment:
+      LIVEKIT_URL: ws://livekit:7880
+      LIVEKIT_API_KEY: ${LIVE_STAGING_MEDIA_API_KEY:?staging-only key required}
+      LIVEKIT_API_SECRET: ${LIVE_STAGING_MEDIA_API_SECRET:?staging-only secret required}
+      LIVEKIT_ROOM_NAME: staging-beacon
+      BOT_IDENTITY: playlist-bot
+      BEACON_RECORDS_PATH: /data/beacon-records
+      BEACON_PLAYLIST_FILE: rehearsal.wav
+    volumes:
+      - /mnt/beacon-data/live-staging/media-records:/data/beacon-records:ro
+    networks: [media]
+    depends_on:
+      livekit: { condition: service_started }
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs: ["/tmp:size=32m,mode=1777"]
+    mem_limit: 256m
+    logging: { driver: json-file, options: { max-size: 10m, max-file: "3" } }
+
+networks:
+  media:
+    name: hb_live_staging_media
+    internal: true
+  media_egress:
+    name: hb_live_staging_media_egress

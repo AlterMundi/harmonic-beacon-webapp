@@ -47,7 +47,8 @@ OPS-D adds a fail-closed artifact lane without replacing the existing release pa
 `HB_RELEASE_LANE_STATE` is the sole OCI lane selector. `legacy-shadow` permits
 OCI shadow preparation only. The legacy source deployment workflow is on an
 explicit fail-closed security safety hold, including when the state is absent.
-Its sudo-callable mutation verbs have been removed. `oci-production` remains a
+Its sudo-callable mutation verbs have been removed from the repository policy;
+that is not evidence that the installed host policy matches it. `oci-production` remains a
 guarded transition requiring authenticated hosted measurements and protected
 delivery authorization. Local remediation does not authorize production activation.
 Direct Docker or Compose access by the Actions user is never an authorized direct-Compose fallback.
@@ -258,9 +259,29 @@ code and test coverage rather than proof of a successful real deployment.
   Its only permitted members are `beacon-app`, `pmp-myth-worker`, and
   `pmp-myth-worker-secondary`.
 
-## Automated release deploy
+## Release deployment status
 
-A push to `release` runs `.github/workflows/deploy.yml` on the managed host. It:
+A push to `release` currently runs only the hosted security safety hold in
+`.github/workflows/deploy.yml`; it fails closed and performs no deployment.
+Live's operating lane remains `release`. The OCI workflows currently bind their
+source and signing identity to `main`; they are not an activated replacement
+for that lane. Do not switch lanes or invoke legacy commands to bypass the hold.
+
+Read-only inspection on 2026-09-27 found that Mona still had the legacy
+`hb-deploy` helper (SHA-256
+`ad878ecc9dc43894f136367363b9cc38f8adfd14673d501efec3be1eeb136646`)
+and a generic `hb-deploy *` sudo rule for `beacon-runner`. The repository's
+narrower sudo policy was subsequently installed with explicit owner approval
+at 14:53 UTC that day; `visudo` and effective-permission readback passed. The
+helper itself remains legacy; narrowing sudo does not activate OCI delivery.
+Re-read installed hashes and effective sudo permissions before any operation. The canonical findings and remaining
+activation gates are recorded in [#590](https://github.com/AlterMundi/harmonic-beacon-webapp/issues/590#issuecomment-5853431560).
+
+### Historical legacy sequence — disabled
+
+The former release workflow performed the following sequence. This is recovery
+context, not an executable deployment procedure or authorization:
+
 
 1. runs the exact release commit through the reusable browser E2E workflow on
    a throwaway Postgres + LiveKit stack, including synthetic attendee access;
@@ -286,7 +307,10 @@ independently. The helper
 never uses `compose down`, deletes data or pretends that rebuilding the same tag
 is a rollback.
 
-### Runner isolation
+### Required runner isolation
+
+These requirements describe the intended installation, not verified host state.
+The observed legacy drift above must be reconciled before claiming compliance.
 
 The deploy job requires both the standard `self-hosted` label and the dedicated
 `mona` label, then verifies that `hostname -s` is exactly `mona` before checkout
@@ -304,7 +328,10 @@ fixed artifact paths, source identity arguments, run ids and service allowlists.
 Only admitted inputs and installed reviewed Compose bytes reach OCI operations.
 It accepts no generic command or runner-workspace execution path.
 
-Install the reviewed helper and sudo policy from an exact release checkout:
+For an owner-approved installation, the helper and sudo files come from an
+exact reviewed release checkout. The two commands below alone do not complete
+OCI activation: all signed-artifact, installed-module and v4 state prerequisites
+above still apply. Do not run them as a legacy deployment workaround:
 
 ```bash
 sudo install -o root -g root -m 0755 \

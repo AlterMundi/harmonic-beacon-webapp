@@ -19,12 +19,12 @@ the event service. It is not a smaller production stack.
   while the feature is off and mounted only into the app
 - Image: `harmonic-beacon/live-staging:<exact-commit-sha>`
 
-The stack has no LiveKit, playlist bot, tapestry or commerce worker. The
+The default identity profile has no LiveKit, playlist bot, tapestry or commerce worker. The
 loopback deployment covers landing and health/readiness smoke only. Account
 login, profile/display-name and alias acceptance begins after dedicated DNS,
 TLS and Account staging are ready. Room and ticket behavior remain covered by
 the repository PostgreSQL + browser E2E suite. `/rtc` returns `503`
-intentionally. This boundary avoids borrowing event media credentials or
+intentionally. The optional media profile below extends this boundary with isolated services. The default avoids borrowing event media credentials or
 suggesting that remote room audio was tested when it was not.
 
 Beacon Account is default-off. While it is off, every `/api/account/*` entry
@@ -323,3 +323,224 @@ it is never part of automatic image rollback and never targets production.
 
 Never run `compose down -v`, remove the staging data directory, reuse a
 production image tag, or point this compose file at a production environment.
+
+
+## Optional isolated media rehearsal (#590)
+
+`live-staging-media.compose.yml` is an explicit extension of the base staging
+Compose, not of the production stack or `hb-app-bridge-staging.compose.yml`.
+Its presence in Git does not mean it is installed or qualified. The current
+installation and acceptance evidence belong in #590. The app bridge's ordinary
+staging command still restores the identity-only profile; do not run it during
+a media rehearsal or describe its health check as media acceptance.
+
+The extension adds `hb-live-staging-livekit`, `hb-live-staging-tapestry` and
+`hb-live-staging-playlist-bot`. Only the app and these media services join the
+internal `hb_live_staging_media` network. Only LiveKit also joins
+`hb_live_staging_media_egress`; neither tapestry nor the playlist bot has
+Internet egress, database access or Account credentials. LiveKit signaling binds
+to host loopback port 43880; RTC uses dedicated TCP 43881 and UDP 43882. Check
+these ports are free before installing. Never reuse production media keys,
+recordings, networks or room names.
+
+Prepare the exact candidate, retain the prior app/tapestry/playlist image IDs,
+and record the installed staging Compose, public-profile and Nginx checksums.
+Inspect `hb-app-bridge status` for an unfinished operation before assuming
+ownership. Run `hb doctor --service live`; classify missing catalog proofs
+explicitly rather than declaring them healthy. No production helper, service,
+profile or release record changes as part of this rehearsal.
+
+Install the private media environment and LiveKit configuration under
+`/etc/harmonic-beacon/live-staging-media/` (directory root:root 0700, files
+root:root 0600), starting from `live-staging-media.env.example` and
+`live-staging-livekit.yaml.example`. Generate independent staging-only secrets
+without printing them. The key/secret in the two files must match. Resolve each
+media image to an existing immutable image ID or registry digest, never a
+mutable tag. Create only a synthetic audio fixture at
+`/mnt/beacon-data/live-staging/media-records/rehearsal.wav`; no production
+recordings are mounted. This profile introduces no database migration.
+
+Before applying, render the two Compose files together with both private
+`--env-file` arguments and validate the result without logging its contents:
+
+```bash
+set -o pipefail
+docker compose --file deploy/live-staging.compose.yml \
+  --file deploy/live-staging-media.compose.yml \
+  --env-file /etc/harmonic-beacon/live-staging.env \
+  --env-file /etc/harmonic-beacon/live-staging-media/media.env \
+  config --format json | node scripts/live-staging/validate-media-compose.mjs
+```
+
+The validator checks the resolved service/network/mount/port boundary and exact
+media image identities. It does not establish that credentials differ from
+production, the host ports are available, or media behavior works. Verify those
+separately without exposing secrets. Retain existing database and Account
+configuration and use `up -d --no-deps` only for the selected staging services;
+do not recreate PostgreSQL or run `migrate` for this code-only rehearsal.
+
+For remote browser acceptance, replace only the staging TLS vhost's `/rtc`
+denial with `nginx-live-staging-media.location.conf`, retaining the original
+vhost bytes for rollback. Review the resulting exact vhost and run `nginx -t`
+before reload. Keep test-login and internal APIs denied. No DNS or certificate
+change is required. The existing identity-only public profile is not evidence
+for this extension: use `runtime-public-config/live-staging-media.json` with tapestry on. Set
+`LIVE_STAGING_MEDIA_PROFILE_SHA256` to `sha256:` followed by the SHA-256 of its
+exact bytes; the validator binds that value and the overlay applies its public
+settings. Read back the config digest and origin from `/api/health`. For locally
+built images without a registry digest, read back the immutable Docker image ID
+and compiled source SHA separately; do not invent a registry artifact digest.
+
+Acceptance requires actual browser/SDK media over the staging TLS origin:
+synthetic event creation and closure through Staff, correct event selection,
+listener entry, camera denial/revocation/background handling, ingest through
+composite display, and measured bed continuity when a beacon publishes, mutes,
+unpublishes and reconnects. HTTP health, an SDP connection, or track publication
+alone does not prove audible audio. Record exact images, config digests, event
+ID, observed behavior and cleanup in #590.
+
+Rehearse recovery with the retained exact prior app and service images against
+this isolated database. For a legacy tapestry image, explicitly seed the
+synthetic event ID; document that this is a compatibility prerequisite rather
+than claiming dynamic registration works in that image. Then restore the
+candidate and repeat the failed or critical behavior. Keep all recovery images.
+
+To return to identity-only staging, restore the recorded staging vhost and app
+configuration/image, validate and reload Nginx, recreate only the staging app,
+and stop only the three staging media containers. Verify `/rtc` returns 503,
+readiness and provenance match the retained target, and production container
+IDs/images/restart counts are unchanged. Preserve database, media fixture and
+private configuration for diagnosis; never run broad prune or `down -v`.
+
+
+For Mona's Docker media profile, LiveKit 1.13.4 discovered the correct public IP
+but its external-IP self-ping timed out. Falling back to one node-IP mapping
+across both interfaces failed external ICE despite reachable ports. The reviewed
+example uses `skip_external_ip_validation: true` and `advertise_internal_ip:
+true` to retain discovered mappings and private candidates. These options are
+specified in the [pinned LiveKit configuration](https://github.com/livekit/livekit/blob/v1.13.4/config-sample.yaml).
+They are not connectivity proof: require received PCM outside Mona after any
+network/config change. Apply only to staging and retain the previous config;
+never infer that production needs the same change.
+
+
+### Repeatable probes of the installed media images
+
+From a clean checkout with playlist-bot dependencies installed, run the external
+PCM probe below. The signer executes inside the **staging** bot and emits a
+two-minute, subscribe-only token for `staging-beacon` directly into the probe's
+stdin. Never run the signer alone, log its stdout, put the token in an argument,
+or copy production credentials. The probe connects to the fixed public staging
+origin, checks the grant's room/permissions and reports only frame counts and
+bounded telemetry. Run it with no active primary source: it requires at least nine seconds of
+decoded media and 98% above-threshold PCM during its ten-second observation.
+This exercises media outside Mona, not just its internal Docker bridge. Node/RTC logs do not substitute for its final success JSON.
+
+```bash
+set -o pipefail
+ssh mona 'docker exec -i hb-live-staging-playlist-bot node --input-type=module' \
+  < services/playlist-bot/scripts/staging-listener-token.mjs \
+  | node services/playlist-bot/scripts/staging-pcm-probe.mjs
+```
+
+The tapestry probe runs against the installed service over its staging-only
+container hostname, using only its existing secret in memory and a generated
+color swatch. It checks unauthorized registration, unknown session, registration,
+ingest, composite pixels, layout and the published acknowledgment. The ephemeral
+registry entry and frame expire through the service's ordinary TTLs.
+
+```bash
+ssh mona 'docker exec -e STAGING_MEDIA_PROBE=1 -i hb-live-staging-tapestry node --input-type=module' \
+  < services/tapestry/scripts/staging-probe.mjs
+```
+
+Repeat both after recovery/forward. They do not exercise Staff authorization,
+camera permissions, browser playback or mobile background handling; the complete
+synthetic event remains a separate acceptance requirement.
+
+
+### Installed bot lifecycle rehearsal
+
+The following guarded probe uses the installed staging bot image and its native
+SDK, a synthetic source and a decoded PCM observer. It refuses to start unless
+`staging-beacon` contains only `playlist-bot`. It exercises no publication,
+published-without-frames, audible source, sustained zero PCM, remote mute,
+unpublish and removal/reconnection of the bot's LiveKit participant. It does
+not restart a container, alter the database or use production credentials.
+The room is unavailable for another rehearsal during its roughly one-minute
+run. Confirm exclusive staging ownership and exact image IDs first.
+
+```bash
+ssh mona 'docker exec -e STAGING_MEDIA_PROBE=1 -i hb-live-staging-playlist-bot node --input-type=module' \
+  < services/playlist-bot/scripts/staging-lifecycle-probe.mjs
+```
+
+Every phase must report `passed`, the process must exit zero, and cleanup must
+leave only the bot. This is native PCM evidence inside the remote media network,
+not browser playback or public-route transition evidence. Repeat the external
+TLS PCM probe above afterwards to establish public reception of the restored
+fallback. Retain that distinction in the issue receipt. A failed probe still
+requires readback of participant cleanup and the public fallback; never treat an
+assertion or timeout as successful restoration.
+
+The native SDK in the installed bot does not expose publisher-local mute, and
+staging intentionally disables remote unmute. Do not loosen that server policy
+for a test. Exercise publisher-owned mute/unmute through Chromium with an
+external native PCM observer over the public staging TLS route:
+
+```bash
+set -o pipefail
+ssh mona 'docker exec -e STAGING_MEDIA_PROBE=1 -i hb-live-staging-playlist-bot node --input-type=module' \
+  < services/playlist-bot/scripts/staging-publisher-tokens.mjs \
+  | node services/playlist-bot/scripts/staging-browser-audio-probe.mjs
+```
+
+Run from the repository with root and playlist-bot dependencies installed and
+the pinned Playwright Chromium available. The signer refuses an occupied room,
+issues only two-minute grants for `staging-beacon`, and sends them directly to
+the probe's stdin. Never run it without the pipe or capture its stdout. The
+source has publication permission only; the observer has subscription permission
+only. The probe publishes an oscillator (no microphone/camera), checks source
+sound and bed fades across mute/unmute/unpublish, then disconnects both clients.
+It neither uses nor impersonates a Staff identity. This proves public media
+behavior, not the separate Staff event authorization or camera journey.
+
+### Retained app and media recovery drill
+
+`live-staging-media-recovery.compose.yml` is an optional third overlay. Bind
+`LIVE_STAGING_RECOVERY_APP_IMAGE`, `LIVE_STAGING_RECOVERY_TAPESTRY_IMAGE` and
+`LIVE_STAGING_RECOVERY_PLAYLIST_IMAGE` to retained exact `sha256:` IDs (verify all
+three exist locally). Set `LIVE_STAGING_RECOVERY_SESSION_ID=hb590-legacy-recovery`
+for the media-only probe below. This creates a registry seed inside tapestry;
+it does not create an event or authorize access through the app.
+
+Render base + media + recovery with the same private staging env files and the
+recovery variables. Pass the result through `validate-media-compose.mjs` without
+printing it, and compare the three resolved image IDs against the intended
+retained artifacts. Start **only** `app tapestry playlist-bot` with
+`up -d --no-deps --no-build --pull never`; do not recreate LiveKit/PostgreSQL or
+run migrations. Read the old app SHA and exact image IDs back from the running
+containers, plus public health/readiness and profile provenance.
+
+For a legacy tapestry image that requires explicit registration at startup:
+
+```bash
+ssh mona 'docker exec -e STAGING_MEDIA_PROBE=1 -e STAGING_LEGACY_TAPESTRY=1 -i hb-live-staging-tapestry node --input-type=module' \
+  < services/tapestry/scripts/staging-probe.mjs
+set -o pipefail
+ssh mona 'docker exec -i hb-live-staging-playlist-bot node --input-type=module' \
+  < services/playlist-bot/scripts/staging-listener-token.mjs \
+  | node services/playlist-bot/scripts/staging-pcm-probe.mjs --legacy-publisher
+```
+
+The legacy PCM option still requires the same duration and audible-frame ratio;
+it explicitly does not require audio telemetry that the retained old bot never
+implemented. It is not a candidate health pass. The old image retains its known
+silent-source limitation; recovery does not promise the new VAD behavior.
+
+Restore the candidate using base + media (omit the recovery overlay) with the
+same three selected services and `--no-deps --no-build --pull never`. Verify exact
+image IDs, source/profile, public readiness, normal dynamic tapestry registration
+and the normal external PCM probe. Preserve both sets of images and the recovery
+configuration. This drill proves app startup and media recovery; acceptance of
+Staff permissions and full event lifecycle remains a separate required journey.

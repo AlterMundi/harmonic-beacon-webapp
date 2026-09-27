@@ -1,3 +1,4 @@
+import type { OperatorHealthReport } from '../../src/lib/ops-health';
 import { expect, stackTest, test } from '../fixtures/stack';
 import { loginViaDashboard } from '../fixtures/auth';
 import { requireDirectDb, withSessionStatus, withSessionTitles } from '../fixtures/db';
@@ -73,6 +74,7 @@ stackTest.describe('responsive live surfaces', () => {
                 checkedAt: '2026-08-01T14:00:00.000Z',
                 session: null,
                 checks: {
+                    eventDoors: check,
                     postgres: check,
                     livekit: check,
                     stageRoom: check,
@@ -81,7 +83,7 @@ stackTest.describe('responsive live surfaces', () => {
                     bedPublisher: check,
                     tapestry: check,
                 },
-            },
+            } satisfies OperatorHealthReport,
         }));
         await loginViaDashboard(page, 'FACILITATOR_OP', 'E2E Conductor', ROUTES.opsHealth);
         await expect(page.getByText('docs/ops/WEEKEND_EVENT_RUNBOOK.md')).toBeVisible();

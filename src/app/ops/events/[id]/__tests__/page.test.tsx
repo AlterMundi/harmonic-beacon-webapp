@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
     findUnique: vi.fn(),
     resolveStaffByToken: vi.fn(),
     resolveStaffLanding: vi.fn(),
+    listStaffEvents: vi.fn(),
 }));
 vi.mock('next/headers', () => ({
     cookies: vi.fn().mockResolvedValue({ get: () => ({ value: 'staff-token' }) }),
@@ -17,7 +18,7 @@ vi.mock('next/headers', () => ({
 vi.mock('next/navigation', () => ({ redirect: vi.fn() }));
 vi.mock('@/lib/db', () => ({ prisma: { scheduledSession: { findUnique: mocks.findUnique } } }));
 vi.mock('@/lib/ops-auth', () => ({ resolveStaffByToken: mocks.resolveStaffByToken }));
-vi.mock('@/lib/staff-navigation', () => ({ resolveStaffLanding: mocks.resolveStaffLanding }));
+vi.mock('@/lib/staff-navigation', () => ({ resolveStaffLanding: mocks.resolveStaffLanding, listStaffEvents: mocks.listStaffEvents }));
 vi.mock('@/lib/i18n-server', () => ({ requestLocale: vi.fn().mockResolvedValue('en') }));
 vi.mock('@/components/ops/ConductorCockpit', async () => {
     const { useState } = await import('react');
@@ -39,6 +40,7 @@ describe('canonical staff event page', () => {
         });
         mocks.resolveStaffLanding.mockResolvedValue('/ops/events/assigned-live');
         mocks.findUnique.mockReset();
+        mocks.listStaffEvents.mockReset().mockResolvedValue([]);
     });
     afterEach(cleanup);
 
@@ -56,6 +58,17 @@ describe('canonical staff event page', () => {
         expect(screen.getByRole('heading', { name: 'The living scene' })).toBeInTheDocument();
         expect(screen.queryByRole('link', { name: /Enter the room/ })).toBeNull();
         expect(screen.getByTestId('cockpit')).toHaveTextContent('event-1');
+    });
+
+    it('warns about an overdue event with an authorized live alternative without redirecting', async () => {
+        mocks.findUnique.mockResolvedValue({ id: 'old', title: 'Old event', language: 'ENGLISH',
+            status: 'SCHEDULED', scheduledAt: new Date('2020-01-01T18:00:00Z'), facilitatorId: 'fac-1' });
+        mocks.listStaffEvents.mockResolvedValue([{ id: 'active', title: 'Active event', status: 'LIVE', scheduledAt: new Date() }]);
+        render(<LocaleProvider initialLocale="en">{await EventPage({ params: Promise.resolve({ id: 'old' }) })}</LocaleProvider>);
+        expect(screen.getByRole('note')).toHaveTextContent('past its scheduled time');
+        expect(screen.getByRole('link', { name: 'View live event: Active event' })).toHaveAttribute('href', '/ops/events/active');
+        expect(screen.getByTestId('cockpit')).toHaveTextContent('old');
+        expect(mocks.listStaffEvents).toHaveBeenCalledWith(expect.objectContaining({ id: 'fac-1', role: 'FACILITATOR' }));
     });
 
     it('remounts the conductor cockpit when the route changes event identity', async () => {
@@ -107,6 +120,7 @@ describe('canonical staff event page', () => {
 
         expect(screen.getByRole('heading', { name: /unavailable/i })).toBeInTheDocument();
         expect(screen.queryByText(/Private event title/)).toBeNull();
+        expect(mocks.listStaffEvents).not.toHaveBeenCalled();
         expect(screen.getByRole('link', { name: /Return to your events/ })).toHaveAttribute(
             'href', '/ops/events/assigned-live',
         );

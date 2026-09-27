@@ -1,3 +1,4 @@
+import type { OperatorHealthReport } from '../../src/lib/ops-health';
 import { expect, stackTest } from '../fixtures/stack';
 import { loginViaDashboard } from '../fixtures/auth';
 import { ROUTES, SESSION_ES } from '../fixtures/test-data';
@@ -176,13 +177,14 @@ stackTest('hidden health preview spends 0/N/0 requests while the rail stays live
     });
 
     await page.route('**/api/ops/health**', async (route) => {
-        const green = { status: 'green', detail: 'Synthetic healthy check', latencyMs: 1 };
+        const green = { status: 'green', detail: 'Synthetic healthy check', latencyMs: 1 } as const;
         await route.fulfill({
             json: {
                 status: 'green',
                 checkedAt: new Date().toISOString(),
-                session: { id: SESSION_ES.id, title: SESSION_ES.title, status: 'LIVE' },
+                session: { id: SESSION_ES.id, title: SESSION_ES.title, status: 'LIVE', maxPublishers: 6 },
                 checks: {
+                    eventDoors: green,
                     postgres: green,
                     livekit: green,
                     stageRoom: green,
@@ -191,7 +193,7 @@ stackTest('hidden health preview spends 0/N/0 requests while the rail stays live
                     bedPublisher: green,
                     tapestry: green,
                 },
-            },
+            } satisfies OperatorHealthReport,
         });
     });
     await page.route(`**/api/tapestry/${SESSION_ES.id}**`, async (route) => {

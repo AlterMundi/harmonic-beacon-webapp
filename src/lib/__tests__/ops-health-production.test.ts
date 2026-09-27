@@ -44,7 +44,7 @@ describe('production health event selection', () => {
         }));
     });
 
-    it('falls back to an upcoming or at-most-60-minutes-late scheduled event', async () => {
+    it('falls back to a future scheduled event while overdue doors have their separate check', async () => {
         const now = new Date('2026-08-01T18:00:00Z');
         findFirst
             .mockResolvedValueOnce(null)
@@ -55,7 +55,7 @@ describe('production health event selection', () => {
         expect(findFirst).toHaveBeenLastCalledWith(expect.objectContaining({
             where: {
                 status: 'SCHEDULED',
-                scheduledAt: { gte: new Date('2026-08-01T17:00:00Z') },
+                scheduledAt: { gte: now },
             },
             orderBy: { scheduledAt: 'asc' },
         }));

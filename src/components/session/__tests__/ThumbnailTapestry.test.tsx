@@ -31,7 +31,7 @@ describe('ThumbnailTapestry', () => {
 
         expect(view.getByRole('region', { name: 'Tapiz' })).toBeInTheDocument();
         expect(view.getByText('Esperando imágenes.')).toBeInTheDocument();
-        await waitFor(() => expect(fetch).toHaveBeenCalled());
+        await view.findByText('No pudimos obtener el tapiz. Estamos reintentando; si persiste, avisá al equipo.');
         expect(vi.mocked(fetch).mock.calls[0][1]?.credentials).toBe('same-origin');
         // Staff tools keep their original fetch contract: no hand sidecar.
         expect(vi.mocked(fetch).mock.calls.some(([input]) =>

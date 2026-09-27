@@ -1,3 +1,4 @@
+import type { OperatorHealthReport } from '../../src/lib/ops-health';
 import { expect, stackTest } from '../fixtures/stack';
 import { RoomServiceClient } from 'livekit-server-sdk';
 import { loginViaDashboard } from '../fixtures/auth';
@@ -10,8 +11,9 @@ const NOMINAL_CHECK = { status: 'green', detail: 'Nominal fixture', latencyMs: 1
 const NOMINAL_HEALTH = {
     status: 'green',
     checkedAt: '2026-08-01T14:00:00.000Z',
-    session: { id: SESSION_ES.id, title: SESSION_ES.title, status: 'SCHEDULED' },
+    session: { id: SESSION_ES.id, title: SESSION_ES.title, status: 'SCHEDULED', maxPublishers: 6 },
     checks: {
+        eventDoors: NOMINAL_CHECK,
         postgres: NOMINAL_CHECK,
         livekit: NOMINAL_CHECK,
         stageRoom: NOMINAL_CHECK,
@@ -20,7 +22,7 @@ const NOMINAL_HEALTH = {
         bedPublisher: NOMINAL_CHECK,
         tapestry: NOMINAL_CHECK,
     },
-};
+} satisfies OperatorHealthReport;
 
 async function resetStageRoom(): Promise<void> {
     const livekitUrl = (process.env.E2E_LIVEKIT_URL ?? 'ws://localhost:7880')
@@ -72,6 +74,9 @@ stackTest.describe('visual baselines', () => {
 
     stackTest('attendee audio prompt', async ({ page }, testInfo) => {
         const db = requireDirectDb(testInfo);
+        // This fixture has no compositor. Pin its unavailable state so capture
+        // status cannot race the screenshot between uploading and retrying.
+        await page.route('**/api/tapestry/**', (route) => route.fulfill({ status: 503 }));
         // This baseline is specifically the blocked-autoplay surface. Publish
         // one real audio-only Beacon source, then deny its native playback;
         // runner autoplay policy can no longer make the CTA disappear.
@@ -107,6 +112,8 @@ stackTest.describe('visual baselines', () => {
                 await expect(page.getByRole('button', {
                     name: /Switch to rear camera|Cambiar a cámara trasera/i,
                 })).toBeVisible();
+                await expect(page.getByText(/No pudimos actualizar tu imagen/)).toBeVisible();
+                await expect(page.getByText(/No pudimos obtener el tapiz/)).toBeVisible();
                 await expect(page).toHaveScreenshot('attendee-audio-prompt.png', {
                     mask: [page.getByTestId('connection-state').locator('..')],
                     maskColor: '#16120d',
@@ -119,6 +126,20 @@ stackTest.describe('visual baselines', () => {
 
     stackTest('conductor cockpit', async ({ page }) => {
         await page.route('**/api/ops/health**', (route) => route.fulfill({ json: NOMINAL_HEALTH }));
+        // Pin the nominal empty stage, just as health is pinned above. Earlier
+        // functional tests may reconcile the durable fixture grant; a pending
+        // grant changes the primary action to a longer reconciliation label.
+        await page.route(`**/api/ops/sessions/${SESSION_ES.id}/participants`, (route) => route.fulfill({
+            json: {
+                sessionId: SESSION_ES.id,
+                sessionStatus: 'SCHEDULED',
+                maxPublishers: 6,
+                activePublishers: 0,
+                grantedPublishers: 0,
+                liveStateAvailable: true,
+                participants: [],
+            },
+        }));
         await loginViaDashboard(
             page,
             'FACILITATOR',
@@ -127,6 +148,7 @@ stackTest.describe('visual baselines', () => {
         );
         await expect(page.getByTestId('conductor-cockpit')).toBeVisible();
         await expect(page.locator('[data-signal="stage"]')).toHaveAttribute('data-loaded', 'true');
+        await expect(page.locator('[data-signal="primary"]')).toContainText('Abrir puertas');
         await expect(page.locator('[data-signal="health"]')).toContainText('green', { timeout: 15_000 });
         const persistentRoom = page.locator('iframe[data-testid="persistent-room"]');
         await expect(persistentRoom).toBeVisible();
@@ -158,6 +180,7 @@ stackTest.describe('visual baselines', () => {
         await page.route('**/api/tapestry/**', (route) => route.fulfill({ status: 404 }));
         await loginViaDashboard(page, 'FACILITATOR_OP', 'E2E Conductor', ROUTES.opsHealth);
         await expect(page.getByText(/(?:VERDE|GREEN) —/i)).toBeVisible();
+        await expect(page.getByText(/No pudimos obtener el tapiz/)).toBeVisible();
         await expect(page).toHaveScreenshot('event-health.png', { fullPage: true });
     });
 });

@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { formatEventTime } from '@/lib/event-time';
 import { useLocale } from '@/context/LocaleContext';
 import { liveNavigationCopy } from '@/lib/live-navigation-copy';
 import OpsNavLinks from './OpsNavLinks';
@@ -38,8 +39,31 @@ export function EventHeading({ title, language, status, scheduledAt }: {
         </div>
         <p className="mb-6 text-sm text-[var(--text-secondary)]">
             {language === 'SPANISH' ? 'ES' : 'EN'} ·{' '}
-            <span>{status === 'LIVE' ? copy.ops.live : copy.ops.scheduled}</span> ·{' '}
-            {new Intl.DateTimeFormat(locale === 'es' ? 'es-AR' : 'en-GB', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(scheduledAt))}
+            <span>{copy.ops.lifecycle.statuses[status as keyof typeof copy.ops.lifecycle.statuses] ?? status}</span> ·{' '}
+            {formatEventTime(scheduledAt, locale)}
         </p>
     </>;
+}
+
+
+/** Server-selected alternatives preserve authorization and hydration stability. */
+export function EventSelectionNotice({ overdue, alternative }: {
+    overdue: boolean;
+    alternative: { id: string; title: string; status: string } | null;
+}) {
+    const { locale } = useLocale();
+    const es = locale === 'es';
+    return <aside role="note" className="mb-6 rounded-lg border border-amber-400/40 bg-amber-400/10 p-4 text-sm text-[var(--paper)]">
+        <p>{overdue
+            ? (es ? 'Este evento tiene un horario pasado y sus puertas siguen cerradas. Confirmá que sea el evento que querés operar.'
+                : 'This event is past its scheduled time and its doors are still closed. Confirm this is the event you intend to operate.')
+            : (es ? 'Hay otro evento en vivo. Confirmá que estés operando el evento correcto.'
+                : 'Another event is live. Confirm you are operating the intended event.')}</p>
+        {alternative && <Link className="mt-2 inline-flex min-h-11 items-center underline" href={`/ops/events/${alternative.id}`}>
+            {alternative.status === 'LIVE' ? (es ? 'Ver evento en vivo' : 'View live event') : (es ? 'Ver próximo evento' : 'View next event')}: {alternative.title}
+        </Link>}
+        {!alternative && <Link className="mt-2 inline-flex min-h-11 items-center underline" href="/ops/events">
+            {es ? 'Revisar mis eventos' : 'Review my events'}
+        </Link>}
+    </aside>;
 }

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { LocaleProvider } from '@/context/LocaleContext';
 import LanguageControl from '@/components/brand/LanguageControl';
@@ -13,4 +13,30 @@ it('updates the Staff event heading and navigation without refreshing server dat
     expect(screen.getByRole('link', { name: 'Eventos' })).toBeVisible();
     expect(screen.getByText('En vivo')).toBeVisible();
     expect(screen.getByRole('heading', { name: 'Living scene' })).toBeVisible();
+});
+
+it('hydrates the event time without recovery when server and browser timezones differ', async () => {
+    const { renderToString } = await import('react-dom/server');
+    const { hydrateRoot } = await import('react-dom/client');
+    const NativeDateTimeFormat = Intl.DateTimeFormat;
+    let environmentZone = 'UTC';
+    const formatter = vi.spyOn(Intl, 'DateTimeFormat').mockImplementation(function(locales, options) {
+        return new NativeDateTimeFormat(locales, { timeZone: environmentZone, ...options });
+    } as typeof Intl.DateTimeFormat);
+    const content = <LocaleProvider initialLocale="en"><EventHeading title="Rehearsal" language="SPANISH" status="LIVE" scheduledAt="2026-09-30T16:00:00Z" /></LocaleProvider>;
+    const container = document.createElement('div');
+    document.body.append(container);
+    container.innerHTML = renderToString(content);
+    environmentZone = 'America/Argentina/Cordoba';
+    const errors: unknown[] = [];
+    let root: ReturnType<typeof hydrateRoot> | undefined;
+    try {
+        await act(async () => { root = hydrateRoot(container, content, { onRecoverableError: error => errors.push(error) }); });
+        expect(errors).toEqual([]);
+        expect(container.textContent).toContain('13:00');
+    } finally {
+        await act(async () => root?.unmount());
+        container.remove();
+        formatter.mockRestore();
+    }
 });

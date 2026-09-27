@@ -1,3 +1,16 @@
+> Session registration updated for #462: the initial `TAPESTRY_SESSION_IDS`
+> remains supported. The authenticated app can also `PUT /tapestry/sessions/:id`
+> (empty body) after verifying room entitlement. Registration is idempotent;
+> a total of 64 seeded/dynamic sessions is allowed, with HTTP 429 on exhaustion.
+> Dynamic registrations expire after 15 minutes without an authenticated request;
+> their tiles, ordering and composite cache are discarded. Seeded registrations
+> remain until restart. Images remain memory-only and retain their shorter frame TTL.
+> The app retries a frame exactly once after an explicit `unknown_session` response,
+> registering it within the same three-second request deadline. Generic 404s do not
+> trigger registration. Deploy/rollback qualification must cover both service and app;
+> the old service alone cannot register a new event. This is source behavior under
+> development, not a claim that staging or production has been updated.
+
 # Tapestry service
 
 Bounded in-memory composite of attendee camera snapshots ("the tapestry").
@@ -29,7 +42,7 @@ per session and only when the frame set changed.
 | Env var | Required | Default | Meaning |
 |---|---|---|---|
 | `TAPESTRY_INTERNAL_SECRET` | yes | — | Shared secret with the app (≥16 chars) |
-| `TAPESTRY_SESSION_IDS` | yes | — | Comma-separated seeded session IDs; ingest for any other session is rejected |
+| `TAPESTRY_SESSION_IDS` | no | empty | Optional comma-separated seed IDs; the authorized app registers new sessions dynamically |
 | `TAPESTRY_PORT` | no | `3100` | Listen port |
 | `TAPESTRY_HOST` | no | `127.0.0.1` (`0.0.0.0` in the Dockerfile) | Bind address |
 
@@ -81,3 +94,19 @@ retention, frame replacement, 10-second expiry, composite rate limiting and
 grid layout, health redaction, and a 30-second soak at 60 ingests/second
 across 150 participants (a shortened stand-in for the 10-minute container
 soak — see the comment in `test/soak.test.ts`).
+
+## Appearance receipts
+
+Frame ingest acknowledges `composing` until a completed, recent composite
+contains that participant's opaque tile key, then `published`. This confirms
+appearance in the collective image, not that the most recent upload is already
+rendered. Confirmation expires with the configured frame TTL. Ingest does not
+force composition or bypass the render rate limit. The Next proxy exposes only
+this bounded state; a legacy successful service response becomes `received`,
+never an invented publication confirmation.
+
+The camera UI checks HTTP failures and limits uploads to five seconds. Hidden
+pages release the camera and abort uploads; returning resumes only when the
+attendee has not opted out. Camera denial/revocation requires an explicit retry.
+A disconnected/unmounted capture cannot publish a late success into another
+session's UI. A failed composite refresh labels the retained image as stale.

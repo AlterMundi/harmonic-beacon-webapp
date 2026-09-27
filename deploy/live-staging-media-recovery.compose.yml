@@ -1,0 +1,11 @@
+# Third overlay after live-staging.compose.yml + live-staging-media.compose.yml.
+# Changes only the selected artifacts; isolation and staging credentials remain.
+services:
+  app:
+    image: ${LIVE_STAGING_RECOVERY_APP_IMAGE:?exact retained app image required}
+  tapestry:
+    image: ${LIVE_STAGING_RECOVERY_TAPESTRY_IMAGE:?exact retained tapestry image required}
+    environment:
+      TAPESTRY_SESSION_IDS: ${LIVE_STAGING_RECOVERY_SESSION_ID:?explicit synthetic recovery session required}
+  playlist-bot:
+    image: ${LIVE_STAGING_RECOVERY_PLAYLIST_IMAGE:?exact retained playlist image required}

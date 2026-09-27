@@ -108,17 +108,19 @@ stackTest.describe('fixture stack', () => {
         expect(revokedMessage).toBe(unknownMessage);
     });
 
-    stackTest('facilitator password login reaches ops and own session console', async ({
+    stackTest('facilitator password login selects a live event rather than an overdue fixture', async ({
         page,
-    }) => {
-        await loginStaffWithPassword(page, STAFF.facilitator);
-        await page.waitForURL(`**${ROUTES.opsSession(SESSION_ES.id)}`);
-        await expect(
-            page.getByRole('heading', {
-                name: `Harmonic Projection — ${SESSION_ES.title}`,
-                exact: true,
-            }),
-        ).toBeVisible();
+    }, testInfo) => {
+        await withSessionStatus(requireDirectDb(testInfo), SESSION_ES.id, 'LIVE', async () => {
+            await loginStaffWithPassword(page, STAFF.facilitator);
+            await page.waitForURL(`**${ROUTES.opsSession(SESSION_ES.id)}`);
+            await expect(
+                page.getByRole('heading', {
+                    name: `Harmonic Projection — ${SESSION_ES.title}`,
+                    exact: true,
+                }),
+            ).toBeVisible();
+        });
     });
 
     stackTest('operator dashboard login reaches admission without account switching', async ({
