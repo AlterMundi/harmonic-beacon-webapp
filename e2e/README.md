@@ -58,10 +58,17 @@ they never weaken their assertions to pass.
 
    ```bash
    docker run -d --name hb-e2e-livekit --network host \
-     livekit/livekit-server:v1.13.4 --dev --node-ip 127.0.0.1
+     livekit/livekit-server:v1.13.4 --dev --bind 0.0.0.0
    ```
 
    Dev credentials are LiveKit's public placeholders (`devkey`/`secret`).
+   This matches the CI fixture. Do not force the advertised node IP to
+   loopback: browser ICE can reject that candidate even while signaling works.
+   The production-mode app also requires WSS: start the private loopback TLS
+   proxy in `e2e/fixtures/livekit-tls-proxy.mjs` as shown in
+   `.github/workflows/e2e.yml`, then set `E2E_LIVEKIT_PUBLIC_URL` and
+   `E2E_LIVEKIT_CA_CERT` for Playwright. Keep the publisher/load harness URL
+   on the isolated plain loopback endpoint.
 
 3. **Run the gates:**
 
