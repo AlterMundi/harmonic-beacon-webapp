@@ -96,3 +96,8 @@ test('release merges do not repeat PR CI or auto-run disabled deployment', () =>
   assert.doesNotMatch(deployWorkflow, /^ {2}push:/m);
   assert.match(deployWorkflow, /^ {2}workflow_dispatch:/m);
 });
+
+test('the reusable CI caller permits the read-only evidence API required by CI', () => {
+  assert.match(ciWorkflow, /permissions:\n  contents: read\n  actions: read/);
+  assert.match(candidateWorkflow, /permissions:\n      contents: read\n      actions: read\n    uses: \.\/\.github\/workflows\/ci\.yml/);
+});
