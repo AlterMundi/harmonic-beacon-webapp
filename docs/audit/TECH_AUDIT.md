@@ -2,6 +2,12 @@
 
 *Audit date: 2026-06-09 · Scope: the `docs/` policy corpus + `BUSINESS_RULES.md`; infra readmes in Appendix A · Repo state: commit `b72b279` · See [README.md](./README.md) for methodology and severity scale.*
 
+> Historical snapshot: the June LiveKit topology below is superseded. Current
+> Live runs on Mona with token-response URL resolution, public
+> `wss://live.harmonicbeacon.com` and explicit bot internal
+> `ws://beacon-livekit:7880`. Listen is separate and does not use LiveKit.
+> Preserve the original audit as dated evidence, not an installation guide.
+
 Every present-tense system claim in the policy docs was checked against the code. Each finding gives the doc claim, the code evidence, and a recommended fix: **BUILD** (implement before release), **RE-TENSE** (rewrite the doc as a phase-tagged commitment), or **CORRECT** (the doc is simply wrong about the code).
 
 What checked out — for the record, these doc claims are **accurate**: `UserRole`/`ModerationStatus`/`TagCategory` enums, `isPublished`/`isFeatured`/`isHidden`/`defaultMix`/`originalPath` fields (`prisma/schema.prisma:16-105`); `ListeningSession`, `ScheduledSession`, `SessionRecording`, `SessionInvite`, `Favorite` models (`schema.prisma:151-267`); LiveKit topology `wss://live.altermundi.net` / room `beacon` / identity `beacon01` (`src/context/AudioContext.tsx:7,78`, `src/app/api/livekit/token/route.ts`); go2rtc on-demand stream creation with `#audio=opus` (`src/app/api/meditations/route.ts:160-206`); playlist-bot fallback publisher exists and reacts to `beacon01` presence (`services/playlist-bot/src/index.ts:240-288`); nginx rate limiting (`deploy/nginx-harmonic-beacon.conf:27-29`); repo-layout section of root README; no secrets in git history (full scan, all commits).

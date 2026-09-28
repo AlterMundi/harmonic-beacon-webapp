@@ -1,5 +1,5 @@
 #!/bin/bash
-# Setup nginx for Harmonic Beacon on inference-public
+# Setup nginx for Harmonic Beacon on mona
 # Run as root: sudo ./setup-nginx.sh
 
 set -e
@@ -41,9 +41,7 @@ systemctl reload nginx
 
 echo ""
 echo "=== Setup Complete ==="
-echo "Nginx is configured to proxy beacon.altermundi.net -> localhost:3003"
+echo "Nginx is configured to proxy live.harmonicbeacon.com -> localhost:3000; LiveKit signaling -> localhost:7880"
 echo ""
-echo "Next steps:"
-echo "1. Ensure DNS points beacon.altermundi.net to this server"
-echo "2. For HTTPS, run: certbot --nginx -d beacon.altermundi.net"
-echo "3. Deploy the app: merge PR to 'release' branch"
+echo "Validate the existing HTTPS certificate and exact public health/readiness endpoints."
+echo "This script does not provision DNS, certificates, application images, or delivery authority."

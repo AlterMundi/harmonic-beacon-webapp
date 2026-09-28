@@ -59,9 +59,16 @@ The headline metric — the one we will print on the status page — is **beacon
 
 ## 3. Source hierarchy
 
+> Historical model for the legacy Live player, not the current Listen service.
+> Current Live session clients use the URL from the token response, resolved by
+> `src/lib/livekit-public-url.ts`; on Mona the public URL is
+> `wss://live.harmonicbeacon.com` and the bot uses explicit internal
+> `ws://beacon-livekit:7880`. Listen does not use LiveKit. The targets below
+> are not a claim of measured current-service availability.
+
 The audio the Listener hears is sourced through a documented fallback chain. Two of the four levels below exist; the chain in production is live primary → playlist fallback, and nothing catches the case where the fallback is also gone.
 
-1. **Live primary** — `beacon01` WebRTC publisher on `wss://live.altermundi.net`, room `beacon`. Expected source ≥ 95% of the time.
+1. **Live primary** — `beacon01` WebRTC publisher on the configured LiveKit endpoint, room `beacon`. Expected source ≥ 95% of the time.
 2. **Live secondary (warm standby)** — a second participant with the identity `beacon02`, publishing the same content from a different upstream, will take over if `beacon01` disconnects for more than N seconds (N tuned; default 30). `beacon02` exists nowhere in code. **[Planned — Phase 1]**
 3. **Playlist fallback** — the `services/playlist-bot` service (already in the repo), publishing pre-curated continuous audio when the live source is absent. Takes over automatically. The UI will surface a "Beacon in transit" state; per §1 it does not yet. **[Planned — Phase 1]** *(the UI, not the switchover)*
 4. **Offline degraded** — if even the fallback cannot publish, the client will play a locally-cached last-30-seconds loop while retrying in the background. At **5 minutes** it stops covering for the outage and says so: an outage state with a link to the status page. It keeps retrying behind that message, with backoff, to a total of **15 minutes**, after which it gives up and the state becomes terminal, with a manual retry. See §8 for why both numbers are in the contract. Nothing of this is implemented: there is no local cache, no retry loop, no outage state, and no status page to link to. **[Planned — Phase 1]**

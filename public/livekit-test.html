@@ -75,7 +75,7 @@
         <div id="message" class="message connecting">Enter your LiveKit credentials below</div>
         
         <label>LiveKit Server URL</label>
-        <input type="text" id="url" value="wss://live.altermundi.net" placeholder="wss://your-server.com">
+        <input type="text" id="url" value="" placeholder="wss://your-server.com">
         
         <label>Token</label>
         <input type="text" id="token" placeholder="Paste your LiveKit token here">
@@ -95,8 +95,8 @@
             const messageEl = document.getElementById('message');
             const btn = document.getElementById('connectBtn');
 
-            if (!token) {
-                messageEl.textContent = '❌ Please enter a token';
+            if (!url || !token) {
+                messageEl.textContent = '❌ Please enter the LiveKit URL and token from the same session token response';
                 messageEl.className = 'message error';
                 return;
             }

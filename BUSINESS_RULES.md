@@ -289,7 +289,14 @@ Protocol changes are preregistered publicly before deployment. Where preregistra
 
 ### 7.1 The Beacon (live)
 
-- `wss://live.altermundi.net`, room `beacon`, primary source identity `beacon01`.
+> Historical description of the legacy `/live` surface below. As of 2026-09-28,
+> Live sessions use the `livekitUrl` returned with their session token, resolved
+> by `src/lib/livekit-public-url.ts` (production: `wss://live.harmonicbeacon.com`).
+> The bot requires an explicit internal URL (`ws://beacon-livekit:7880` on Mona).
+> Listen is a separate service and does not use LiveKit. Do not apply this
+> historical room/fallback description to its current playback contract.
+
+- Legacy room `beacon`, primary source identity `beacon01`.
 - A playlist-bot fallback fills the stream when `beacon01` is offline. The client detects the switch and manages audio accordingly.
 - The fallback is surfaced to the listener. `/live` renders one of three states above the player — **LIVE** in red while `beacon01` is publishing, **PLAYLIST** in amber while the fallback is carrying the stream, **OFFLINE** when neither is. It is derived from the same presence the audio switching uses, so it changes with the source rather than lagging it.
 - The label reads "PLAYLIST" rather than the "Beacon in transit" phrasing this document used to specify. The substance — a listener always knows which source they are hearing — is delivered; the wording is a copy decision, not a gap.
