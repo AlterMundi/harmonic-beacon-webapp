@@ -1,4 +1,6 @@
 export async function runQualityAndRetention(pool) {
+    // Zero-duration snapshots/instant departures are valid under the interval
+    // schema and contribute zero listening time. Preserve them as evidence.
     const checks = [
         [`insert into ops.quality_results(check_name,source,status,observed_value,expected_value,details)
           select 'collector_clock_skew','collector',case when count(*)=0 then 'ok' else 'warning' end,count(*),0,
@@ -26,12 +28,13 @@ export async function runQualityAndRetention(pool) {
           where p.membership_source_key is not null and m.source_key is null`],
         [`insert into ops.quality_results(check_name,source,status,observed_value,expected_value,details)
           select 'invalid_listener_intervals','listener',case when count(*)=0 then 'ok' else 'error' end,count(*),0,'{}'
-          from mart.listening_intervals where ended_at<=started_at`],
+          from mart.listening_intervals
+          where ended_at<started_at or ended_at-started_at>interval '24 hours'`],
         [`insert into ops.quality_results(check_name,source,status,observed_value,expected_value,details)
           select 'invalid_live_intervals','live',case when count(*)=0 then 'ok' else 'error' end,count(*),0,
                  jsonb_build_object('maximum_hours',12)
           from mart.live_presence_intervals
-          where ended_at<=started_at or ended_at-started_at>interval '12 hours'`],
+          where ended_at<started_at or ended_at-started_at>interval '12 hours'`],
     ];
     for (const [sql] of checks) await pool.query(sql);
 
