@@ -103,7 +103,8 @@ postgres('pinned OAuth Provider 1.6.30 confidential-client lifecycle', () => {
         });
     });
 
-    it('exchanges an auth code and introspects using the provisioned full secret', async () => {
+    it.each([undefined, 'https://untrusted-resource.example.invalid'])(
+        'exchanges only an allowed resource using the provisioned full secret (%s)', async (resource) => {
         const verifier = randomBytes(48).toString('base64url');
         const challenge = createHash('sha256').update(verifier).digest('base64url');
         const authorizeURL = new URL('/api/account/auth/oauth2/authorize', issuer);
@@ -161,8 +162,16 @@ postgres('pinned OAuth Provider 1.6.30 confidential-client lifecycle', () => {
                 grant_type: 'authorization_code', code: code!,
                 redirect_uri: 'https://listen.harmonicbeacon.com/api/account/callback',
                 code_verifier: verifier,
+                ...(resource ? { resource } : {}),
             }),
         }));
+        if (resource) {
+            expect(token.status).toBe(400);
+            expect(await token.json()).toMatchObject({
+                error: 'invalid_request', error_description: 'requested resource invalid',
+            });
+            return;
+        }
         expect(token.status).toBe(200);
         const tokens = await token.json() as { access_token: string; id_token: string };
         expect(tokens.access_token).toMatch(/^hb_acct_p_at_/);
