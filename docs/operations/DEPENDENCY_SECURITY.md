@@ -67,7 +67,7 @@ identity change, not an incidental dependency bump.
 Run `npm ci`, `npm audit --omit=dev --json`, and `npm run audit:production` from
 the exact candidate. The clean install must agree with the committed lockfile.
 The lockfile's Vitest peer resolution was generated with npm 11 after npm 10's
-Arborist failed; npm 10 clean-install compatibility must still be checked.
+Arborist failed; npm 10 clean installation passed in hosted qualification.
 Prisma 7 requires Node >=22.12; production/CI retain the Node 22.22 LTS line.
 
 Independently deployed tapestry/playlist packages have separate lockfiles and

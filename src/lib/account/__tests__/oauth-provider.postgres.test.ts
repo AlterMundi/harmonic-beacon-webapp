@@ -103,8 +103,7 @@ postgres('pinned OAuth Provider 1.6.30 confidential-client lifecycle', () => {
         });
     });
 
-    it.each([undefined, 'https://untrusted-resource.example.invalid'])(
-        'exchanges only an allowed resource using the provisioned full secret (%s)', async (resource) => {
+    it('exchanges an auth code and rejects an unrelated access-token resource', async () => {
         const verifier = randomBytes(48).toString('base64url');
         const challenge = createHash('sha256').update(verifier).digest('base64url');
         const authorizeURL = new URL('/api/account/auth/oauth2/authorize', issuer);
@@ -162,16 +161,8 @@ postgres('pinned OAuth Provider 1.6.30 confidential-client lifecycle', () => {
                 grant_type: 'authorization_code', code: code!,
                 redirect_uri: 'https://listen.harmonicbeacon.com/api/account/callback',
                 code_verifier: verifier,
-                ...(resource ? { resource } : {}),
             }),
         }));
-        if (resource) {
-            expect(token.status).toBe(400);
-            expect(await token.json()).toMatchObject({
-                error: 'invalid_request', error_description: 'requested resource invalid',
-            });
-            return;
-        }
         expect(token.status).toBe(200);
         const tokens = await token.json() as { access_token: string; id_token: string };
         expect(tokens.access_token).toMatch(/^hb_acct_p_at_/);
@@ -203,6 +194,29 @@ postgres('pinned OAuth Provider 1.6.30 confidential-client lifecycle', () => {
         }
         expect(claims).not.toHaveProperty('realName');
         expect(claims).not.toHaveProperty('real_name');
+
+        // Reuse the authenticated browser session instead of adding another
+        // password attempt to the provider's production rate-limit bucket.
+        const anotherAuthorization = await handler(new Request(authorizeURL, {
+            headers: { host: 'account.harmonicbeacon.com', cookie: sessionCookie },
+        }));
+        expect(anotherAuthorization.status).toBe(302);
+        const anotherCode = new URL(anotherAuthorization.headers.get('location')!).searchParams.get('code');
+        expect(anotherCode).toBeTruthy();
+        const rejected = await handler(new Request(`${issuer}/api/account/auth/oauth2/token`, {
+            method: 'POST', headers: {
+                host: 'account.harmonicbeacon.com', authorization: basic,
+                'content-type': 'application/x-www-form-urlencoded',
+            }, body: new URLSearchParams({
+                grant_type: 'authorization_code', code: anotherCode!,
+                redirect_uri: 'https://listen.harmonicbeacon.com/api/account/callback',
+                code_verifier: verifier, resource: 'https://untrusted-resource.example.invalid',
+            }),
+        }));
+        expect(rejected.status).toBe(400);
+        expect(await rejected.json()).toMatchObject({
+            error: 'invalid_request', error_description: 'requested resource invalid',
+        });
     });
 
     it.each([
