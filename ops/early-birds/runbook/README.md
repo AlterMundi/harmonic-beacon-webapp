@@ -375,3 +375,24 @@ page as a currently missed opening. Resolve their historical disposition in
 the owning issue; this observer never cancels or edits events. The distinct
 schedule-probe failure alert remains critical, so a failed query cannot look
 like an empty agenda.
+
+### Host journal and obsolete source trees
+
+Install `journald/60-harmonic-beacon-retention.conf` in
+`/etc/systemd/journald.conf.d/`: persistent journal capped at 512 MiB, volatile
+journal at 128 MiB, and age at 14 days. Before the first reduction, rotate and
+archive sealed journals on the separate data disk; verify the compressed
+archive and compare its contents against the source. Retain that historical
+archive privately. Restart only journald to load the limit, then read back
+journal usage and service status; do not restart applications for log retention.
+
+Old release source trees and idle runner workspaces can be archived to
+`/mnt/beacon-data/archives/host-artifacts` after checking every container bind
+mount/Compose path, process cwd/open file and service-unit reference. Keep active
+and rollback source trees. Stop the idle runner while archiving its generated
+workspace, preserving its registration and executable installation. Copy to a
+root-private archive, verify compression and byte-for-byte source comparison,
+then recheck references before removing only the inventoried exact paths.
+Preserve the archive checksum, path inventory and receipt; restore into an
+isolated directory before reusing an archived tree. Never prune `/opt` or
+runner/worktree directories wholesale.
