@@ -599,3 +599,25 @@ test('mixed or unknown changes and explicit risk labels retain unrelated require
     assert.ok(plan.requiredJobChecks.includes('e2e'),label);
   }
 });
+
+
+test('shared infrastructure schedules every aggregate context even with scoped Analytics services', () => {
+  for (const files of [
+    ['scripts/ci/change-impact.mjs', 'ops/analytics/analytics-delivery-state.mjs'],
+    ['scripts/ops/__tests__/change-impact.test.mjs', 'services/analytics/src/quality.mjs'],
+    ['scripts/ci/change-impact.mjs'],
+  ]) {
+    const plan = classifyChanges(files);
+    assert.ok(plan.domains.includes('infrastructure'));
+    for (const context of plan.requiredContexts) {
+      // These are supplied by the separate diff and Audio boundary jobs.
+      if (context === 'diff-check' || context === 'frozen-audio-paths') continue;
+      const job = context === 'account' ? 'e2e' : context;
+      assert.ok(plan.requiredJobChecks.includes(job), `${files.join(',')}: required ${context} has no scheduled job`);
+    }
+    const successes = plan.requiredJobChecks.map(check => ({check, conclusion:'success'}));
+    assert.doesNotThrow(() => verifyRequiredCheckResults(plan.requiredJobChecks, successes));
+    const skippedBuild = successes.map(entry => entry.check === 'lint-and-build' ? {...entry, conclusion:'skipped'} : entry);
+    assert.throws(() => verifyRequiredCheckResults(plan.requiredJobChecks, skippedBuild), /required check lint-and-build/);
+  }
+});

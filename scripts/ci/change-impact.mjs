@@ -295,6 +295,13 @@ function checksFor(risk, domains, pathChecks, services) {
       && domains.every(domain => domain === 'governance' || domain === 'documentation')) {
     return Object.keys(CHECKS).filter((name) => names.has(name)).map((name) => CHECKS[name]);
   }
+  // The protected aggregate requires the full shared-infrastructure profile,
+  // including when another scoped domain already populated the service list.
+  // Schedule those jobs explicitly; otherwise CI can pass while its gate
+  // correctly rejects a required build that the candidate silently skipped.
+  if (risk === 'critical' && domains.includes('infrastructure')) {
+    addAll(names, ['lint-and-build', 'test', 'e2e']);
+  }
   const appRequired = services.includes('app') || services.includes('commerce-reconciler');
   if (appRequired) addAll(names, ['lint-and-build', 'test', 'e2e']);
   if (risk === 'critical' && domains.includes('audio')) names.add('e2e');
