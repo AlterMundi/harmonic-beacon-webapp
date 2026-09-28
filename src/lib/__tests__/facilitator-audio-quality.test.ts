@@ -50,6 +50,11 @@ describe('facilitator audio quality measurements', () => {
         expect(second?.measurement.concealmentPct).toBe(1);
     });
 
+    it('accepts echo cancellation as the normal capture setting', () => {
+        const result = assessAudioQuality({sampledAt: 10000, plane: 'uplink', bitrateKbps: 96, capture: {echoCancellation: true}}, 10100);
+        expect(result.reasons).not.toContain('echo_cancellation');
+    });
+
     it('reports browser processing and degraded transport but never owns a media action', () => {
         const measurement = {
             sampledAt: 10_000,
