@@ -38,6 +38,11 @@ export default function EventEditor({locale}:{locale:'es'|'en'}) {
     };
     const save = async (event:React.FormEvent) => {
         event.preventDefault(); if(!form||busy)return;
+        const element=event.currentTarget as HTMLFormElement;
+        if(!element.checkValidity()) {
+            element.reportValidity();
+            return;
+        }
         setBusy(true);setNotice('');
         try {
             const scheduledAt=new Date(new Date(form.date+'Z').getTime()-offsets[form.eventTimeZone]*3600000).toISOString();
@@ -64,7 +69,11 @@ export default function EventEditor({locale}:{locale:'es'|'en'}) {
             <button disabled={busy} className="rounded-lg bg-[var(--gold)] px-5 py-3 text-black disabled:opacity-50" onClick={()=>start()}>{say('Crear evento','Create event')}</button>
         </header>
         {notice&&<p role="status" className="rounded-lg border border-[var(--gold)] p-4">{notice}</p>}
-        {form&&<form onSubmit={save} className="space-y-5 rounded-xl border border-[var(--border-subtle)] p-5">
+        {form&&<form noValidate onSubmit={save} onInvalidCapture={event=>{
+            const field=event.target as HTMLInputElement|HTMLSelectElement;
+            const label=field.closest('label')?.firstChild?.textContent?.trim()||say('Campo obligatorio','Required field');
+            setNotice(`${label}: ${field.validationMessage}`);
+        }} className="space-y-5 rounded-xl border border-[var(--border-subtle)] p-5">
             <h2 className="font-serif text-2xl">{editing?say('Editar evento','Edit event'):say('Nuevo evento','New event')}</h2>
             <label className="block">{say('Título','Title')}<input required minLength={3} maxLength={160} className={inputClass} value={form.title} onChange={e=>field('title',e.target.value)} /></label>
             <label className="block">{say('Descripción','Description')}<textarea rows={3} maxLength={4000} className={inputClass} value={form.description} onChange={e=>field('description',e.target.value)} /></label>
@@ -78,7 +87,8 @@ export default function EventEditor({locale}:{locale:'es'|'en'}) {
             {!form.publicAccess&&<label className="block">{say('Enlace de compra de Ticket Tailor','Ticket Tailor checkout link')}<input type="url" className={inputClass} value={form.checkoutUrl} onChange={e=>field('checkoutUrl',e.target.value)} /><small>{say('El enlace no configura por sí solo pagos ni entrega de accesos.','The link alone does not configure payments or access provisioning.')}</small></label>}
             <label className="flex gap-3"><input type="checkbox" checked={form.isPublished} onChange={e=>field('isPublished',e.target.checked)} />{say('Publicado: visible en la agenda','Published: visible in the schedule')}</label>
             <p className="text-sm text-[var(--text-muted)]">{say('Publicar no abre la sala. Los accesos ya emitidos se conservan al ocultar.','Publishing does not open the room. Hiding preserves previously issued access.')}</p>
-            <div className="flex gap-4"><button disabled={busy} className="rounded-lg bg-[var(--gold)] px-5 py-3 text-black disabled:opacity-50">{busy?say('Guardando…','Saving…'):say('Guardar cambios','Save changes')}</button><button type="button" disabled={busy} onClick={()=>setForm(null)}>{say('Cerrar','Close')}</button></div>
+            {notice&&<p role="alert" className="rounded-lg border border-[var(--gold)] p-3">{notice}</p>}
+            <div className="flex gap-4"><button type="submit" disabled={busy} className="rounded-lg bg-[var(--gold)] px-5 py-3 text-black disabled:opacity-50">{busy?say('Guardando…','Saving…'):say('Guardar cambios','Save changes')}</button><button type="button" disabled={busy} onClick={()=>setForm(null)}>{say('Cerrar','Close')}</button></div>
         </form>}
         <ul className="divide-y divide-[var(--border-subtle)]">{events.map(event=><li key={event.id} className="flex flex-wrap items-center justify-between gap-4 py-5">
             <div><h2 className="font-serif text-xl">{event.title}</h2><p className="text-sm text-[var(--text-secondary)]">{new Intl.DateTimeFormat(en?'en':'es',{dateStyle:'medium',timeStyle:'short',timeZone:event.eventTimeZone}).format(new Date(event.scheduledAt))} · {event.eventTimeZone}</p><p className="text-xs">{event.status} · {event.isPublished?say('Publicado','Published'):say('Oculto','Hidden')}{event.isTest?' · TEST':''}</p></div>
