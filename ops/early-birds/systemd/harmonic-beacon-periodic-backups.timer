@@ -1,0 +1,11 @@
+[Unit]
+Description=Back up Live and Account every six hours
+
+[Timer]
+OnCalendar=*-*-* 00,06,12,18:15:00
+RandomizedDelaySec=5min
+Persistent=true
+Unit=harmonic-beacon-periodic-backups.service
+
+[Install]
+WantedBy=timers.target

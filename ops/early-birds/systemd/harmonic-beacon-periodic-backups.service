@@ -1,0 +1,21 @@
+[Unit]
+Description=Encrypted production Live and Account backups
+After=docker.service
+Requires=docker.service
+RequiresMountsFor=/mnt/beacon-data
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/bin/python3 /usr/local/libexec/harmonic-beacon/periodic-backups.py
+TimeoutStartSec=20min
+UMask=0077
+Nice=15
+IOSchedulingClass=idle
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+RestrictAddressFamilies=AF_UNIX
+ReadWritePaths=/mnt/beacon-data/backups/platform /var/lib/harmonic-beacon /run/lock

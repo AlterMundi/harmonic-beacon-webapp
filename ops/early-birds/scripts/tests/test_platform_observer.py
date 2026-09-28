@@ -13,8 +13,8 @@ spec.loader.exec_module(m)
 class BackupFreshnessTests(unittest.TestCase):
     def test_staging_backup_does_not_refresh_production(self):
         with tempfile.TemporaryDirectory() as directory:
-            production = Path(directory)/'account-pre-candidate-20260923.dump.enc'
-            staging = Path(directory)/'account-staging-pre-provider-candidate-20260928.dump.enc'
+            production = Path(directory)/'periodic-account-20260923T000000Z.dump.age'
+            staging = Path(directory)/'periodic-account-staging-20260928T000000Z.dump.age'
             production.write_bytes(b'encrypted-production')
             staging.write_bytes(b'encrypted-staging')
             os.utime(production, (100, 100))
