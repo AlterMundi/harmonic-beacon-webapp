@@ -327,3 +327,40 @@ file; it cannot target the event stack. Restore with the same env file and
 entry feature flag is owned by the application lane and must be disabled there
 for a truthful public unavailable state; this ops slice never changes event
 routes or data.
+
+### Periodic Live and Account backups
+
+`harmonic-beacon-periodic-backups.timer` runs at 00:15, 06:15, 12:15 and
+18:15 UTC with up to five minutes of jitter and catch-up after downtime. The
+fixed script dumps only production `beacon-postgres` and
+`earlybirds-preview-postgres-1` (the shared Account/Listener database), verifies
+their Compose identities and coordinates with delivery locks. It does not
+migrate, restart or write to either source database.
+
+Encrypted custom dumps and SHA-256 sidecars live under
+`/mnt/beacon-data/backups/platform/{live,account}`. Missing separate mount or
+less than 10 GiB free fails closed. Each dump is encrypted for the two existing
+recovery recipients in `/etc/harmonic-beacon/analytics-backup-recipients.txt`,
+decrypted with the existing root-only `analytics-backup-identity.txt`, compared
+byte-for-byte by digest, and checked with `pg_restore --list` before publication.
+This checks the encrypted archive; it does not claim a full database restore.
+Plaintext exists only in a root-private temporary directory on the data disk
+and is removed on normal completion or failure. After a host crash, inspect any
+`.stage-*` directory before removing it; it is never counted as a valid backup.
+No credentials or database stderr are written to the service log.
+
+Retention removes only this script's exact service-prefixed files older than
+14 days, always keeps the three newest and requires matching checksum sidecars.
+Deployment backups and unrelated archives remain untouched. The platform
+observer measures these production artifacts and the oneshot result; failures
+and stale backups use the shared Telegram route.
+
+Install the reviewed script as root:root 0755 under
+`/usr/local/libexec/harmonic-beacon`, create the backup root as root:root 0700,
+and install the service/timer from `ops/early-birds/systemd`. Validate with
+`systemd-analyze verify`, execute the service once and verify both encrypted
+artifacts before enabling the timer and switching observer paths. Preserve
+prior observer bytes for rollback. To recover, verify a selected sidecar,
+decrypt with either authorized recovery identity into a private directory and
+restore first into an isolated PostgreSQL 16 instance; never overwrite a live
+database as a backup test.

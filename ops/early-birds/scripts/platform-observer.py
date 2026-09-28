@@ -17,8 +17,8 @@ ENDPOINTS = {
     'listen': 'https://listen.harmonicbeacon.com/api/health/ready',
 }
 BACKUPS = {
-    'live': ('/mnt/beacon-data/backups/live/postgres', '*.dump'),
-    'account': ('/mnt/beacon-data/backups/account', 'account-pre-*.dump.enc'),
+    'live': ('/mnt/beacon-data/backups/platform/live', 'periodic-live-[0-9]*.dump.age'),
+    'account': ('/mnt/beacon-data/backups/platform/account', 'periodic-account-[0-9]*.dump.age'),
     'analytics': ('/mnt/beacon-data/backups/analytics/postgres', '*.dump.age'),
     'commerce-authority': ('/mnt/beacon-data/backups/pmp-myth/encrypted', '*.tar.zst.age'),
 }
@@ -117,7 +117,10 @@ def collect():
             observed, available = 0, 0
         metric('backup_probe_up', service, available)
         metric('backup_artifact_timestamp_seconds', service, observed)
-    for service, unit in {'analytics': 'hb-analytics-backup.service', 'commerce-authority': 'pmp-myth-backup.service'}.items():
+    for service, unit in {'live': 'harmonic-beacon-periodic-backups.service',
+                          'account': 'harmonic-beacon-periodic-backups.service',
+                          'analytics': 'hb-analytics-backup.service',
+                          'commerce-authority': 'pmp-myth-backup.service'}.items():
         try:
             healthy, _ = unit_health(unit)
         except Exception:
