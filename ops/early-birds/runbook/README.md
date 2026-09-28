@@ -364,3 +364,14 @@ prior observer bytes for rollback. To recover, verify a selected sidecar,
 decrypt with either authorized recovery identity into a private directory and
 restore first into an isolated PostgreSQL 16 instance; never overwrite a live
 database as a backup test.
+
+### Event-opening alert window
+
+`BeaconEventDoorsClosed` covers published public non-test events whose start
+time passed within the last 24 hours and which remain SCHEDULED. First delivery
+is immediate after the one-minute rule; reminders repeat hourly. Older rows
+remain visible as `beacon_platform_events_historical` and in Staff, but do not
+page as a currently missed opening. Resolve their historical disposition in
+the owning issue; this observer never cancels or edits events. The distinct
+schedule-probe failure alert remains critical, so a failed query cannot look
+like an empty agenda.

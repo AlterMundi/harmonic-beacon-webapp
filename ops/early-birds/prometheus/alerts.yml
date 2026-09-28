@@ -225,7 +225,7 @@ groups:
         expr: beacon_platform_events_overdue > 0
         for: 1m
         labels: { severity: critical, environment: production, host: mona }
-        annotations: { summary: "Published public events are past start time with doors closed; count={{ $value }}", runbook: "ops/early-birds/runbook/README.md" }
+        annotations: { summary: "Public events scheduled within the last 24 hours still have closed doors; count={{ $value }}", runbook: "ops/early-birds/runbook/README.md" }
       - alert: BeaconEventScheduleProbeFailed
         expr: beacon_platform_event_probe_up == 0
         for: 2m
