@@ -50,6 +50,7 @@ export const COVERAGE_MATRICES = Object.freeze({
     payments: ['payments:commerce-sandbox', 'payments:entitlement-replay'],
     data: ['data:migration-state', 'data:backup-isolated-restore', 'data:app-worker-schema-compatibility'],
     infrastructure: ['infrastructure:workflow-helper-boundary', 'infrastructure:interrupted-stale-recovery'],
+    'analytics-infrastructure': ['infrastructure:workflow-helper-boundary', 'infrastructure:interrupted-stale-recovery'],
   },
   crossDomain: [
     'required-check-completeness',
@@ -171,13 +172,25 @@ function pathFacts(path) {
     return facts;
   }
 
+  // Analytics owns a separate runtime and delivery lane. Its paths cannot
+  // qualify or replace Live/Account artifacts merely by containing words such
+  // as "auth" or "admission". Privileged/configuration changes remain critical.
+  if (/^(services\/analytics|ops\/analytics|contracts\/analytics)\//u.test(path)
+      || /^\.github\/workflows\/analytics-(build|delivery)\.yml$/u.test(path)) {
+    const privileged = !path.startsWith('services/analytics/')
+      || /Dockerfile|compose|package(-lock)?\.json|(^|\/)(auth|admission|migrations?|seed|backfill)([./-]|$)/u.test(path);
+    set(privileged ? 'critical' : 'functional',
+      privileged ? ['analytics', 'analytics-infrastructure'] : ['analytics'], ['analytics'],
+      privileged ? ['analytics', 'ops-tooling', 'workflow-review'] : ['analytics']);
+    return facts;
+  }
+
   if (/^src\/.*\.css$/u.test(path)) set('ui', ['ui'], ['app']);
   if (/^(src\/components\/|src\/app\/)/u.test(path) && !path.endsWith('.css')) set('functional', ['app'], ['app']);
   if (/^src\/lib\//u.test(path)) set('functional', ['app'], ['app', 'commerce-reconciler']);
   if (/^(src\/middleware|middleware\.|next\.config\.)/u.test(path)) set('functional', ['app'], ['app']);
   if (/^services\/tapestry\//u.test(path)) set('functional', ['tapestry'], ['tapestry'], ['tapestry']);
   if (/^services\/playlist-bot\//u.test(path)) set('functional', ['playlist-bot'], ['playlist-bot']);
-  if (/^(services\/analytics|ops\/analytics|contracts\/analytics)\//u.test(path)) set('functional', ['analytics'], ['analytics'], ['analytics']);
 
   if (/AudioContext|room-audio|audio-|playback|facilitator-audio|services\/playlist-bot/u.test(path)) {
     set('critical', ['audio'], path.startsWith('services/playlist-bot/') ? ['playlist-bot'] : ['app'], ['frozen-audio-paths']);
@@ -240,7 +253,7 @@ function artifactList(services) {
   return [...new Set(services.filter((service) => LIVE_SERVICES.has(service)).map((service) => ARTIFACT_FOR_SERVICE[service]))].sort();
 }
 
-function selectedMatrices(risk, domains) {
+function selectedMatrices(risk, domains, services) {
   if (domains.includes('governance')
       && domains.every(domain => domain === 'governance' || domain === 'documentation')) {
     return {
@@ -252,10 +265,12 @@ function selectedMatrices(risk, domains) {
       && domains.every(domain => domain === 'observation-tooling' || domain === 'documentation')) {
     return { ui: [], functional: [], critical: [], crossDomain: [] };
   }
-  const ui = RISK_ORDER[risk] >= RISK_ORDER.ui ? [...COVERAGE_MATRICES.ui] : [];
+  const appSurface = services.includes('app') || services.includes('commerce-reconciler')
+    || domains.includes('infrastructure');
+  const ui = RISK_ORDER[risk] >= RISK_ORDER.ui && appSurface ? [...COVERAGE_MATRICES.ui] : [];
   const functional = new Set();
   if (RISK_ORDER[risk] >= RISK_ORDER.functional) {
-    if (domains.includes('infrastructure')) {
+    if (domains.includes('infrastructure') || domains.includes('unknown')) {
       addAll(functional, Object.values(COVERAGE_MATRICES.functional).flat());
     } else {
       for (const domain of domains) addAll(functional, COVERAGE_MATRICES.functional[domain] ?? []);
@@ -375,7 +390,7 @@ export function classifyChanges(inputFiles, options = {}) {
   const reusePriorImages = sortedServices.filter((service) => reusePriorCandidates.has(service) && !imageChangedServices.has(service));
   const deploy = sortedServices.length > 0;
   const inspectMigrations = dataPathDetected || unknown.length > 0;
-  const matrices = selectedMatrices(risk, sortedDomains);
+  const matrices = selectedMatrices(risk, sortedDomains, classifiedServices);
   const requiredChecks = checksFor(risk, sortedDomains, pathChecks, sortedServices);
   const requiredJobChecks = deriveRequiredJobChecks(requiredChecks, matrices);
   const humanReviewRequired = (options.labels ?? []).includes('requires-human-review');

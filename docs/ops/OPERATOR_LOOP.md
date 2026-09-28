@@ -204,3 +204,18 @@ head/base, attempt, provenance or final-readback checks.
 `pull_request_target` loads it from the PR target branch. Deliver shared event
 filter changes to both `main` and `release`, preserving unrelated lane changes;
 updating only one branch leaves part of the live behavior unchanged.
+
+### Service-scoped verification
+
+Analytics application changes select its contract/integration job without Live or
+Account browsers. Its delivery helpers, Compose/dependency definitions and two
+owning workflows remain critical: workflow boundaries, interrupted recovery and
+data/recovery checks still run, but they do not select another application's
+build, browser journey or deployment. Analytics filenames containing `admission`
+do not by themselves mean Account authentication changed.
+
+Mixed changes retain the union of required coverage. Shared CI, shared runtime
+dependencies, explicit risk labels and unclassified paths retain conservative
+coverage; adding an Analytics path cannot narrow that selection. Audio paths
+retain their named browser/media checks. Apply classifier changes to both main
+and release so the trusted evaluator and candidate CI use the same policy.
