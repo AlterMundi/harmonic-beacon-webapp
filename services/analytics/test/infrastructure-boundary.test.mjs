@@ -25,5 +25,7 @@ test('replacement targets only the applications and excludes dependency recreati
   assert.equal(calls.length, 1);
   assert.deepEqual(calls[0][2].slice(-2), ['collector', 'worker']);
   assert.ok(calls[0][2].includes('--no-deps'));
+  assert.ok(calls[0][2].includes('--wait'));
+  assert.equal(calls[0][2][calls[0][2].indexOf('--wait-timeout') + 1], '120');
   assert.ok(!calls[0][2].includes('postgres'));
 });

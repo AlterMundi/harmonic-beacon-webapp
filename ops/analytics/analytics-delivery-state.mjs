@@ -127,7 +127,7 @@ export function assertUnchangedInfrastructure(previous, candidate) {
   }
 }
 export function compose_replace(composePath, selected, execute = compose) {
-  return execute(composePath, selected, ['up', '-d', '--no-deps', '--force-recreate', '--no-build', '--pull', 'never', 'collector', 'worker']);
+  return execute(composePath, selected, ['up', '-d', '--wait', '--wait-timeout', '120', '--no-deps', '--force-recreate', '--no-build', '--pull', 'never', 'collector', 'worker']);
 }
 
 function readCurrentState() {

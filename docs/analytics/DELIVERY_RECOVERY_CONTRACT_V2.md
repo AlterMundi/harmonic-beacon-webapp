@@ -206,6 +206,27 @@ reviewed bytes and record the installed manifest digest. This repository does
 not self-install, dispatch, publish, deploy, migrate, start services, or modify
 those controls.
 
+The versioned `ops/analytics/hb-analytics-runner.service` runs as the dedicated
+`analytics-runner` user, with runner and HOME under `/mnt/beacon-data/runners/`.
+Verify the official runner/CLI archive hashes before installation. Register the
+runner against this repository with labels `mona,analytics-delivery`; its primary
+group is its only group (no Docker group). Install the unit root-owned and leave
+it stopped until the trusted bundle, root state and exact sudo helper are ready.
+The `analytics-production` environment permits only the `release` branch.
+Do not share another runner's credentials or grant a shell/installer via sudo.
+
+Initial state is measured from both running collector/worker image IDs and their
+OCI revision/digest. Preserve the original legacy Compose privately, then freeze
+its observed image-tag substitutions (including build labels) and relative build
+context into a separate snapshot. Compare both rendered configurations in memory
+using the protected env file and the same Compose project; require equality and
+prove the frozen snapshot renders without the old shell image-tag variable.
+Store that snapshot's own hash in `current-state.json`, never the original file's
+hash. Keep both hashes and the equality result in a private bootstrap receipt.
+This reconciliation changes no running service. Future replacement uses
+`--no-build --pull never --no-deps --wait --wait-timeout 120`; readback still
+checks the exact images and health/provenance after the wait.
+
 Local CI can validate parsers, schemas, workflow syntax, adversarial replay and
 notification/drill behavior with non-root isolated drivers. It cannot prove
 host ownership/modes, GitHub environment protection, hosted workflow execution,
