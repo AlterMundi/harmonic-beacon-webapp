@@ -552,3 +552,32 @@ test('the executable CI verifier rejects a selected matrix job that was skipped'
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('isolated Analytics application and delivery changes omit unrelated application browsers', () => {
+  for (const path of ['services/analytics/src/worker.mjs', 'ops/analytics/analytics-delivery-state.mjs', 'services/analytics/test/owner-admission.test.mjs', '.github/workflows/analytics-build.yml', '.github/workflows/analytics-delivery.yml']) {
+    const plan = classifyChanges([path]);
+    assert.deepEqual(plan.matrices.ui, [], path);
+    assert.deepEqual(plan.matrices.functional, ['analytics-contract'], path);
+    for (const job of ['e2e','account','lint-and-build','tapestry','playlist']) {
+      assert.ok(!plan.requiredJobChecks.includes(job), `${path}: ${job}`);
+      assert.ok(!plan.requiredContexts.includes(job), `${path}: context ${job}`);
+    }
+    assert.ok(plan.requiredJobChecks.includes('analytics'), path);
+    assert.equal(plan.deployment.deploy, false, path);
+  }
+  const privileged = classifyChanges(['ops/analytics/hb-analytics-delivery-root']);
+  assert.equal(privileged.risk, 'critical');
+  for (const job of ['analytics','workflow-review','release-qualification','data-recovery']) assert.ok(privileged.requiredJobChecks.includes(job),job);
+});
+
+test('mixed or unknown changes and explicit risk labels retain unrelated required coverage', () => {
+  for (const extra of ['scripts/ci/required-checks.mjs','package-lock.json','.github/workflows/ci.yml','unrecognized-executable.xyz','src/app/page.tsx']) {
+    const before=classifyChanges([extra]);
+    const mixed=classifyChanges([extra,'.github/workflows/analytics-build.yml']);
+    for(const job of before.requiredJobChecks) assert.ok(mixed.requiredJobChecks.includes(job),`${extra}: ${job}`);
+  }
+  for(const label of ['impact:critical','impact:auth','impact:ui']) {
+    const plan=classifyChanges(['services/analytics/src/worker.mjs'],{labels:[label]});
+    assert.ok(plan.requiredJobChecks.includes('e2e'),label);
+  }
+});
