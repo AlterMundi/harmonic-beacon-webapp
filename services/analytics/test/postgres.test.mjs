@@ -247,13 +247,31 @@ postgresTest('Meta fixture sync projects and idempotently updates campaign deliv
     await pool.end();
 });
 
-postgresTest('quality run records canonical integrity and storage samples', async () => {
+postgresTest('quality run records canonical integrity and storage samples', async (t) => {
     const pool = new pg.Pool({ connectionString });
+    const cleanupIntervals = async () => {
+        await pool.query("delete from mart.listening_intervals where source_system='quality-zero'");
+        await pool.query("delete from mart.live_presence_intervals where source_system='quality-zero'");
+    };
+    t.after(async () => { await cleanupIntervals(); await pool.end(); });
+    await cleanupIntervals();
     const names = [
         'collector_clock_skew', 'canonical_projection_backlog', 'identity_links_without_account',
         'payments_without_membership', 'invalid_listener_intervals', 'invalid_live_intervals',
     ];
     await pool.query('delete from ops.quality_results where check_name=any($1::text[])', [names]);
+    // Model the observed legacy lease snapshot and an immediate Live departure.
+    // Neither proves positive listening time, but both are valid retained facts.
+    await pool.query(`insert into mart.listening_intervals
+        (source_system,source_key,account_subject,started_at,ended_at,source_category,access_class,environment,traffic_class)
+        values('quality-zero','listener',$1,now(),now(),'unknown','legacy-lease','test','unknown')`, ['f'.repeat(64)]);
+    await pool.query(`insert into mart.live_presence_intervals
+        (source_system,source_key,event_subject,person_subject,role,started_at,ended_at,end_reason,environment,traffic_class,is_staff,is_test)
+        values('quality-zero','live',$1,$2,'listener',now(),now(),'left','test','unknown',false,true)`,
+    ['e'.repeat(64), 'f'.repeat(64)]);
+    await assert.rejects(pool.query(`insert into mart.listening_intervals
+        (source_system,source_key,account_subject,started_at,ended_at,source_category,access_class,environment)
+        values('quality-zero','negative',$1,now(),now()-interval '1 second','unknown','legacy-lease','test')`, ['f'.repeat(64)]));
     const before = new Date();
     await runQualityAndRetention(pool);
     const quality = await pool.query(`select check_name,status,observed_value::int observed
@@ -265,5 +283,8 @@ postgresTest('quality run records canonical integrity and storage samples', asyn
     assert.deepEqual(storage.rows, [{ valid_size: true, valid_events: true }]);
     await pool.query('delete from ops.quality_results where check_name=any($1::text[])', [names]);
     await pool.query('delete from ops.storage_samples where checked_at >= $1', [before]);
-    await pool.end();
+    const preserved = await pool.query(`select
+        (select count(*) from mart.listening_intervals where source_system='quality-zero')::int listener,
+        (select count(*) from mart.live_presence_intervals where source_system='quality-zero')::int live`);
+    assert.deepEqual(preserved.rows, [{ listener: 1, live: 1 }]);
 });
