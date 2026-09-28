@@ -396,3 +396,23 @@ then recheck references before removing only the inventoried exact paths.
 Preserve the archive checksum, path inventory and receipt; restore into an
 isolated directory before reusing an archived tree. Never prune `/opt` or
 runner/worktree directories wholesale.
+
+
+### Nginx logs: installed rotation and hourly size checks
+
+The presence of `/etc/logrotate.d/nginx` alone does not prove rotation runs.
+Install the distribution `logrotate` package and enable `logrotate.timer`.
+Install `logrotate/nginx` as `/etc/logrotate.d/nginx` (root:root0644) and
+`systemd/logrotate.timer.d/60-harmonic-beacon.conf` under
+`/etc/systemd/system/logrotate.timer.d/` (root:root0644); daemon-reload and restart
+only the timer. The hourly check rotates daily or above100MiB and compresses
+closed files immediately, retaining14rotations. At high traffic that is not
+14days; preserve incident evidence on the separate data disk when required.
+The nginx postrotate action only reopens log files, without restarting workers.
+
+Before first activation, retain the prior configuration and validate with
+`logrotate --debug /etc/logrotate.d/nginx`. Exercise the first rotation with
+`logrotate --force /etc/logrotate.d/nginx`, then verify gzip integrity of closed
+logs, open descriptors on the new log inode, service health and the next timer
+invocation. Never truncate an active log or delete logs merely to meet a free
+space threshold. Standard system rotation state prevents duplicate rotations.
