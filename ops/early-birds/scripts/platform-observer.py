@@ -29,7 +29,8 @@ UNITS = {
 EVENT_SQL = """BEGIN READ ONLY;
 SET LOCAL statement_timeout = '3000ms';
 SELECT json_build_object(
- 'overdue',count(*) FILTER (WHERE status='SCHEDULED' AND scheduled_at<now() AND public_access AND is_published AND NOT is_test),
+ 'overdue',count(*) FILTER (WHERE status='SCHEDULED' AND scheduled_at<now() AND scheduled_at>=now()-interval '24 hours' AND public_access AND is_published AND NOT is_test),
+ 'historical',count(*) FILTER (WHERE status='SCHEDULED' AND scheduled_at<now()-interval '24 hours' AND public_access AND is_published AND NOT is_test),
  'next',coalesce(extract(epoch FROM min(scheduled_at) FILTER (WHERE status='SCHEDULED' AND scheduled_at>=now() AND public_access AND is_published AND NOT is_test)),0),
  'live',count(*) FILTER (WHERE status='LIVE' AND NOT is_test))
 FROM scheduled_sessions;
@@ -91,7 +92,7 @@ def event_state():
     raw = command(['/usr/bin/docker', 'exec', '-i', 'beacon-postgres', 'sh', '-c',
                    'exec psql -X -qAt -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"'], EVENT_SQL)
     result = json.loads(raw)
-    if set(result) != {'overdue', 'next', 'live'} or any(
+    if set(result) != {'overdue', 'historical', 'next', 'live'} or any(
         isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or v < 0
         for v in result.values()
     ):

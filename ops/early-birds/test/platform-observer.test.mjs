@@ -19,13 +19,13 @@ with patch.object(m,'http_health',side_effect=TimeoutError), patch.object(m,'bac
 with patch.object(m,'command',return_value='wrong:postgres'):
  try: m.event_state();raise AssertionError('wrong target accepted')
  except ValueError: pass
-with patch.object(m,'command',side_effect=['app:postgres',json.dumps({'overdue':2,'next':123,'live':0})]) as command:
- assert m.event_state()=={'overdue':2,'next':123,'live':0}
+with patch.object(m,'command',side_effect=['app:postgres',json.dumps({'overdue':2,'historical':3,'next':123,'live':0})]) as command:
+ assert m.event_state()=={'overdue':2,'historical':3,'next':123,'live':0}
  assert 'BEGIN READ ONLY' in command.call_args.args[1]
  assert 'ON_ERROR_STOP=1' in ' '.join(command.call_args.args[0])
  assert 'public_access AND is_published AND NOT is_test' in m.EVENT_SQL
 for value in [-1,float('nan'),'secret',True]:
- with patch.object(m,'command',side_effect=['app:postgres',json.dumps({'overdue':value,'next':123,'live':0})]):
+ with patch.object(m,'command',side_effect=['app:postgres',json.dumps({'overdue':value,'historical':0,'next':123,'live':0})]):
   try: m.event_state();raise AssertionError('invalid aggregate accepted')
   except ValueError: pass
 `], { stdio: 'pipe' });

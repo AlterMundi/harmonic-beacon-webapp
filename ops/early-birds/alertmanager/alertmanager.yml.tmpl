@@ -8,6 +8,11 @@ route:
   group_interval: 5m
   repeat_interval: 6h
   routes:
+    - receiver: telegram-critical
+      matchers: [alertname="BeaconEventDoorsClosed"]
+      group_wait: 0s
+      group_interval: 1m
+      repeat_interval: 1h
     - receiver: telegram-warning
       matchers: [alertname="EarlyBirdsDiskPrepare"]
       repeat_interval: 12h
