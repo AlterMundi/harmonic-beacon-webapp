@@ -177,6 +177,7 @@ import SessionRoomPage from '../page';
 import { Room, DisconnectReason, type RoomOptions } from 'livekit-client';
 
 interface EmittableRoom {
+    options: RoomOptions;
     canPlaybackAudio: boolean;
     emit: (event: string, ...args: unknown[]) => void;
     disconnect: ReturnType<typeof vi.fn>;
@@ -711,15 +712,15 @@ describe('SessionRoomPage - staff cockpit handoff', () => {
         await renderConnected();
         const room = currentRoom();
         const toggle = screen.getByRole('switch', { name: /Echo cancellation/ });
-        expect(toggle).toHaveAttribute('aria-checked', 'false');
-        fireEvent.click(toggle);
-        await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'true'));
-        expect(room.options.audioCaptureDefaults?.echoCancellation).toBe(true);
-        expect(room.localParticipant.setMicrophoneEnabled).not.toHaveBeenCalled();
-        expect(screen.getByText('Applies when you turn on your microphone.')).toBeInTheDocument();
+        expect(toggle).toHaveAttribute('aria-checked', 'true');
         fireEvent.click(toggle);
         await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'false'));
         expect(room.options.audioCaptureDefaults?.echoCancellation).toBe(false);
+        expect(room.localParticipant.setMicrophoneEnabled).not.toHaveBeenCalled();
+        expect(screen.getByText('Applies when you turn on your microphone.')).toBeInTheDocument();
+        fireEvent.click(toggle);
+        await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'true'));
+        expect(room.options.audioCaptureDefaults?.echoCancellation).toBe(true);
     });
 
     it('localizes the composite role and explains its event-scoped facilitator authority', async () => {
@@ -739,7 +740,7 @@ describe('SessionRoomPage - staff cockpit handoff', () => {
                 sampleRate: { ideal: 48_000 },
                 channelCount: { ideal: 1 },
                 autoGainControl: false,
-                echoCancellation: false,
+                echoCancellation: true,
                 noiseSuppression: false,
                 voiceIsolation: false,
             },
@@ -780,7 +781,7 @@ describe('SessionRoomPage - staff cockpit handoff', () => {
             /Operational access.*do not publish as its assigned facilitator/i,
         );
         const options = vi.mocked(Room).mock.calls.at(-1)?.[0] as RoomOptions;
-        expect(options.audioCaptureDefaults).toBeUndefined();
+        expect(options.audioCaptureDefaults).toEqual({echoCancellation: true});
         expect(options.publishDefaults?.audioPreset).toBeUndefined();
     });
 

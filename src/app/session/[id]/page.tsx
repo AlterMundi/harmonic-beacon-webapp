@@ -42,6 +42,7 @@ function stageRoomOptions(isAssignedFacilitator: boolean): RoomOptions {
     return {
         adaptiveStream: true,
         dynacast: true,
+        audioCaptureDefaults: { echoCancellation: true },
         videoCaptureDefaults: {
             resolution: VideoPresets.h720.resolution,
         },
@@ -50,7 +51,7 @@ function stageRoomOptions(isAssignedFacilitator: boolean): RoomOptions {
                 sampleRate: { ideal: 48_000 },
                 channelCount: { ideal: 1 },
                 autoGainControl: false,
-                echoCancellation: false,
+                echoCancellation: true,
                 noiseSuppression: false,
                 voiceIsolation: false,
             },

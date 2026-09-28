@@ -7,7 +7,7 @@ export const FACILITATOR_AUDIO_PROFILE = {
     dtx: false,
     red: true,
     autoGainControl: false,
-    echoCancellation: false,
+    echoCancellation: true,
     noiseSuppression: false,
     voiceIsolation: false,
 } as const;
@@ -267,7 +267,6 @@ export function assessAudioQuality(
         const capture = measurement.capture;
         if ((capture.sampleRateHz ?? FACILITATOR_AUDIO_PROFILE.sampleRateHz) < 44_100) warning.push('sample_rate');
         if (capture.autoGainControl === true) warning.push('auto_gain_control');
-        if (capture.echoCancellation === true) warning.push('echo_cancellation');
         if (capture.noiseSuppression === true) warning.push('noise_suppression');
         if (capture.voiceIsolation === true) warning.push('voice_isolation');
     }
