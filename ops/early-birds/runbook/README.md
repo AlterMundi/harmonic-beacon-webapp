@@ -113,7 +113,7 @@ No new GitHub jobs, Docker builds, caller-supplied paths or sudo grants are need
 The policy:
 
 - Retire only exact reclaimable, unshared BuildKit cache IDs older than 72 hours
-  (24 hours below 20% free), with a second inventory check. Verify image IDs did
+  (without an age delay below 30% free, once delivery locks are available), with a second inventory check. Verify image IDs did
   not change. Never prune volumes, containers, shared cache or unrelated repos.
 - Retain all container-bound images, explicit rollback tags, the newest three
   images per service repository, and images younger than three days. Resolve

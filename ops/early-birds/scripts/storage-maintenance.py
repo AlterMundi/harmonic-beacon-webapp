@@ -173,7 +173,7 @@ def free_ratio():
 
 def cache_cleanup():
     # Shared cache contains image-backed layers; never select it here.
-    age = '24h' if free_ratio() < 0.20 else '72h'
+    age = '0s' if free_ratio() < 0.30 else '72h'
     records = [json.loads(line) for line in run('docker', 'buildx', 'du', '--filter', 'until='+age,
                                                '--format', 'json').splitlines()]
     selected = [r['ID'] for r in records if r.get('Reclaimable') and not r.get('Shared')

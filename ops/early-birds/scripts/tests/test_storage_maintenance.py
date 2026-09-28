@@ -22,6 +22,27 @@ class RetentionTests(unittest.TestCase):
                 self.assertNotEqual(watched_path, lock)
                 self.assertNotIn(watched_path, lock.parents)
 
+    def test_pressure_cleanup_selects_only_reclaimable_unshared_ids(self):
+        records = [{'ID': 'safe123', 'Reclaimable': True, 'Shared': False},
+                   {'ID': 'image456', 'Reclaimable': True, 'Shared': True},
+                   {'ID': 'active789', 'Reclaimable': False, 'Shared': False}]
+        for ratio, age in ((0.29, '0s'), (0.30, '72h')):
+            calls = []
+            def command(*args, **kwargs):
+                calls.append(args)
+                if args[:3] == ('docker', 'buildx', 'du'):
+                    selected = records[:1] if any(str(a).startswith('id~=') for a in args) else records
+                    return '\n'.join(json.dumps(r) for r in selected)
+                if args[:3] == ('docker', 'image', 'ls'):
+                    return 'sha256:preserved\n'
+                return ''
+            with patch.object(m, 'free_ratio', return_value=ratio), patch.object(m, 'run', side_effect=command):
+                self.assertEqual(m.cache_cleanup(), 1)
+            prune = next(c for c in calls if c[:3] == ('docker', 'buildx', 'prune'))
+            self.assertIn('id~=^(safe123)$', prune)
+            self.assertIn('until='+age, prune)
+            self.assertNotIn('--all', prune)
+
     def images(self):
         return [{'Id': 'sha256:'+str(i)*64,
                  'RepoTags': ['harmonic-beacon/account:'+str(i)*40],
