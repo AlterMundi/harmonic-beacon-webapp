@@ -72,6 +72,11 @@ CI/build/delivery ID or attempt, target, operation, workflow identity, or
 reversal identity fails closed. A terminal failed/compensated attempt cannot be
 re-fired under the same identity.
 
+Application delivery replaces only collector and worker with `--no-deps`; it
+never recreates PostgreSQL. Before backup or migration, rendered PostgreSQL,
+network and volume definitions must match the captured prior Compose. Changes
+to that infrastructure require a separate reviewed maintenance operation.
+
 Before any mutation, the transaction captures and verifies the live previous
 source SHA, image ID, digest, exact Compose bytes, Compose SHA-256, and health
 contract compatibility. Candidate Compose bytes are copied from the verified

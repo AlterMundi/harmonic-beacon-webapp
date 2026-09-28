@@ -5,7 +5,9 @@ import {
   closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync,
   readdirSync, renameSync, rmSync, writeFileSync,
 } from 'node:fs';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
 import { atomicWriteJson, compareAndSwapJournal, exactIdentity, readJsonFile, writeContentAddressed } from './durable-json-state.mjs';
 
 const SHA40 = /^[0-9a-f]{40}$/;
@@ -116,8 +118,16 @@ function compose(composePath, selected, args) {
 function compose_migrate(composePath, selected) {
   return compose(composePath, selected, ['run', '--rm', '--no-deps', '--no-build', '--pull', 'never', 'migrate']);
 }
-function compose_replace(composePath, selected) {
-  return compose(composePath, selected, ['up', '-d', '--force-recreate', '--no-build', '--pull', 'never', 'postgres', 'collector', 'worker']);
+export function assertUnchangedInfrastructure(previous, candidate) {
+  if (!previous.services?.postgres || !candidate.services?.postgres ||
+      !isDeepStrictEqual(previous.services.postgres, candidate.services.postgres) ||
+      !isDeepStrictEqual(previous.networks ?? {}, candidate.networks ?? {}) ||
+      !isDeepStrictEqual(previous.volumes ?? {}, candidate.volumes ?? {})) {
+    fail('analytics application delivery cannot change database or network infrastructure');
+  }
+}
+export function compose_replace(composePath, selected, execute = compose) {
+  return execute(composePath, selected, ['up', '-d', '--no-deps', '--force-recreate', '--no-build', '--pull', 'never', 'collector', 'worker']);
 }
 
 function readCurrentState() {
@@ -291,6 +301,11 @@ function prepareDeploy(root, invocation, candidate) {
   const previous = readCurrentState(); verifyLiveMatches(previous);
   const configBytes = readFileSync(TRUSTED_COMPOSE); const configSha256 = digest(configBytes);
   installTransactionFiles(root, previous);
+  const selected = { sourceSha: invocation.sourceSha, imageId: candidate.imageId, digest: invocation.imageDigest, configSha256 };
+  assertUnchangedInfrastructure(
+    JSON.parse(compose(join(root, 'prior', 'compose.yml'), previous, ['config', '--format', 'json'])),
+    JSON.parse(compose(join(root, 'candidate', 'compose.yml'), selected, ['config', '--format', 'json'])),
+  );
   const journal = { ...journalIdentity(invocation, candidate, previous, configSha256), phase: 'prepared', generation: 1 };
   durableJournal(join(root, 'journal.json'), journal);
   return journal;
@@ -422,7 +437,8 @@ function transaction(invocation) {
   }
 }
 
-const invocation = parseInvocation(process.argv.slice(2));
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const invocation = parseInvocation(process.argv.slice(2));
 if (invocation.verb === 'observe') {
   const candidate = inspectImage(invocation.sourceSha, invocation.imageDigest);
   if (invocation.operation === 'probe') {
@@ -435,4 +451,6 @@ if (invocation.verb === 'observe') {
 } else {
   const bundle = transaction(invocation);
   process.stdout.write(`${JSON.stringify(bundle)}\n`);
+}
+
 }

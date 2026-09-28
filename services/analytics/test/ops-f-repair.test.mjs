@@ -177,7 +177,7 @@ test('rollback state captures exact previous config and the current reversal ide
   assert.match(stateMachine, /composeBase64/u);
   assert.match(stateMachine, /previousConfigSha256/u);
   assert.match(stateMachine, /prior', 'compose\.yml/u);
-  assert.match(stateMachine, /'postgres', 'collector', 'worker'/u);
+  assert.match(stateMachine, /'--no-deps'[\s\S]*'collector', 'worker'/u);
   assert.match(stateMachine, /reversedRunId/u);
   assert.match(stateMachine, /reversedRunAttempt/u);
   assert.match(stateMachine, /function prepareDeploy[\s\S]+readCurrentState\(\); verifyLiveMatches\(previous\);[\s\S]+installTransactionFiles\(root, previous\)/u);
