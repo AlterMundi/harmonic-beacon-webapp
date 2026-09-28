@@ -34,6 +34,17 @@ backup_age="$(( $(date +%s) - $(stat -c %Y "$backup") ))"
 project="analytics-synthetic-restore-${run_id}-${run_attempt}"
 stage="$(mktemp -d /var/lib/harmonic-beacon/analytics-delivery/.restore.XXXXXX)"
 password="analytics-synthetic-restore-${run_id}-${run_attempt}"
+# Compose interpolates every profile before selecting services. These values
+# belong only to the inactive collector-synthetic profile; restore starts only
+# postgres-synthetic and migrate-synthetic, never the collector.
+export ANALYTICS_SYNTHETIC_HANDOFF_SECRET='restore-unused-synthetic-handoff'
+export ANALYTICS_SYNTHETIC_SERVER_SECRET='restore-unused-synthetic-server'
+export ANALYTICS_SYNTHETIC_NONPRODUCTION_SECRET='restore-unused-synthetic-nonproduction'
+export ANALYTICS_SYNTHETIC_NETWORK_SECRET='restore-unused-synthetic-network'
+export ANALYTICS_SYNTHETIC_SOURCE_SHA='restore-unused'
+export ANALYTICS_SYNTHETIC_IMAGE_ID='restore-unused'
+export ANALYTICS_SYNTHETIC_IMAGE_DIGEST='restore-unused'
+export ANALYTICS_SYNTHETIC_CONFIG_SHA256='restore-unused'
 cleanup_observed=false
 cleanup() {
   ANALYTICS_IMAGE_REF="$image_ref" ANALYTICS_SYNTHETIC_DATABASE_PASSWORD="$password" \
