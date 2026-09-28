@@ -88,6 +88,13 @@ to apply to the separate OCI automation; it is not a prerequisite to this
 bounded delivery. Nicolás explicitly requested completing production and
 withdrew the inferred preventive freeze on 27 September.
 
+For later app-only changes in this owner-authorized batch,
+[deploy/LIVE_APP_RELEASE.md](../../deploy/LIVE_APP_RELEASE.md) admits an exact
+root-owned image-pair permit, separate engine/state, and mandatory staging
+rollback plus forward proof. It retains the media staging configuration and
+original #590 recovery helper. It grants no runner authority and preserves the
+24-hour forward-deployment exclusion and actual activity continuity guards.
+
 ## Delivery authority and OCI transition
 
 Live delivery has one branch-qualified aggregate on the PR head:

@@ -153,6 +153,9 @@ def continuity(staging=False, app_available=True):
                 raise RuntimeError('active participant prevents replacement')
 
 
+def implementation_digest():
+    return hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+
 def health(names, expected_source, origin):
     for attempt in range(75):
         try:
@@ -160,7 +163,7 @@ def health(names, expected_source, origin):
             healthy = all(state.get('Running') and (state.get('Health', {}).get('Status') == 'healthy'
                           or (service == 'playlist-bot' and 'Health' not in state))
                           for service, state in states.items())
-            if healthy:
+            if healthy and 'playlist-bot' in names:
                 quiet(['docker', 'exec', names['playlist-bot'], 'node', '-e',
                        "const t=Number(require('fs').readFileSync('/tmp/playlist-bot-heartbeat','utf8'));if(!Number.isFinite(t)||Date.now()-t>60000)process.exit(1)"])
             with urlopen(origin + '/api/health', timeout=3) as response:
@@ -234,8 +237,10 @@ def operate(verb, staging):
     names = {service: ('hb-live-staging-' if staging else 'beacon-') + service for service in IMAGES}
     origin = 'http://127.0.0.1:' + ('3200' if staging else '3000')
     directory = ROOT / ('staging' if staging else 'production')
-    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-    safe_path(directory, True)
+    if verb != 'status':
+        directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if directory.exists():
+        safe_path(directory, True)
     state_path = directory / 'state.json'
     prior_path = directory / 'prior.json'
     candidate_index = 0 if staging else 1
@@ -256,15 +261,15 @@ def operate(verb, staging):
         boundary(staging)
         save(prior_path, before)
         save(state_path, {'phase': 'prepared', 'priorDigest': digest(before), 'created': {},
-                          'helperSha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+                          'helperSha256': implementation_digest(),
                           'source': SOURCE, 'targets': targets})
-        print('prepared: three fixed images; effective configuration retained')
+        print('prepared: selected fixed images; effective configuration retained')
         return
     safe_path(prior_path)
     safe_path(state_path)
     snapshots = json.loads(prior_path.read_text())
     state = json.loads(state_path.read_text())
-    if state['priorDigest'] != digest(snapshots) or state['targets'] != targets or state['helperSha256'] != hashlib.sha256(Path(__file__).read_bytes()).hexdigest():
+    if state['priorDigest'] != digest(snapshots) or state['targets'] != targets or state['helperSha256'] != implementation_digest():
         raise RuntimeError('transaction bytes changed')
     if verb == 'refresh-provenance':
         if staging or state['phase'] != 'applied':
@@ -319,7 +324,7 @@ def operate(verb, staging):
                 raise RuntimeError('app identity changed')
             api('POST', '/containers/' + app['Id'] + '/stop?t=30')
         continuity(staging, app_available=False)
-        for service in ('tapestry', 'playlist-bot', 'app'):
+        for service in (s for s in ('tapestry', 'playlist-bot', 'app') if s in IMAGES):
             snapshot = snapshots[service]
             image = snapshot['Image'] if restoring else targets[service]
             image_config = None if restoring else api('GET', '/images/' + image + '/json')['Config']
@@ -347,6 +352,8 @@ def operate(verb, staging):
         for service, name in names.items():
             if inspect(name)['Image'] != (snapshots[service]['Image'] if restoring else targets[service]):
                 raise RuntimeError('image readback failed')
+        if not restoring:
+            state['candidateVerified'] = True
         state['phase'] = 'rolled-back' if restoring else 'applied'
         save(state_path, state)
         print(json.dumps({'phase': state['phase'], 'source': expected, 'images': {s: inspect(n)['Image'] for s, n in names.items()}}))
