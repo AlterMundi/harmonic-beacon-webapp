@@ -1,7 +1,8 @@
 const PRISMA_EXCEPTION = {
     advisorySource: 1145093,
     advisoryUrl: 'https://github.com/advisories/GHSA-ggr8-5vv4-36mx',
-    reviewBy: '2026-09-15T00:00:00.000Z',
+    // Re-reviewed in #564: repository-owned config only; no request data.
+    reviewBy: '2026-10-27T00:00:00.000Z',
     packages: {
         prisma: '7.9.1',
         '@prisma/config': '7.9.1',

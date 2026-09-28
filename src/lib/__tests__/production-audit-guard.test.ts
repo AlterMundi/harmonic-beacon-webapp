@@ -74,7 +74,7 @@ describe('production dependency audit guard', () => {
     });
 
     it('allows only the exact reviewed Prisma deepmerge advisory chain', () => {
-        const decision = evaluateProductionAudit(exactReport(), installed, new Date('2026-08-18T00:00:00Z'));
+        const decision = evaluateProductionAudit(exactReport(), installed, new Date('2026-09-28T00:00:00Z'));
 
         expect(decision).toMatchObject({ ok: true, usedException: true });
     });
@@ -117,7 +117,7 @@ describe('production dependency audit guard', () => {
     });
 
     it('expires closed on the mandatory review date', () => {
-        const decision = evaluateProductionAudit(exactReport(), installed, new Date('2026-09-15T00:00:00Z'));
+        const decision = evaluateProductionAudit(exactReport(), installed, new Date('2026-10-27T00:00:00Z'));
 
         expect(decision).toMatchObject({ ok: false });
         expect(decision.message).toContain('expired');

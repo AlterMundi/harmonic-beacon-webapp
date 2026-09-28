@@ -6,6 +6,9 @@ on:
       - Dockerfile
       - package.json
       - package-lock.json
+      - scripts/check-image-codecs.mjs
+      - src/lib/production-audit-guard.ts
+      - src/lib/__tests__/production-audit-guard.test.ts
       - prisma/**
       - src/app/api/health/**
       - src/app/api/early-birds/**
@@ -53,6 +56,9 @@ on:
       - Dockerfile
       - package.json
       - package-lock.json
+      - scripts/check-image-codecs.mjs
+      - src/lib/production-audit-guard.ts
+      - src/lib/__tests__/production-audit-guard.test.ts
       - prisma/**
       - src/app/api/health/**
       - src/app/api/early-birds/**
@@ -106,6 +112,11 @@ jobs:
           node-version: '22.22'
           cache: 'npm'
       - run: npm ci
+      - name: Check production dependency advisories and native image codecs
+        run: |
+          npm run audit:production
+          node scripts/check-image-codecs.mjs
+          npx vitest run src/lib/__tests__/production-audit-guard.test.ts
       - name: Test the Listener reactive visualizer
         run: npm test -- --run src/components/listener/reactive/__tests__
       - name: Type-check the web application
