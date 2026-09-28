@@ -104,7 +104,9 @@ a quieter reminder schedule does not resolve a low-disk condition.
 `storage-maintenance.py` is a fixed host policy, not a general-purpose prune
 interface. Default invocation is a read-only plan; `--apply` is root-only.
 The systemd path unit schedules it on Account/Listener/Live delivery-state
-changes, including Account attempt records. The timer retries every 15 minutes,
+changes, including Account completion receipts. It must not watch directories
+containing deployment locks: opening a lock can otherwise start cleanup before
+the delivery process acquires it. The timer retries every 15 minutes,
 covering failed builds and changes that happened while a delivery lock was held.
 No new GitHub jobs, Docker builds, caller-supplied paths or sudo grants are needed.
 

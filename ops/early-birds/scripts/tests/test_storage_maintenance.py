@@ -12,6 +12,16 @@ spec.loader.exec_module(m)
 
 
 class RetentionTests(unittest.TestCase):
+    def test_path_trigger_does_not_watch_delivery_locks(self):
+        unit = Path(__file__).parents[2]/"systemd/harmonic-beacon-storage-maintenance.path"
+        watched = [Path(line.split("=", 1)[1]) for line in unit.read_text().splitlines()
+                   if line.startswith("PathChanged=")]
+        self.assertTrue(watched)
+        for watched_path in watched:
+            for lock in map(Path, m.LOCKS):
+                self.assertNotEqual(watched_path, lock)
+                self.assertNotIn(watched_path, lock.parents)
+
     def images(self):
         return [{'Id': 'sha256:'+str(i)*64,
                  'RepoTags': ['harmonic-beacon/account:'+str(i)*40],

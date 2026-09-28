@@ -2,7 +2,7 @@
 Description=Schedule retention after Harmonic Beacon delivery state changes
 
 [Path]
-PathChanged=/var/lib/harmonic-beacon/account-delivery
+# Watch receipts, never the directory containing delivery lock files.
 PathChanged=/var/lib/harmonic-beacon/account-delivery/receipts
 PathChanged=/var/lib/harmonic-beacon/listener-account-production/last-activation
 PathChanged=/var/lib/harmonic-beacon/listener-identity-staging/current-image
