@@ -59,6 +59,44 @@ for non-mutating `probe|status` and `transaction` for `deploy|rollback`.
 There is no independently sudoable preflight, migration, Compose, smoke, or
 rollback primitive that can be reordered.
 
+## Owner admission on the host
+
+Runner-provided workflow/run strings are input, not authenticated GitHub identity.
+Before enabling runner sudo, every mutation requires a separate root-owned
+`/var/lib/harmonic-beacon/analytics-delivery/admissions/RUN_ID-ATTEMPT.json`
+(mode 0600, regular file with one link; root-owned non-writable ancestors).
+The runner cannot issue this file. Observation does not require it.
+
+The appointed operator verifies the exact release CI attempt, build provenance,
+signature/attestation and image digest using the workflow's published evidence,
+then authorizes the operation under their existing host authority. This is an
+operator authorization, not a claim that caller-supplied IDs prove GitHub identity.
+No additional human approver is required. Keep the dedicated runner stopped while
+dispatching and admitting a new run, then start it after admission is installed.
+Never grant the runner permission to run the admission-writing command.
+
+The closed JSON document has these fields:
+
+- `schemaVersion`: `hb.analytics.owner-admission.v1`.
+- `invocation`: all 15 parsed helper arguments, with attempts as numbers and IDs
+  as strings, including `verb`, `target`, `operation`, `sourceSha`, `imageDigest`,
+  `ciRunId`, `ciRunAttempt`, `buildRunId`, `buildRunAttempt`, `workflowRef`,
+  `githubRef`, `runId`, `runAttempt`, `reversedRunId`, `reversedRunAttempt`.
+- `previous`: the exact `sourceSha`, `imageId`, `digest`, `configSha256` from
+  the private root-owned current-state file.
+- `configSha256`: SHA-256 (with `sha256:` prefix) of the installed trusted
+  `compose.yml` bytes.
+- `expiresAt`: UTC ISO timestamp, at most 24 hours ahead; prefer one hour.
+
+Create this document with exclusive creation (never overwrite an existing
+admission), fsync the file and parent directory, and record its SHA-256 in the
+owning delivery receipt. Never publish current-state `composeBase64` or secrets.
+The helper validates admission under its delivery lock before any Docker command.
+It persists the admission hash in the transaction journal. Exact accepted recovery
+may continue after expiry; changing any admitted field or resuming an unfinished
+transaction after another state was published fails closed. A committed replay
+only returns its existing receipt. Preserve admission files alongside journals.
+
 ## Durable transaction and replay rules
 
 `transaction` holds an exclusive kernel `flock` for the complete operation.
