@@ -706,6 +706,22 @@ describe('SessionRoomPage - staff cockpit handoff', () => {
         });
     }
 
+    it('lets the facilitator toggle echo without turning on the microphone', async () => {
+        installStaffToken(true);
+        await renderConnected();
+        const room = currentRoom();
+        const toggle = screen.getByRole('switch', { name: /Echo cancellation/ });
+        expect(toggle).toHaveAttribute('aria-checked', 'false');
+        fireEvent.click(toggle);
+        await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'true'));
+        expect(room.options.audioCaptureDefaults?.echoCancellation).toBe(true);
+        expect(room.localParticipant.setMicrophoneEnabled).not.toHaveBeenCalled();
+        expect(screen.getByText('Applies when you turn on your microphone.')).toBeInTheDocument();
+        fireEvent.click(toggle);
+        await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'false'));
+        expect(room.options.audioCaptureDefaults?.echoCancellation).toBe(false);
+    });
+
     it('localizes the composite role and explains its event-scoped facilitator authority', async () => {
         installStaffToken(true);
         await renderConnected();
