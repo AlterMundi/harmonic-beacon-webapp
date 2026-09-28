@@ -31,6 +31,7 @@ import ThumbnailSender from "@/components/session/ThumbnailSender";
 import ThumbnailTapestry from "@/components/session/ThumbnailTapestry";
 import type { StageVideoPublication } from "@/components/session/StageTile";
 import type { StageConnectionQuality } from "@/lib/stage-layout";
+import { setMicrophoneEchoCancellation } from "@/lib/microphone-echo";
 import { roomMixGains } from "@/lib/audio-mix";
 import { redactErrorDetail } from "@/lib/redact";
 import { isLocalizedStaffRole, localeForEventLanguage, staffRolePresentation } from "@/lib/i18n";
@@ -240,7 +241,7 @@ function participantMetadata(participant: Participant): {
 }
 
 function SessionRoom() {
-    const { copy } = useLocale();
+    const { copy, locale } = useLocale();
     const { id } = useParams<{ id: string }>();
     const searchParams = useSearchParams();
     const router = useRouter();
@@ -264,6 +265,10 @@ function SessionRoom() {
     const [canPublish, setCanPublish] = useState(false);
     const [grantVersion, setGrantVersion] = useState<number | null>(null);
     const [principalKind, setPrincipalKind] = useState<"ticket" | "staff">("ticket");
+    const echoPreferenceRef = useRef<boolean | undefined>(undefined);
+    const [echoEnabled, setEchoEnabled] = useState<boolean | undefined>(undefined);
+    const [echoBusy, setEchoBusy] = useState(false);
+    const [echoMessage, setEchoMessage] = useState('');
     const [isMicOn, setIsMicOn] = useState(false);
     const [isCameraOn, setIsCameraOn] = useState(false);
     const [cameraFacingMode, setCameraFacingMode] = useState<CameraFacingMode>("user");
@@ -382,6 +387,9 @@ function SessionRoom() {
             setCanPublish(localCanPublish);
         }
         setIsMicOn(localCanPublish && local.isMicrophoneEnabled);
+        const microphone = local.getTrackPublication(Track.Source.Microphone)?.audioTrack;
+        const actualEcho = microphone?.getSourceTrackSettings?.().echoCancellation;
+        if (typeof actualEcho === 'boolean') setEchoEnabled(actualEcho);
         setIsCameraOn(localCanPublish && local.isCameraEnabled);
 
         const newestSlot = publishers.reduce((max, p) => Math.max(max, p.grantOrder), -1);
@@ -755,6 +763,8 @@ function SessionRoom() {
                 }
 
                 const room = new Room({ ...stageRoomOptions(data.isAssignedFacilitator === true), disconnectOnPageLeave: false });
+                if (echoPreferenceRef.current !== undefined) room.options.audioCaptureDefaults = { ...room.options.audioCaptureDefaults, echoCancellation: echoPreferenceRef.current };
+                setEchoEnabled(room.options.audioCaptureDefaults?.echoCancellation === true);
                 ownedRoom = room;
                 roomRef.current = room;
                 setActiveRoom(room);
@@ -1047,6 +1057,39 @@ function SessionRoom() {
             if (deviceOperationRef.current === operation) deviceOperationRef.current = null;
         }
     }, [canPublish, isMicOn, readStage]);
+
+    const toggleEcho = useCallback(async () => {
+        const room = roomRef.current;
+        if (!room || !canPublish || echoBusy) return;
+        const next = !echoEnabled;
+        setEchoBusy(true);
+        setEchoMessage('');
+        const previousOperation = deviceOperationRef.current;
+        const operation = (async () => {
+            if (previousOperation) { try { await previousOperation; } catch { /* Continue with the requested operation. */ } }
+            if (roomRef.current !== room) return;
+            const hadTrack = Boolean(room.localParticipant.getTrackPublication(Track.Source.Microphone)?.audioTrack);
+            const applied = await setMicrophoneEchoCancellation(room, next);
+            if (roomRef.current !== room) return;
+            if (hadTrack && applied !== next) {
+                setEchoEnabled(applied);
+                setEchoMessage(locale === 'es' ? 'El navegador no confirmó el cambio.' : 'The browser did not confirm the change.');
+                return;
+            }
+            echoPreferenceRef.current = next;
+            setEchoEnabled(next);
+            setEchoMessage(hadTrack ? (locale === 'es' ? 'Aplicado a tu micrófono.' : 'Applied to your microphone.') :
+                (locale === 'es' ? 'Se aplicará cuando enciendas el micrófono.' : 'Applies when you turn on your microphone.'));
+        })();
+        deviceOperationRef.current = operation;
+        try { await operation; }
+        catch { setEchoMessage(locale === 'es' ? 'No se pudo cambiar. Revisá tu micrófono y reintentá.' : 'Could not change it. Check your microphone and try again.'); }
+        finally {
+            if (deviceOperationRef.current === operation) deviceOperationRef.current = null;
+            setEchoBusy(false);
+            readStage();
+        }
+    }, [canPublish, echoBusy, echoEnabled, locale, readStage]);
 
     const toggleCamera = useCallback(async () => {
         const room = roomRef.current;
@@ -1564,6 +1607,15 @@ function SessionRoom() {
                                     )}
                                 </button>
                                 <span className="text-xs text-[var(--text-secondary)]">{copy.session.mic}</span>
+                                <button type="button" role="switch" aria-checked={echoEnabled === true}
+                                    disabled={echoBusy || !isConnected} onClick={toggleEcho}
+                                    className="min-h-11 rounded border border-[var(--gold)]/40 px-3 py-2 text-xs disabled:opacity-50">
+                                    {locale === 'es' ? 'Cancelar eco' : 'Echo cancellation'}: {echoBusy ? '…' : echoEnabled === undefined ? '?' : echoEnabled ? 'ON' : 'OFF'}
+                                </button>
+                                <p className="max-w-48 text-center text-xs text-[var(--text-muted)]">
+                                    {locale === 'es' ? 'Sólo tu micrófono. Reduce el retorno de otras voces; puede modificar el sonido musical.' : 'Your microphone only. Reduces returning voices; may affect musical sound.'}
+                                </p>
+                                {echoMessage && <p role="status" className="max-w-48 text-center text-xs">{echoMessage}</p>}
                             </div>
                         )}
 

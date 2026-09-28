@@ -52,3 +52,12 @@ The shared app bridge lock serializes operations. Only app is stopped/replaced;
 media, database, worker, networks, mounts and runtime flags are retained. No
 migration, pull or build is performed by the helper. This procedure does not
 claim automated OCI delivery activation or qualify a different source.
+
+An owner who explicitly accepts the interruption during a live test may add
+`activeTestSessionId` (one exact UUID) to the private permit. This exception is
+app-only: the selected session must have a title starting with `Test`, no other
+session may be LIVE, and database, LiveKit, tapestry, playlist and worker container
+identities must remain unchanged and running during the operation. It does not
+waive staging rehearsal, exact image identity, rollback, or the future-event
+window. Never infer this authorization from general host access. Existing permit
+files without this field keep the normal no-live-session restriction.
