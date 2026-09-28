@@ -18,7 +18,7 @@ ENDPOINTS = {
 }
 BACKUPS = {
     'live': ('/mnt/beacon-data/backups/live/postgres', '*.dump'),
-    'account': ('/mnt/beacon-data/backups/account', '*.dump.enc'),
+    'account': ('/mnt/beacon-data/backups/account', 'account-pre-*.dump.enc'),
     'analytics': ('/mnt/beacon-data/backups/analytics/postgres', '*.dump.age'),
     'commerce-authority': ('/mnt/beacon-data/backups/pmp-myth/encrypted', '*.tar.zst.age'),
 }
