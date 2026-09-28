@@ -147,3 +147,18 @@ invalidation. Completion callbacks wait until constituent workflows finish befor
 requesting the exact-base evaluator. The periodic reconciler remains recovery for
 missed callbacks. None of these filters grants success or changes the evaluator's
 head/base, attempt, provenance or final-readback checks.
+
+### Service-scoped verification
+
+Analytics application changes select its contract/integration job without Live or
+Account browsers. Its delivery helpers, Compose/dependency definitions and two
+owning workflows remain critical: workflow boundaries, interrupted recovery and
+data/recovery checks still run, but they do not select another application's
+build, browser journey or deployment. Analytics filenames containing `admission`
+do not by themselves mean Account authentication changed.
+
+Mixed changes retain the union of required coverage. Shared CI, shared runtime
+dependencies, explicit risk labels and unclassified paths retain conservative
+coverage; adding an Analytics path cannot narrow that selection. Audio paths
+retain their named browser/media checks. Apply classifier changes to both main
+and release so the trusted evaluator and candidate CI use the same policy.
