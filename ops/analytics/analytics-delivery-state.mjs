@@ -116,7 +116,7 @@ function compose(composePath, selected, args) {
   return command('/usr/bin/docker', ['compose', '--file', composePath, '--project-name', 'harmonic-beacon-analytics', '--env-file', ENV_FILE, ...args], { env: composeEnvironment(selected) });
 }
 function compose_migrate(composePath, selected) {
-  return compose(composePath, selected, ['run', '--rm', '--no-deps', '--no-build', '--pull', 'never', 'migrate']);
+  return compose(composePath, selected, ['run', '--rm', '--no-deps', '--pull', 'never', 'migrate']);
 }
 export function assertUnchangedInfrastructure(previous, candidate) {
   if (!previous.services?.postgres || !candidate.services?.postgres ||
