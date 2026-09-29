@@ -64,6 +64,8 @@ container="$(ANALYTICS_IMAGE_REF="$image_ref" ANALYTICS_SYNTHETIC_DATABASE_PASSW
 docker cp "$stage/database.dump" "$container:/tmp/database.dump"
 docker exec "$container" pg_restore -U analytics_synthetic_user -d analytics_synthetic --no-owner --no-privileges /tmp/database.dump
 docker exec "$container" rm -f /tmp/database.dump
+# This trusted profile has an immutable image and no build definition.
+# Compose run accepts --build, not --no-build; leave building disabled by default.
 ANALYTICS_IMAGE_REF="$image_ref" ANALYTICS_SYNTHETIC_DATABASE_PASSWORD="$password" \
   docker compose --file "$COMPOSE_FILE" --project-name "$project" --profile synthetic-restore \
   run --rm --no-deps --pull never migrate-synthetic
