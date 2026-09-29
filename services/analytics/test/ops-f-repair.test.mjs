@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import test from 'node:test';
 
 import { ReceiptError, validateReceiptBundle } from '../src/delivery-receipt.mjs';
@@ -259,4 +259,21 @@ test('notification crash after accepted failure is durably reconciled before mat
   const healthy = JSON.parse(await readFile(join(root, 'notification.json'), 'utf8'));
   assert.equal(healthy.phase, 'healthy');
   assert.equal((await stat(join(root, 'notification.json'))).mode & 0o777, 0o600);
+});
+
+
+test('installed Compose accepts the migration run flags without starting containers', async t => {
+  const version = spawnSync('docker', ['compose', 'version'], { encoding: 'utf8' });
+  if (version.status !== 0) return t.skip('Docker Compose is unavailable');
+  const state = await repositoryFile('ops/analytics/analytics-delivery-state.mjs');
+  const restore = await repositoryFile('ops/analytics/restore-verify-analytics.sh');
+  const production = state.match(/return compose\(composePath, selected, (\['run'[^\n]+\])\);/u);
+  assert.ok(production);
+  const productionArgs = JSON.parse(production[1].replaceAll("'", '"'));
+  const synthetic = restore.match(/^[ \t]+(run [^\n]+) migrate-synthetic$/mu);
+  assert.ok(synthetic);
+  for (const args of [productionArgs.slice(0, -1), synthetic[1].trim().split(/\s+/u)]) {
+    const parsed = spawnSync('docker', ['compose', ...args, '--help'], { encoding: 'utf8' });
+    assert.equal(parsed.status, 0, parsed.stderr);
+  }
 });

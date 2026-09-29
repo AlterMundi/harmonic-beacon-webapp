@@ -66,7 +66,7 @@ docker exec "$container" pg_restore -U analytics_synthetic_user -d analytics_syn
 docker exec "$container" rm -f /tmp/database.dump
 ANALYTICS_IMAGE_REF="$image_ref" ANALYTICS_SYNTHETIC_DATABASE_PASSWORD="$password" \
   docker compose --file "$COMPOSE_FILE" --project-name "$project" --profile synthetic-restore \
-  run --rm --no-deps --no-build --pull never migrate-synthetic
+  run --rm --no-deps --pull never migrate-synthetic
 observed_tables="$(docker exec "$container" psql -U analytics_synthetic_user -d analytics_synthetic -Atc \
   "select count(*) from pg_catalog.pg_tables where schemaname in ('ingest','mart','ops','audit','identity_map')")"
 [[ "$observed_tables" =~ ^[0-9]+$ ]] && (( observed_tables >= 10 )) || exit 74
