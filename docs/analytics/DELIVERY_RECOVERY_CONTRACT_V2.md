@@ -18,7 +18,9 @@ and cannot authorize or validate a v2 operation.
    `workflow_run`. GitHub loads that workflow definition from the default
    `main` branch, so its keyless signer identity is the exact build workflow at
    `refs/heads/main`, while the checked-out and published source remains the
-   exact `release` SHA. The workflow checks out that exact SHA, publishes the
+   exact `release` SHA. The build run record itself has `head_branch=main` and
+   the default-branch workflow SHA; delivery validates that metadata separately
+   from the signed artifact source and exact release CI identity. The workflow checks out that exact SHA, publishes the
    analytics image by SHA and immutable digest, includes BuildKit `mode=max`
    provenance and SBOM, emits a GitHub build-provenance attestation, and signs
    an attempt-specific provenance object with GitHub OIDC through cosign.
