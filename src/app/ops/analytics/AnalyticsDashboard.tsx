@@ -21,7 +21,7 @@ const number = (value: unknown) => { const n = finiteMetric(value); return n ===
 function Table({ rows }: { rows: Row[] }) {
     const columns = useMemo(() => [...new Set(rows.flatMap(row => Object.keys(row)))], [rows]);
     if (rows.length === 0) return <p className="text-sm text-[var(--text-secondary)]">Zero results for this range.</p>;
-    return <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-left text-xs"><thead><tr>{columns.map(column => <th className="border-b border-white/15 p-2" key={column}>{column.replaceAll('_', ' ')}</th>)}</tr></thead><tbody>{rows.map((row, index) => <tr key={index} className="border-b border-white/5">{columns.map(column => <td className="p-2 align-top" key={column}>{typeof row[column] === 'object' ? JSON.stringify(row[column]) : display(row[column])}</td>)}</tr>)}</tbody></table></div>;
+    return <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Detailed analytics data"><table className="w-full min-w-[640px] text-left text-xs"><thead><tr>{columns.map(column => <th className="border-b border-white/15 p-2" key={column}>{column.replaceAll('_', ' ')}</th>)}</tr></thead><tbody>{rows.map((row, index) => <tr key={index} className="border-b border-white/5">{columns.map(column => <td className="p-2 align-top" key={column}>{typeof row[column] === 'object' ? JSON.stringify(row[column]) : display(row[column])}</td>)}</tr>)}</tbody></table></div>;
 }
 
 export default function AnalyticsDashboard({ canExport }: { canExport: boolean }) {

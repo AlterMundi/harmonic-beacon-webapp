@@ -70,7 +70,7 @@ export function CohortHeatmap({ rows, through }: { rows: AnalyticsRow[]; through
     }
     const cohorts = [...groups].sort(([a],[b])=>b.localeCompare(a)).slice(0,8);
     if (!cohorts.length) return <p className="py-6 text-sm text-[var(--text-secondary)]">No listener cohorts observed in this range.</p>;
-    return <div className="overflow-x-auto"><table className="w-full min-w-[480px] border-separate border-spacing-1 text-xs">
+    return <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Listener return cohorts"><table className="w-full min-w-[480px] border-separate border-spacing-1 text-xs">
         <caption className="mb-3 text-left text-[var(--text-secondary)]">Last 8 first-listen cohorts · observed return on each exact day, not continuous retention. A dash means unobserved or not yet elapsed.</caption>
         <thead><tr><th className="text-left">First listen</th><th>People</th>{days.map(day=><th key={day}>D{day}</th>)}</tr></thead>
         <tbody>{cohorts.map(([date,values])=>{
