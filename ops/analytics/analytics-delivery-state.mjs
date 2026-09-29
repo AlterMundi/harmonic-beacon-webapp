@@ -5,7 +5,9 @@ import {
   closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync,
   readdirSync, renameSync, rmSync, writeFileSync,
 } from 'node:fs';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
 import { atomicWriteJson, compareAndSwapJournal, exactIdentity, readJsonFile, writeContentAddressed } from './durable-json-state.mjs';
 
 const SHA40 = /^[0-9a-f]{40}$/;
@@ -116,8 +118,16 @@ function compose(composePath, selected, args) {
 function compose_migrate(composePath, selected) {
   return compose(composePath, selected, ['run', '--rm', '--no-deps', '--no-build', '--pull', 'never', 'migrate']);
 }
-function compose_replace(composePath, selected) {
-  return compose(composePath, selected, ['up', '-d', '--force-recreate', '--no-build', '--pull', 'never', 'postgres', 'collector', 'worker']);
+export function assertUnchangedInfrastructure(previous, candidate) {
+  if (!previous.services?.postgres || !candidate.services?.postgres ||
+      !isDeepStrictEqual(previous.services.postgres, candidate.services.postgres) ||
+      !isDeepStrictEqual(previous.networks ?? {}, candidate.networks ?? {}) ||
+      !isDeepStrictEqual(previous.volumes ?? {}, candidate.volumes ?? {})) {
+    fail('analytics application delivery cannot change database or network infrastructure');
+  }
+}
+export function compose_replace(composePath, selected, execute = compose) {
+  return execute(composePath, selected, ['up', '-d', '--wait', '--wait-timeout', '120', '--no-deps', '--force-recreate', '--no-build', '--pull', 'never', 'collector', 'worker']);
 }
 
 function readCurrentState() {
@@ -287,11 +297,16 @@ function commitCurrentState(state) {
 }
 function publicState(state) { return { sourceSha: state.sourceSha, imageId: state.imageId, digest: state.digest, configSha256: state.configSha256 }; }
 
-function prepareDeploy(root, invocation, candidate) {
+function prepareDeploy(root, invocation, candidate, admissionSha256) {
   const previous = readCurrentState(); verifyLiveMatches(previous);
   const configBytes = readFileSync(TRUSTED_COMPOSE); const configSha256 = digest(configBytes);
   installTransactionFiles(root, previous);
-  const journal = { ...journalIdentity(invocation, candidate, previous, configSha256), phase: 'prepared', generation: 1 };
+  const selected = { sourceSha: invocation.sourceSha, imageId: candidate.imageId, digest: invocation.imageDigest, configSha256 };
+  assertUnchangedInfrastructure(
+    JSON.parse(compose(join(root, 'prior', 'compose.yml'), previous, ['config', '--format', 'json'])),
+    JSON.parse(compose(join(root, 'candidate', 'compose.yml'), selected, ['config', '--format', 'json'])),
+  );
+  const journal = { ...journalIdentity(invocation, candidate, previous, configSha256), admissionSha256, phase: 'prepared', generation: 1 };
   durableJournal(join(root, 'journal.json'), journal);
   return journal;
 }
@@ -325,7 +340,7 @@ function runDeploy(root, invocation, candidate, initialJournal) {
   return readJson(join(root, 'receipt-bundle.json'));
 }
 
-function prepareRollback(root, invocation, candidate) {
+function prepareRollback(root, invocation, candidate, admissionSha256) {
   const reversedRoot = transactionPath(invocation.reversedRunId, invocation.reversedRunAttempt);
   const reversed = readJson(join(reversedRoot, 'journal.json'));
   if (reversed.phase !== 'committed' || reversed.operation !== 'deploy' || reversed.sourceSha !== invocation.sourceSha || reversed.imageDigest !== invocation.imageDigest) fail('reversal identity does not name the exact committed deployment');
@@ -335,7 +350,11 @@ function prepareRollback(root, invocation, candidate) {
   atomicBytes(join(root, 'prior', 'compose.yml'), readFileSync(join(reversedRoot, 'prior', 'compose.yml')));
   const rollbackTarget = { ...reversed.previous, composeBase64: readFileSync(join(root, 'prior', 'compose.yml')).toString('base64') };
   if (digest(readFileSync(join(root, 'prior', 'compose.yml'))) !== rollbackTarget.configSha256) fail('previousConfigSha256 does not match exact rollback Compose bytes');
-  const journal = { ...journalIdentity(invocation, candidate, live, reversed.configSha256), rollbackTarget: {
+  assertUnchangedInfrastructure(
+    JSON.parse(compose(join(reversedRoot, 'candidate', 'compose.yml'), live, ['config', '--format', 'json'])),
+    JSON.parse(compose(join(root, 'prior', 'compose.yml'), rollbackTarget, ['config', '--format', 'json'])),
+  );
+  const journal = { ...journalIdentity(invocation, candidate, live, reversed.configSha256), admissionSha256, rollbackTarget: {
     sourceSha: rollbackTarget.sourceSha, imageId: rollbackTarget.imageId, digest: rollbackTarget.digest,
     configSha256: rollbackTarget.configSha256, healthContract: rollbackTarget.healthContract,
   }, phase: 'prepared', generation: 1 };
@@ -389,26 +408,61 @@ function compensateDeploy(root) {
   }
 }
 
+export function validateAdmission(admission, invocation, current, journal, configSha256, now = Date.now()) {
+  if (!admission || Object.keys(admission).sort().join(',') !==
+      ['schemaVersion', 'invocation', 'previous', 'configSha256', 'expiresAt'].sort().join(',') ||
+      admission.schemaVersion !== 'hb.analytics.owner-admission.v1') fail('missing or invalid owner admission');
+  assertExact(admission.invocation, invocation, 'owner admission invocation mismatch');
+  valid(admission.configSha256, SHA256, 'invalid admitted Compose digest');
+  const admissionSha256 = digest(JSON.stringify(admission));
+  if (journal) {
+    if (journal.admissionSha256 !== admissionSha256) fail('transaction owner admission changed');
+    assertExact(admission.previous, publicState(journal.previous), 'owner admission previous state mismatch');
+    // Accepted transactions retain their authorization for exact recovery/replay.
+    // Never let an old unfinished transaction replace a later committed state.
+    const published = journal.operation === 'rollback' ? publicState(journal.rollbackTarget) : {
+      sourceSha: journal.sourceSha, imageId: journal.imageId,
+      digest: journal.imageDigest, configSha256: journal.configSha256,
+    };
+    if (journal.phase !== 'committed' && !isDeepStrictEqual(publicState(current), admission.previous) &&
+        !(journal.phase === 'replaced' && isDeepStrictEqual(publicState(current), published))) {
+      fail('unfinished transaction no longer owns the current state');
+    }
+  } else {
+    const expires = Date.parse(admission.expiresAt);
+    if (!Number.isFinite(expires) || expires <= now || expires > now + 24 * 3600 * 1000) fail('owner admission expired or exceeds 24 hours');
+    assertExact(admission.previous, publicState(current), 'owner admission current state mismatch');
+    if (admission.configSha256 !== configSha256) fail('owner admission Compose mismatch');
+  }
+  return admissionSha256;
+}
+
 function transaction(invocation) {
+  const root = transactionPath(invocation.runId, invocation.runAttempt);
+  const existing = optionalJson(join(root, 'journal.json'));
+  const admissionDirectory = join(STATE_DIR, 'admissions');
+  secureRootAncestors(admissionDirectory);
+  const admissionPath = join(admissionDirectory, `${invocation.runId}-${invocation.runAttempt}.json`);
+  if (secureFile(admissionPath).size > 16384) fail('owner admission exceeds size limit');
+  const admission = readJson(admissionPath);
+  const admissionSha256 = validateAdmission(admission, invocation, readCurrentState(), existing, digest(readFileSync(TRUSTED_COMPOSE)));
   const candidateInspection = inspectImage(invocation.sourceSha, invocation.imageDigest);
   const candidate = { imageId: candidateInspection.imageId, ref: candidateInspection.ref };
-  const root = transactionPath(invocation.runId, invocation.runAttempt);
   let journal;
-  try {
-    journal = readJson(join(root, 'journal.json'));
+  if (existing) {
+    journal = existing;
     const configSha256 = journal.configSha256;
     const previous = journal.previous;
-    const expectedIdentity = journalIdentity(invocation, candidate, previous, configSha256);
+    const expectedIdentity = { ...journalIdentity(invocation, candidate, previous, configSha256), admissionSha256 };
     if (invocation.operation === 'rollback') expectedIdentity.rollbackTarget = journal.rollbackTarget;
     assertExact(expectedIdentity, Object.fromEntries(Object.entries(journal).filter(([key]) => !['phase', 'generation', 'observations', 'receiptSha256', 'failureClass'].includes(key))), 'transaction replay identity conflict');
     verifyTransactionFiles(root, journal);
     if (journal.phase === 'committed') return readJson(join(root, 'receipt-bundle.json'));
     if (['compensated', 'failed-contained'].includes(journal.phase)) fail('transaction is terminal and did not commit');
-  } catch (error) {
-    if (error.code !== 'ENOENT') throw error;
+  } else {
     if (existsSync(root)) rmSync(root, { recursive: true });
     mkdirSync(root, { mode: 0o700 }); syncDirectory(TRANSACTIONS);
-    journal = invocation.operation === 'deploy' ? prepareDeploy(root, invocation, candidate) : prepareRollback(root, invocation, candidate);
+    journal = invocation.operation === 'deploy' ? prepareDeploy(root, invocation, candidate, admissionSha256) : prepareRollback(root, invocation, candidate, admissionSha256);
   }
   try {
     return invocation.operation === 'deploy' ? runDeploy(root, invocation, candidate, journal) : runRollback(root, invocation, candidate, journal);
@@ -422,7 +476,8 @@ function transaction(invocation) {
   }
 }
 
-const invocation = parseInvocation(process.argv.slice(2));
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const invocation = parseInvocation(process.argv.slice(2));
 if (invocation.verb === 'observe') {
   const candidate = inspectImage(invocation.sourceSha, invocation.imageDigest);
   if (invocation.operation === 'probe') {
@@ -435,4 +490,6 @@ if (invocation.verb === 'observe') {
 } else {
   const bundle = transaction(invocation);
   process.stdout.write(`${JSON.stringify(bundle)}\n`);
+}
+
 }

@@ -64,7 +64,7 @@ jobs:
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
         with:
           context: services/analytics
-          file: Dockerfile
+          file: services/analytics/Dockerfile
           platforms: linux/amd64
           push: true
           tags: ghcr.io/altermundi/harmonic-beacon-analytics:${{ github.event.workflow_run.head_sha }}

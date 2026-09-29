@@ -114,8 +114,10 @@ jobs:
           const env = process.env;
           if (ci.name !== 'CI' || ci.path !== '.github/workflows/ci.yml' || ci.event !== 'push' || ci.head_branch !== 'release') throw new Error('foreign CI workflow');
           if (ci.head_sha !== env.SOURCE_SHA || String(ci.id) !== env.CI_RUN_ID || Number(ci.run_attempt) !== Number(env.CI_RUN_ATTEMPT) || ci.conclusion !== 'success') throw new Error('CI attempt mismatch');
-          if (build.name !== 'Analytics OCI Build' || build.path !== '.github/workflows/analytics-build.yml' || build.event !== 'workflow_run' || build.head_branch !== 'release') throw new Error('foreign build workflow');
-          if (build.head_sha !== env.SOURCE_SHA || String(build.id) !== env.BUILD_RUN_ID || Number(build.run_attempt) !== Number(env.BUILD_RUN_ATTEMPT) || build.conclusion !== 'success') throw new Error('build attempt mismatch');
+          // workflow_run executes the trusted default-branch workflow. The release
+          // source is bound below by signed provenance + exact triggering CI, not this head SHA.
+          if (build.name !== 'Analytics OCI Build' || build.path !== '.github/workflows/analytics-build.yml' || build.event !== 'workflow_run' || build.head_branch !== 'main') throw new Error('foreign build workflow');
+          if (!/^[0-9a-f]{40}$/.test(build.head_sha) || String(build.id) !== env.BUILD_RUN_ID || Number(build.run_attempt) !== Number(env.BUILD_RUN_ATTEMPT) || build.conclusion !== 'success') throw new Error('build attempt mismatch');
           NODE
           rm -rf build-evidence
           gh run download "$BUILD_RUN_ID" --name "analytics-build-evidence-${BUILD_RUN_ID}-${BUILD_RUN_ATTEMPT}" --dir build-evidence

@@ -18,7 +18,9 @@ and cannot authorize or validate a v2 operation.
    `workflow_run`. GitHub loads that workflow definition from the default
    `main` branch, so its keyless signer identity is the exact build workflow at
    `refs/heads/main`, while the checked-out and published source remains the
-   exact `release` SHA. The workflow checks out that exact SHA, publishes the
+   exact `release` SHA. The build run record itself has `head_branch=main` and
+   the default-branch workflow SHA; delivery validates that metadata separately
+   from the signed artifact source and exact release CI identity. The workflow checks out that exact SHA, publishes the
    analytics image by SHA and immutable digest, includes BuildKit `mode=max`
    provenance and SBOM, emits a GitHub build-provenance attestation, and signs
    an attempt-specific provenance object with GitHub OIDC through cosign.
@@ -59,6 +61,44 @@ for non-mutating `probe|status` and `transaction` for `deploy|rollback`.
 There is no independently sudoable preflight, migration, Compose, smoke, or
 rollback primitive that can be reordered.
 
+## Owner admission on the host
+
+Runner-provided workflow/run strings are input, not authenticated GitHub identity.
+Before enabling runner sudo, every mutation requires a separate root-owned
+`/var/lib/harmonic-beacon/analytics-delivery/admissions/RUN_ID-ATTEMPT.json`
+(mode 0600, regular file with one link; root-owned non-writable ancestors).
+The runner cannot issue this file. Observation does not require it.
+
+The appointed operator verifies the exact release CI attempt, build provenance,
+signature/attestation and image digest using the workflow's published evidence,
+then authorizes the operation under their existing host authority. This is an
+operator authorization, not a claim that caller-supplied IDs prove GitHub identity.
+No additional human approver is required. Keep the dedicated runner stopped while
+dispatching and admitting a new run, then start it after admission is installed.
+Never grant the runner permission to run the admission-writing command.
+
+The closed JSON document has these fields:
+
+- `schemaVersion`: `hb.analytics.owner-admission.v1`.
+- `invocation`: all 15 parsed helper arguments, with attempts as numbers and IDs
+  as strings, including `verb`, `target`, `operation`, `sourceSha`, `imageDigest`,
+  `ciRunId`, `ciRunAttempt`, `buildRunId`, `buildRunAttempt`, `workflowRef`,
+  `githubRef`, `runId`, `runAttempt`, `reversedRunId`, `reversedRunAttempt`.
+- `previous`: the exact `sourceSha`, `imageId`, `digest`, `configSha256` from
+  the private root-owned current-state file.
+- `configSha256`: SHA-256 (with `sha256:` prefix) of the installed trusted
+  `compose.yml` bytes.
+- `expiresAt`: UTC ISO timestamp, at most 24 hours ahead; prefer one hour.
+
+Create this document with exclusive creation (never overwrite an existing
+admission), fsync the file and parent directory, and record its SHA-256 in the
+owning delivery receipt. Never publish current-state `composeBase64` or secrets.
+The helper validates admission under its delivery lock before any Docker command.
+It persists the admission hash in the transaction journal. Exact accepted recovery
+may continue after expiry; changing any admitted field or resuming an unfinished
+transaction after another state was published fails closed. A committed replay
+only returns its existing receipt. Preserve admission files alongside journals.
+
 ## Durable transaction and replay rules
 
 `transaction` holds an exclusive kernel `flock` for the complete operation.
@@ -71,6 +111,11 @@ returns the exact committed receipt. A replay that changes any source, digest,
 CI/build/delivery ID or attempt, target, operation, workflow identity, or
 reversal identity fails closed. A terminal failed/compensated attempt cannot be
 re-fired under the same identity.
+
+Application delivery replaces only collector and worker with `--no-deps`; it
+never recreates PostgreSQL. Before backup or migration, rendered PostgreSQL,
+network and volume definitions must match the captured prior Compose. Changes
+to that infrastructure require a separate reviewed maintenance operation.
 
 Before any mutation, the transaction captures and verifies the live previous
 source SHA, image ID, digest, exact Compose bytes, Compose SHA-256, and health
@@ -162,6 +207,27 @@ registry permissions is an external operator action. It must use separately
 reviewed bytes and record the installed manifest digest. This repository does
 not self-install, dispatch, publish, deploy, migrate, start services, or modify
 those controls.
+
+The versioned `ops/analytics/hb-analytics-runner.service` runs as the dedicated
+`analytics-runner` user, with runner and HOME under `/mnt/beacon-data/runners/`.
+Verify the official runner/CLI archive hashes before installation. Register the
+runner against this repository with labels `mona,analytics-delivery`; its primary
+group is its only group (no Docker group). Install the unit root-owned and leave
+it stopped until the trusted bundle, root state and exact sudo helper are ready.
+The `analytics-production` environment permits only the `release` branch.
+Do not share another runner's credentials or grant a shell/installer via sudo.
+
+Initial state is measured from both running collector/worker image IDs and their
+OCI revision/digest. Preserve the original legacy Compose privately, then freeze
+its observed image-tag substitutions (including build labels) and relative build
+context into a separate snapshot. Compare both rendered configurations in memory
+using the protected env file and the same Compose project; require equality and
+prove the frozen snapshot renders without the old shell image-tag variable.
+Store that snapshot's own hash in `current-state.json`, never the original file's
+hash. Keep both hashes and the equality result in a private bootstrap receipt.
+This reconciliation changes no running service. Future replacement uses
+`--no-build --pull never --no-deps --wait --wait-timeout 120`; readback still
+checks the exact images and health/provenance after the wait.
 
 Local CI can validate parsers, schemas, workflow syntax, adversarial replay and
 notification/drill behavior with non-root isolated drivers. It cannot prove

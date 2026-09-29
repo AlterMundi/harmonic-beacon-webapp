@@ -1,5 +1,4 @@
 import type { Metadata, Viewport } from "next";
-import { Syne, Space_Mono } from "next/font/google";
 import localFont from "next/font/local";
 import { headers } from "next/headers";
 import { GlobalNavigation } from "@/components/brand/GlobalNavigation";
@@ -47,16 +46,18 @@ const inter = localFont({
   display: "swap",
 });
 
-const syne = Syne({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+const syne = localFont({
+  src: "./fonts/syne/Syne[wght].ttf",
+  weight: "400 700",
   variable: "--font-syne",
   display: "swap",
 });
 
-const spaceMono = Space_Mono({
-  subsets: ["latin"],
-  weight: ["400", "700"],
+const spaceMono = localFont({
+  src: [
+    { path: "./fonts/spacemono/SpaceMono-Regular.ttf", weight: "400", style: "normal" },
+    { path: "./fonts/spacemono/SpaceMono-Bold.ttf", weight: "700", style: "normal" },
+  ],
   variable: "--font-space-mono",
   display: "swap",
 });

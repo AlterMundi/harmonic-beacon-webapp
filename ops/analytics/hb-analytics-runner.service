@@ -1,0 +1,19 @@
+[Unit]
+Description=Harmonic Beacon Analytics delivery runner
+After=network-online.target
+Wants=network-online.target
+RequiresMountsFor=/mnt/beacon-data/runners/analytics
+
+[Service]
+User=analytics-runner
+Group=analytics-runner
+WorkingDirectory=/mnt/beacon-data/runners/analytics
+Environment=HOME=/mnt/beacon-data/runners/analytics-home
+ExecStart=/mnt/beacon-data/runners/analytics/bin/runsvc.sh
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=120
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

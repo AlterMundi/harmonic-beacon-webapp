@@ -116,7 +116,17 @@ test('release CI and build provenance form an attempt-specific exact-digest chai
   assert.match(build, /workflow_run:/u);
   assert.match(build, /workflows:\s*\[CI\]/u);
   assert.match(build, /branches:\s*\[release\]/u);
-  assert.match(build, /context: services\/analytics\s*\n\s+file: Dockerfile/u);
+  const inputs = build.match(/context: (\S+)\s*\n\s+file: (\S+)/u);
+  assert.ok(inputs, 'explicit build context and Dockerfile required');
+  assert.equal(inputs[1], 'services/analytics');
+  // Docker resolves --file from the checkout, while COPY uses the context.
+  // Check the real inputs instead of preserving an incorrect literal path.
+  const dockerfile = await repositoryFile(inputs[2]);
+  for (const instruction of dockerfile.matchAll(/^COPY (?!--)(.+) \S+$/gmu)) {
+    for (const source of instruction[1].split(/\s+/u)) {
+      await stat(new URL(`${inputs[1]}/${source}`, repo));
+    }
+  }
   assert.match(build, /docker\/build-push-action@[0-9a-f]{40}/u);
   assert.match(build, /push:\s*true/u);
   assert.match(build, /attest-build-provenance@[0-9a-f]{40}/u);
@@ -177,7 +187,7 @@ test('rollback state captures exact previous config and the current reversal ide
   assert.match(stateMachine, /composeBase64/u);
   assert.match(stateMachine, /previousConfigSha256/u);
   assert.match(stateMachine, /prior', 'compose\.yml/u);
-  assert.match(stateMachine, /'postgres', 'collector', 'worker'/u);
+  assert.match(stateMachine, /'--no-deps'[\s\S]*'collector', 'worker'/u);
   assert.match(stateMachine, /reversedRunId/u);
   assert.match(stateMachine, /reversedRunAttempt/u);
   assert.match(stateMachine, /function prepareDeploy[\s\S]+readCurrentState\(\); verifyLiveMatches\(previous\);[\s\S]+installTransactionFiles\(root, previous\)/u);

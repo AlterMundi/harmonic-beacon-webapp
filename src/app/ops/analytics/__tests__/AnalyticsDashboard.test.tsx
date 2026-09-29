@@ -57,4 +57,16 @@ describe('analytics dashboard calendar filters', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
         expect(await screen.findByRole('alert')).toHaveTextContent('Check the date range and IANA timezone');
     });
+    it('keeps unknown metrics distinct and exports behind the provided permission', async () => {
+        const { rerender } = render(<AnalyticsDashboard canExport={false} />);
+        await screen.findByRole('heading', {name:'What happened at each event?'});
+        expect(screen.getByText(/No attendance observed/)).toBeInTheDocument();
+        expect(screen.getAllByText('Unknown')).toHaveLength(8);
+        expect(screen.queryByText('Export CSV')).not.toBeInTheDocument();
+        rerender(<AnalyticsDashboard canExport={true} />);
+        const links = screen.getAllByText('Export CSV');
+        expect(links).toHaveLength(15);
+        expect(links[0]).toHaveAttribute('href',expect.stringContaining('traffic=real'));
+    });
+
 });
