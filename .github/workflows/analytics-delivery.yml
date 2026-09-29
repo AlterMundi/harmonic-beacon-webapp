@@ -138,7 +138,6 @@ jobs:
           NODE
           gh attestation verify "oci://ghcr.io/altermundi/harmonic-beacon-analytics@${IMAGE_DIGEST}" \
             --repo "$GITHUB_REPOSITORY" \
-            --signer-workflow github.com/AlterMundi/harmonic-beacon-webapp/.github/workflows/analytics-build.yml \
             --cert-identity https://github.com/AlterMundi/harmonic-beacon-webapp/.github/workflows/analytics-build.yml@refs/heads/main >/dev/null
       - name: Execute one bounded locked operation and validate its measured receipt
         env:
