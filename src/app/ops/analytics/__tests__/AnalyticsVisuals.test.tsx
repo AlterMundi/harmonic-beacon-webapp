@@ -41,3 +41,9 @@ it('switches event outcomes without confusing participant-hours with average min
  expect(screen.getByText('30')).toBeInTheDocument();
  expect(screen.getByText(/not confirmed crashes/)).toBeInTheDocument();
 });
+
+it('keeps the panel renderable while an invalid timezone is being rejected by the API',()=>{
+ const {rerender}=render(<EventResults timezone="UTC" rows={[{event_subject:'event',first_entry:'2026-09-01T13:00:00Z',attendees:2,attendee_seconds:7200}]}/>);
+ expect(()=>rerender(<EventResults timezone="Mars/Olympus" rows={[{event_subject:'event',first_entry:'2026-09-01T13:00:00Z',attendees:2,attendee_seconds:7200}]}/>)).not.toThrow();
+ expect(screen.getByRole('option')).toHaveTextContent('Unknown date');
+});
