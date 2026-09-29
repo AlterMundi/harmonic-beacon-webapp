@@ -134,7 +134,9 @@ test('release CI and build provenance form an attempt-specific exact-digest chai
   assert.match(build, /certificate-identity=https:\/\/github\.com\/AlterMundi\/harmonic-beacon-webapp\/\.github\/workflows\/analytics-build\.yml@refs\/heads\/main/u);
   assert.match(delivery, /actions\/runs\/\$\{CI_RUN_ID\}\/attempts\/\$\{CI_RUN_ATTEMPT\}/u);
   assert.match(delivery, /actions\/runs\/\$\{BUILD_RUN_ID\}\/attempts\/\$\{BUILD_RUN_ATTEMPT\}/u);
-  assert.match(delivery, /--signer-workflow github\.com\/AlterMundi\/harmonic-beacon-webapp\/\.github\/workflows\/analytics-build\.yml/u);
+  // gh treats signer-workflow and cert-identity as mutually exclusive.
+  // The exact certificate identity below also binds the main branch.
+  assert.doesNotMatch(delivery, /--signer-workflow|--signer-repo|--cert-identity-regex/u);
   assert.match(delivery, /--cert-identity https:\/\/github\.com\/AlterMundi\/harmonic-beacon-webapp\/\.github\/workflows\/analytics-build\.yml@refs\/heads\/main/u);
   assert.match(delivery, /Analytics OCI Build/u);
 });
