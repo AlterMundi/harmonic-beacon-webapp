@@ -116,6 +116,8 @@ function compose(composePath, selected, args) {
   return command('/usr/bin/docker', ['compose', '--file', composePath, '--project-name', 'harmonic-beacon-analytics', '--env-file', ENV_FILE, ...args], { env: composeEnvironment(selected) });
 }
 function compose_migrate(composePath, selected) {
+  // Image-only trusted Compose: run does not build unless --build is requested.
+  // --no-build belongs to compose up and is rejected by compose run.
   return compose(composePath, selected, ['run', '--rm', '--no-deps', '--pull', 'never', 'migrate']);
 }
 export function assertUnchangedInfrastructure(previous, candidate) {
