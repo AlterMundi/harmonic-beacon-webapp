@@ -92,7 +92,12 @@ export function EventResults({ rows, timezone }: { rows: AnalyticsRow[]; timezon
     const event = events.find(row=>row.event_subject===selected) ?? events[0];
     const label = (row: AnalyticsRow) => {
         const date = new Date(String(row.first_entry));
-        return `${Number.isNaN(date.getTime()) ? 'Unknown date' : date.toLocaleString(undefined,{timeZone:timezone,dateStyle:'medium',timeStyle:'short'})} · ${String(row.event_subject ?? '').slice(0,8)}`;
+        let when = 'Unknown date';
+        if (!Number.isNaN(date.getTime())) {
+            try { when = date.toLocaleString(undefined,{timeZone:timezone,dateStyle:'medium',timeStyle:'short'}); }
+            catch { /* The API reports invalid timezone input after this render. */ }
+        }
+        return `${when} · ${String(row.event_subject ?? '').slice(0,8)}`;
     };
     const attendees = finiteMetric(event?.attendees), seconds = finiteMetric(event?.attendee_seconds);
     return <section aria-label="Event results" className="rounded-xl border border-[var(--lime)]/30 bg-[var(--lime)]/5 p-5">
