@@ -21,6 +21,15 @@ async function main() {
         const secret = configured.get(client.clientId)?.clientSecret;
         if (!secret || secret.length < 32) throw new Error(`${client.secretVariable} is missing or too short`);
     }
+    const marker = await prisma.beaconAccountAuthorityEnvironment.findUnique({
+        where: { id: 'authority' }, select: { issuer: true },
+    });
+    if (marker && marker.issuer !== issuer) {
+        throw new Error('Refusing to provision an Account database claimed by another issuer');
+    }
+    // Generate/validate keys before changing the shared client inventory. Check
+    // the issuer first to avoid issuing keys into another authority's database.
+    await accountAuth().api.getJwks();
     await prisma.$transaction(async (transaction) => {
         const marker = await transaction.beaconAccountAuthorityEnvironment.findUnique({
             where: { id: 'authority' }, select: { issuer: true },
@@ -78,7 +87,6 @@ async function main() {
             data: { disabled: true },
         });
     });
-    await accountAuth().api.getJwks();
     process.stdout.write(`Account authority provisioned for ${issuer}; ${active.length} static clients active.\n`);
 }
 

@@ -206,6 +206,41 @@ test('Psicopompo activation requires a dedicated production secret and valid gat
   assert.throws(() => validatePair(PROD, staging, STAGING_DB, true), /production-only gate/);
 });
 
+test('Psicopompo trial has its own default-off gate and requires a distinct active secret', () => {
+  assert.equal(parseEnvFile(PROD).get('BEACON_ACCOUNT_PSICOPOMPO_TRIAL_ENABLED'), '0');
+  assert.equal(parseEnvFile(PROD).get('BEACON_ACCOUNT_CLIENT_SECRET_HB_PSICOPOMPO_TRIAL'), '');
+  const enabled = mutate(PROD, 'BEACON_ACCOUNT_PSICOPOMPO_TRIAL_ENABLED=0',
+    'BEACON_ACCOUNT_PSICOPOMPO_TRIAL_ENABLED=1');
+  assert.throws(() => validatePair(enabled, STAGING, STAGING_DB, true), /HB_PSICOPOMPO_TRIAL/);
+  const configured = mutate(enabled, 'BEACON_ACCOUNT_CLIENT_SECRET_HB_PSICOPOMPO_TRIAL=',
+    'BEACON_ACCOUNT_CLIENT_SECRET_HB_PSICOPOMPO_TRIAL=synthetic-dedicated-psicopompo-trial-secret-32');
+  validatePair(configured, STAGING, STAGING_DB, true);
+  const both = mutate(configured, 'BEACON_ACCOUNT_PSICOPOMPO_ENABLED=0',
+    'BEACON_ACCOUNT_PSICOPOMPO_ENABLED=1');
+  const distinct = mutate(both, 'BEACON_ACCOUNT_CLIENT_SECRET_HB_PSICOPOMPO=\n',
+    'BEACON_ACCOUNT_CLIENT_SECRET_HB_PSICOPOMPO=synthetic-production-psicopompo-secret-32\n');
+  validatePair(distinct, STAGING, STAGING_DB, true);
+  const reused = mutate(distinct, 'synthetic-dedicated-psicopompo-trial-secret-32',
+    'synthetic-production-psicopompo-secret-32');
+  assert.throws(() => validatePair(reused, STAGING, STAGING_DB, true), /must differ from/);
+  const invalid = mutate(PROD, 'BEACON_ACCOUNT_PSICOPOMPO_TRIAL_ENABLED=0',
+    'BEACON_ACCOUNT_PSICOPOMPO_TRIAL_ENABLED=yes');
+  assert.throws(() => validatePair(invalid, STAGING, STAGING_DB, true), /trial.*production-only gate/);
+  const legacy = mutate(PROD,
+    'BEACON_ACCOUNT_PSICOPOMPO_TRIAL_ENABLED=0\nBEACON_ACCOUNT_CLIENT_SECRET_HB_PSICOPOMPO_TRIAL=\n', '');
+  validatePair(legacy, STAGING, STAGING_DB, true);
+});
+
+test('Psicopompo trial activation and credentials are excluded from staging', () => {
+  const enabled = mutate(STAGING, 'BEACON_ACCOUNT_RUNTIME=1',
+    'BEACON_ACCOUNT_RUNTIME=1\nBEACON_ACCOUNT_PSICOPOMPO_TRIAL_ENABLED=1');
+  assert.throws(() => validatePair(PROD, enabled, STAGING_DB, true), /trial.*production-only gate/);
+  const secret = mutate(STAGING, 'BEACON_ACCOUNT_RUNTIME=1',
+    'BEACON_ACCOUNT_RUNTIME=1\nBEACON_ACCOUNT_PSICOPOMPO_TRIAL_ENABLED=0\n' +
+    'BEACON_ACCOUNT_CLIENT_SECRET_HB_PSICOPOMPO_TRIAL=synthetic-trial-secret-outside-issuer-32');
+  assert.throws(() => validatePair(PROD, secret, STAGING_DB, true), /HB_PSICOPOMPO_TRIAL must be empty/);
+});
+
 test('validator pins the production runtime role and bounded database password shape', () => {
   const wrongRole = mutate(PROD, 'postgresql://account_prod:', 'postgresql://earlybirds_preview:');
   assert.throws(() => validatePair(wrongRole, STAGING, STAGING_DB, true), /dedicated account_prod role/);
@@ -340,6 +375,7 @@ test('lifecycle verifies immutable provenance and does not downgrade schemas', (
   assert.ok(start.indexOf('account_backup_production') < start.indexOf('account_migrate_production'));
   assert.ok(start.indexOf('account_migrate_production') < start.indexOf('account_provision_production_role'));
   assert.ok(start.indexOf('account_provision_production_role') < start.indexOf('cutover_started=1', start.indexOf('if [ "$environment" = production ]')));
+  assert.ok(start.indexOf('cutover_started=1', start.indexOf('if [ "$environment" = production ]')) < start.indexOf('account_provision_production_authority'));
   assert.match(start, /flock -n 9/);
   assert.match(start, /account_backup_production/);
   assert.match(start, /account_restore_previous_runtime/);

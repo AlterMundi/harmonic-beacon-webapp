@@ -27,15 +27,23 @@ previous_sha=$(account_capture_previous_runtime "$environment")
 previous_worker_present=$(account_capture_previous_worker "$environment" "$previous_sha")
 cutover_started=0
 rollback_on_failure() {
-  status=$?
+  status=$1
   trap - EXIT HUP INT TERM
   if [ "$status" -ne 0 ] && [ "$cutover_started" -eq 1 ]; then
-    echo "beacon-account: cutover failed; restoring prior app image without downgrading the database" >&2
-    account_restore_previous_runtime "$environment" "$previous_sha" "$previous_worker_present" || true
+    echo "beacon-account: deployment failed; restoring prior runtime state without downgrading the database" >&2
+    if account_restore_previous_runtime "$environment" "$previous_sha" "$previous_worker_present"; then
+      echo 'beacon-account: prior runtime state restored' >&2
+    else
+      echo 'beacon-account: recovery failed; prior runtime was not confirmed restored' >&2
+      exit 1
+    fi
   fi
   exit "$status"
 }
-trap rollback_on_failure EXIT HUP INT TERM
+trap 'rollback_on_failure "$?"' EXIT
+trap 'rollback_on_failure 129' HUP
+trap 'rollback_on_failure 130' INT
+trap 'rollback_on_failure 143' TERM
 
 # Consume the image already built and bound by protected preflight; never
 # rebuild between the verified backup/restore and cutover.
@@ -48,8 +56,9 @@ if [ "$environment" = production ]; then
   account_migrate_production
   account_check_production_migrations after
   account_provision_production_role
-  account_provision_production_authority
+  # Provisioning commits shared authority state before replacing the runtime.
   cutover_started=1
+  account_provision_production_authority
   account_compose up -d --no-deps \
     account-mail-worker-production account-production
 else

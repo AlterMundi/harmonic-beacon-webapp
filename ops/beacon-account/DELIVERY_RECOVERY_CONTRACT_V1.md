@@ -87,8 +87,15 @@ publication converges by comparing the exact receipt before the terminal state
 CAS. Status emits evidence only when receipt and terminal state agree. A
 successful smoke receipt likewise advances `deployed` to terminal `delivered`
 before the request can be reused for rollback.
-Rollback restores only the previous Account app/worker image state and never
-downgrades the database. Receipts have exactly one of three mutually exclusive
+Production rollback first reconciles the static OAuth client inventory using
+the exact previous Account image and the preserved client configuration, then
+restores the previous app/worker image state. New clients absent from that image
+are disabled, without deleting accounts, sessions, tokens or client history.
+Keep prior client secrets and gates unchanged during delivery. A reconciliation
+error stops restoration and cannot produce a verified recovery receipt.
+Rollback never downgrades the database schema. A crash within `rollback-pending`
+still requires positive verification; that phase does not repeat side effects.
+Receipts have exactly one of three mutually exclusive
 states: successful candidate deployment, verified restoration, or verified
 synthetic interruption/restoration.
 

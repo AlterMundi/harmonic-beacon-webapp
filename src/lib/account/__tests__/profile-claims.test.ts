@@ -60,4 +60,19 @@ describe('Account OIDC profile boundary', () => {
             scopes: ['openid', 'email'],
         })).toMatchObject({ email: undefined, email_verified: false });
     });
+
+    it.each([
+        ['hb-psicopompo', 'BEACON_ACCOUNT_PSICOPOMPO_ENABLED'],
+        ['hb-psicopompo-trial', 'BEACON_ACCOUNT_PSICOPOMPO_TRIAL_ENABLED'],
+    ])('requires profile completion for activated %s', async (clientId, gate) => {
+        vi.stubEnv(gate, '1');
+        findProfile.mockResolvedValue({ displayName: 'Alias', realName: null });
+        await expect(accountOAuthProfileCompletionRequired('account-1', clientId)).resolves.toBe(true);
+        findProfile.mockResolvedValue({ displayName: 'Alias', realName: 'Single' });
+        await expect(accountOAuthProfileCompletionRequired('account-1', clientId)).resolves.toBe(false);
+        vi.stubEnv(gate, '0');
+        findProfile.mockClear();
+        await expect(accountOAuthProfileCompletionRequired('account-1', clientId)).resolves.toBe(false);
+        expect(findProfile).not.toHaveBeenCalled();
+    });
 });
