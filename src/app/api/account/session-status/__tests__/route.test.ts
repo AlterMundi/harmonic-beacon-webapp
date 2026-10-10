@@ -35,6 +35,7 @@ describe('Account RP session status backchannel', () => {
         vi.stubEnv('BEACON_ACCOUNT_CLIENT_SECRET_HB_LISTENER', secret);
         vi.stubEnv('BEACON_ACCOUNT_CLIENT_SECRET_HB_LIVE', `${secret}-live`);
         vi.stubEnv('BEACON_ACCOUNT_RATE_SECRET', `${secret}-rate`);
+        vi.stubEnv('BEACON_ACCOUNT_PSICOPOMPO_TRIAL_ENABLED', '0');
         ready.mockResolvedValue(true);
         limited.mockResolvedValue(true);
         db.findUnique.mockResolvedValue({
@@ -65,13 +66,18 @@ describe('Account RP session status backchannel', () => {
         expect(db.findUnique).not.toHaveBeenCalled();
     });
 
-    it('returns expiry only to the activated Psicopompo client', async () => {
-        vi.stubEnv('BEACON_ACCOUNT_PSICOPOMPO_ENABLED', '1');
-        vi.stubEnv('BEACON_ACCOUNT_CLIENT_SECRET_HB_PSICOPOMPO', secret);
+    it.each([
+        ['hb-psicopompo', 'BEACON_ACCOUNT_PSICOPOMPO_ENABLED', 'BEACON_ACCOUNT_CLIENT_SECRET_HB_PSICOPOMPO'],
+        ['hb-psicopompo-trial', 'BEACON_ACCOUNT_PSICOPOMPO_TRIAL_ENABLED', 'BEACON_ACCOUNT_CLIENT_SECRET_HB_PSICOPOMPO_TRIAL'],
+    ])('returns expiry to the activated %s client', async (clientId, gate, secretVariable) => {
+        vi.stubEnv(gate, '1');
+        vi.stubEnv(secretVariable, secret);
         const expiresAt = new Date(Date.now() + 8 * 3600 * 1000);
         db.findUnique.mockResolvedValue({ userId: 'opaque-account', expiresAt,
             securityRevision: 3, authorityEnvironment: 'production', user: { securityRevision: 3 } });
-        const response = await POST(request(undefined, undefined, 'hb-psicopompo'));
+        const response = await POST(request(undefined, undefined, clientId));
+        expect(response.status).toBe(200);
+        expect(response.headers.get('cache-control')).toBe('no-store');
         expect(await response.json()).toEqual({ active: true,
             iss: 'https://account.harmonicbeacon.com', sub: 'opaque-account',
             sid: 'central-session', expires_at: Math.floor(expiresAt.getTime() / 1000),
@@ -81,14 +87,17 @@ describe('Account RP session status backchannel', () => {
         expect(await live.json()).toEqual({ active: true,
             iss: 'https://account.harmonicbeacon.com', sub: 'opaque-account', sid: 'central-session',
         });
-        vi.stubEnv('BEACON_ACCOUNT_PSICOPOMPO_ENABLED', '0');
-        expect((await POST(request(undefined, undefined, 'hb-psicopompo'))).status).toBe(401);
+        vi.stubEnv(gate, '0');
+        expect((await POST(request(undefined, undefined, clientId))).status).toBe(401);
     });
 
-    it.each(['expired', 'revoked', 'wrong-subject', 'wrong-environment', 'missing'])(
-        'fails closed without expiry or identity fields when %s', async (reason) => {
+    it.each(['hb-psicopompo', 'hb-psicopompo-trial'].flatMap(clientId =>
+        ['expired', 'revoked', 'wrong-subject', 'wrong-environment', 'missing'].map(reason => [clientId, reason])))(
+        '%s fails closed without expiry or identity fields when %s', async (clientId, reason) => {
             vi.stubEnv('BEACON_ACCOUNT_PSICOPOMPO_ENABLED', '1');
+            vi.stubEnv('BEACON_ACCOUNT_PSICOPOMPO_TRIAL_ENABLED', '1');
             vi.stubEnv('BEACON_ACCOUNT_CLIENT_SECRET_HB_PSICOPOMPO', secret);
+            vi.stubEnv('BEACON_ACCOUNT_CLIENT_SECRET_HB_PSICOPOMPO_TRIAL', `${secret}-trial`);
             db.findUnique.mockResolvedValue(reason === 'missing' ? null : {
                 userId: reason === 'wrong-subject' ? 'another-account' : 'opaque-account',
                 expiresAt: new Date(Date.now() + (reason === 'expired' ? -60_000 : 60_000)),
@@ -96,11 +105,33 @@ describe('Account RP session status backchannel', () => {
                 authorityEnvironment: reason === 'wrong-environment' ? 'staging' : 'production',
                 user: { securityRevision: reason === 'revoked' ? 4 : 3 },
             });
-            const response = await POST(request(undefined, undefined, 'hb-psicopompo'));
+            const req = request(undefined, undefined, clientId);
+            req.headers.set('authorization', `Basic ${Buffer.from(`${clientId}:${secret}${
+                clientId === 'hb-psicopompo-trial' ? '-trial' : ''}`).toString('base64')}`);
+            const response = await POST(req);
             expect(response.status).toBe(200);
             expect(await response.json()).toEqual({ active: false });
         },
     );
+
+    it('rejects a production secret for trial and rejects trial at the staging issuer', async () => {
+        vi.stubEnv('BEACON_ACCOUNT_PSICOPOMPO_ENABLED', '1');
+        vi.stubEnv('BEACON_ACCOUNT_PSICOPOMPO_TRIAL_ENABLED', '1');
+        vi.stubEnv('BEACON_ACCOUNT_CLIENT_SECRET_HB_PSICOPOMPO', secret);
+        vi.stubEnv('BEACON_ACCOUNT_CLIENT_SECRET_HB_PSICOPOMPO_TRIAL', `${secret}-trial`);
+        const wrongSecret = await POST(request(undefined, undefined, 'hb-psicopompo-trial'));
+        expect(wrongSecret.status).toBe(401);
+        expect(await wrongSecret.json()).toEqual({ active: false });
+        vi.stubEnv('BEACON_ACCOUNT_BASE_URL', 'https://account-staging.harmonicbeacon.com');
+        const staging = new Request('https://account-staging.harmonicbeacon.com/api/account/session-status', {
+            method: 'POST', headers: { host: 'account-staging.harmonicbeacon.com',
+                'content-type': 'application/x-www-form-urlencoded',
+                authorization: `Basic ${Buffer.from(`hb-psicopompo-trial:${secret}-trial`).toString('base64')}` },
+            body: new URLSearchParams({ sid: 'central-session', sub: 'opaque-account' }),
+        });
+        expect((await POST(staging)).status).toBe(401);
+        expect(db.findUnique).not.toHaveBeenCalled();
+    });
 
     it('returns no subject/session fields when inactive', async () => {
         db.findUnique.mockResolvedValue(null);

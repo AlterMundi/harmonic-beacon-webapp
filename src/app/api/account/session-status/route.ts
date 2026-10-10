@@ -68,7 +68,7 @@ export async function POST(request: Request): Promise<Response> {
         session.authorityEnvironment === accountEnvironment());
     return Response.json(isActive
         ? { active: true, iss: accountOrigin(), sub, sid,
-            ...(definition.clientId === 'hb-psicopompo'
+            ...(definition.clientId === 'hb-psicopompo' || definition.clientId === 'hb-psicopompo-trial'
                 ? { expires_at: Math.floor(session!.expiresAt.getTime() / 1000) } : {}),
         }
         : { active: false }, {

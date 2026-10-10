@@ -164,6 +164,13 @@ export const ACCOUNT_STATIC_CLIENTS = [
         postLogoutRedirectUri: null,
         requiresCompleteProfile: true,
     },
+    {
+        clientId: 'hb-psicopompo-trial',
+        secretVariable: 'BEACON_ACCOUNT_CLIENT_SECRET_HB_PSICOPOMPO_TRIAL',
+        redirectUri: 'https://pruebas.psicopompo.altermundi.net/api/auth/beacon/callback',
+        postLogoutRedirectUri: null,
+        requiresCompleteProfile: true,
+    },
 ] as const;
 
 export function accountStaticClientSecrets(environment: Environment = process.env) {
@@ -178,6 +185,9 @@ export function activeAccountStaticClients(environment: Environment = process.en
     return ACCOUNT_STATIC_CLIENTS.filter((client) => {
         if (client.clientId === 'hb-psicopompo') {
             return selected !== 'staging' && environment.BEACON_ACCOUNT_PSICOPOMPO_ENABLED === '1';
+        }
+        if (client.clientId === 'hb-psicopompo-trial') {
+            return selected !== 'staging' && environment.BEACON_ACCOUNT_PSICOPOMPO_TRIAL_ENABLED === '1';
         }
         return selected === 'local' ||
             (selected === 'staging') === client.clientId.endsWith('-staging');

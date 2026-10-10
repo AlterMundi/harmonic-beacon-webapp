@@ -111,9 +111,15 @@ function validateEnvironment(env, kind, allowPlaceholders, stagingDatabaseEnv) {
     throw new Error('Psicopompo client requires an explicit production-only gate');
   }
   if (psicopompo === '1') active.push('BEACON_ACCOUNT_CLIENT_SECRET_HB_PSICOPOMPO');
+  const psicopompoTrial = env.get('BEACON_ACCOUNT_PSICOPOMPO_TRIAL_ENABLED') || '0';
+  if (!['0', '1'].includes(psicopompoTrial) || (!production && psicopompoTrial === '1')) {
+    throw new Error('Psicopompo trial client requires an explicit production-only gate');
+  }
+  if (psicopompoTrial === '1') active.push('BEACON_ACCOUNT_CLIENT_SECRET_HB_PSICOPOMPO_TRIAL');
   const inactive = production
     ? ['BEACON_ACCOUNT_CLIENT_SECRET_HB_LISTENER_STAGING', 'BEACON_ACCOUNT_CLIENT_SECRET_HB_LIVE_STAGING']
     : ['BEACON_ACCOUNT_CLIENT_SECRET_HB_LISTENER', 'BEACON_ACCOUNT_CLIENT_SECRET_HB_LIVE'];
+  if (!production) inactive.push('BEACON_ACCOUNT_CLIENT_SECRET_HB_PSICOPOMPO_TRIAL');
   active.forEach((key) => {
     const secret = required(env, key, 32);
     assertRealSecret(secret, key, allowPlaceholders);

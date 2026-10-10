@@ -390,7 +390,7 @@ account_image_supports_navigation_asset() (
     grep -Fxq 'BEACON_ACCOUNT_NAV_ASSET=1'
 )
 
-account_restore_previous_runtime() {
+account_restore_previous_runtime() (
   environment=$1
   previous_sha=$2
   previous_worker_present=${3:-1}
@@ -401,15 +401,21 @@ account_restore_previous_runtime() {
     docker rm -f "$worker" >/dev/null 2>&1 || true
     return 0
   fi
+  if [ "$environment" = production ]; then
+    # The previous image defines its exact inventory and ignores newer client
+    # flags. Existing production env values must be retained across delivery.
+    BEACON_ACCOUNT_IMAGE_TAG=$previous_sha BEACON_ACCOUNT_GIT_SHA=$previous_sha \
+      account_provision_production_authority || return 1
+  fi
   if [ "$previous_worker_present" -eq 1 ]; then
     BEACON_ACCOUNT_IMAGE_TAG=$previous_sha BEACON_ACCOUNT_GIT_SHA=$previous_sha \
       account_compose up -d --no-deps --no-build \
-        "account-mail-worker-$environment" "account-$environment"
-    account_wait_healthy "$worker"
+        "account-mail-worker-$environment" "account-$environment" || return 1
+    account_wait_healthy "$worker" || return 1
   else
     docker rm -f "$worker" >/dev/null 2>&1 || true
     BEACON_ACCOUNT_IMAGE_TAG=$previous_sha BEACON_ACCOUNT_GIT_SHA=$previous_sha \
-      account_compose up -d --no-deps --no-build "account-$environment"
+      account_compose up -d --no-deps --no-build "account-$environment" || return 1
   fi
-  account_wait_healthy "$container"
-}
+  account_wait_healthy "$container" || return 1
+)
