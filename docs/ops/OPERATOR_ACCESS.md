@@ -3,7 +3,7 @@
 A human may authorize a dedicated machine administrator for Live. This is
 separate from human Beacon Account sign-in and grants no authority over
 Account, Listen, DNS, real payments or other independently owned services.
-Machine ADMIN operations use the normal `/api/ops` and legacy `/api/admin`
+Machine ADMIN operations use the existing `/api/ops` routes, their normal
 policies and audit actor. Media joining/publication remains the ordinary room
 entitlement flow; this credential is not an attendee or facilitator identity.
 
@@ -77,7 +77,7 @@ No secret values go into argv, environment additions, logs or GitHub records.
   existing credential. Preserve/revoke the previous one before issuing another.
 - `revoke`: supply the exact credential `sessionId`. Revocation is immediate on
   the next API request. Preserve the private file until its disposition is known.
-- `request`: supply `method`, an `/api/ops/...` or `/api/admin/...` `apiPath`, and
+- `request`: supply `method`, an existing `/api/ops/...` `apiPath`, and
   optional JSON `body`. The helper reads its own credential file. API response
   bodies stay in the root-private result directory; stdout reports HTTP status
   only. Query and display only the fields relevant to the human's task.
