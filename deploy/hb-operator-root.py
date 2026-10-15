@@ -114,7 +114,7 @@ def operate(environment):
         request['tokenPath'] = '/run/operator-in/credential'; request['responsePath'] = '/run/operator-out/response'
     (inputs / 'request.json').write_text(json.dumps(request)); os.chmod(inputs / 'request.json', 0o600)
     # This record contains no credential values; private API responses remain in output/.
-    record = {'sourceSha': manifest['sourceSha'], 'bundleSha256': manifest['bundleSha256'],
+    record = {'helperSha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(), 'sourceSha': manifest['sourceSha'], 'bundleSha256': manifest['bundleSha256'],
         'runtimeSourceSha': revision, 'runtimeImage': runtime['Image'], 'environment': environment,
         'operation': operation, 'runId': run_id}
     (directory / 'record.json').write_text(json.dumps(record)); os.chmod(directory / 'record.json', 0o600)
