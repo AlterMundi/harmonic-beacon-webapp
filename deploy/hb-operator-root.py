@@ -122,6 +122,13 @@ def operate(environment):
     try:
         config = container_config(runtime, runtime['Image'], environment, inputs, outputs, run_id)
         cid = api('POST', '/containers/create?name=hb-operator-' + run_id, config)['Id']
+        observed = api('GET', '/containers/' + cid + '/json')
+        if observed['Image'] != runtime['Image'] or not observed['HostConfig']['ReadonlyRootfs'] or \
+            observed['HostConfig']['NetworkMode'] != 'container:' + runtime['Id'] or \
+            any(mount['RW'] for mount in observed['Mounts'] if mount['Destination'] == '/run/operator-in'):
+            raise RuntimeError('Operator execution boundary readback failed')
+        record['executionBoundaryVerified'] = True
+        (directory / 'record.json').write_text(json.dumps(record))
         api('POST', '/containers/' + cid + '/start')
         deadline = time.monotonic() + 90
         while True:
