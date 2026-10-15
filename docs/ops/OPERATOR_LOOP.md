@@ -156,6 +156,11 @@ another person's credentials or invent SQL substitutes. Record the required
 capability and its provisioning owner, not secrets. An authorized operator may
 already have the access; do not ask for it again without checking.
 
+For authorized non-browser operation, use the dedicated machine identity and
+reviewed root helper in [OPERATOR_ACCESS.md](OPERATOR_ACCESS.md). Its bounded
+bootstrap closure calls the same lifecycle/termination functions with the real
+operator actor; it is not a free-form SQL alternative.
+
 For residual sessions, use the authenticated Staff lifecycle endpoint documented
 in the route `src/app/api/ops/sessions/[id]/lifecycle/route.ts`, or its cockpit
 control. Re-read exact ID/status, participants and LiveKit room first. Note that

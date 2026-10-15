@@ -154,6 +154,7 @@ function mountRequest(webSessionRow: Record<string, unknown> | null, cookie = AT
     };
     vi.doMock('@/lib/db', () => ({ prisma, default: prisma }));
     vi.doMock('next/headers', () => ({
+        headers: vi.fn().mockResolvedValue(new Headers()),
         cookies: vi.fn().mockResolvedValue({
             get: (name: string) => (name === 'hb_session' && cookie ? { value: cookie } : undefined),
         }),
