@@ -1,7 +1,8 @@
 # Owner-operated Live app delivery
 
-This path updates only the app image while retaining the existing media staging
-configuration. It is owner-operated as root, with no runner sudo grant. It does
+This path updates the app image while retaining the existing media staging
+configuration. A closed optional permit can also update tapestry when its
+dependency artifact is part of the same qualified change. It is owner-operated as root, with no runner sudo grant. It does
 not replace the original installed #590 helper or its recovery state.
 
 Install the reviewed `hb-live-app-release.py` as
@@ -22,6 +23,13 @@ The owner writes `/etc/harmonic-beacon/live-app-release/permit.json` (root:root,
 - `sourceSha` and `priorSourceSha`: exact 40-character source revisions;
 - `candidateImageId` and `priorImageId`: distinct full `sha256:` image IDs;
 - `expiresAt`: timezone-qualified timestamp no more than 24 hours ahead.
+
+For an app+tapestry delivery, include all three additional fields:
+`candidateTapestryImageId`, `priorTapestryImageId` (full distinct image IDs), and
+`priorTapestrySourceSha`. The candidate tapestry image must carry the same source
+revision as the app candidate. Partial fields, unknown services and combination
+with the active-test exception are rejected. Rollback/forward proof binds the
+complete selected image set; production rechecks every selected staging image.
 
 The helper verifies image source labels, custody and the closed permit schema.
 The transaction binds the exact wrapper, engine and permit bytes. Do not edit
@@ -48,8 +56,8 @@ configuration and image. Expired permits or an event entering the future
 window do not prevent recovery of an already-mutated transaction; real
 activity continuity guards still apply. Failed apply attempts recovery.
 
-The shared app bridge lock serializes operations. Only app is stopped/replaced;
-media, database, worker, networks, mounts and runtime flags are retained. No
+The shared app bridge lock serializes operations. Only the selected app and optional tapestry images are replaced;
+LiveKit, playlist, database, worker, networks, mounts and runtime flags are retained. No
 migration, pull or build is performed by the helper. This procedure does not
 claim automated OCI delivery activation or qualify a different source.
 
