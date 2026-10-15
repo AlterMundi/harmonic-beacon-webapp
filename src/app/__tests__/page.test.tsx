@@ -280,7 +280,7 @@ describe('landing page', () => {
         expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Próximos encuentros.');
         expect(screen.getByText(/Encuentros gratuitos y sincrónicos en castellano/)).toBeInTheDocument();
         expect(screen.getByRole('heading', { level: 2, name: 'PRÓXIMOS ENCUENTROS EN VIVO' })).toBeInTheDocument();
-        expect(screen.getByRole('link', { name: /Conocer la Proyección del Mito/ })).toHaveAttribute(
+        expect(screen.getByRole('link', { name: /Conocer la Proyección Armónica del Mito/ })).toHaveAttribute(
             'href',
             'https://harmonicbeacon.com/proyeccion-armonica-del-mito/',
         );
