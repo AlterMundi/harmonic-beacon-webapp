@@ -112,6 +112,10 @@ async function main() {
 }
 
 if (process.argv[1]?.endsWith('beacon-operator.ts') || process.argv[1]?.endsWith('beacon-operator.cjs')) {
-    main().catch(() => { console.error('Beacon operator command failed; inspect private request and audit'); process.exitCode = 1; })
+    main().catch((error: unknown) => {
+        const name = error instanceof Error ? error.name : 'unknown';
+        const code = typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string' && /^[A-Za-z0-9_]+$/.test(error.code) ? error.code : 'unspecified';
+        console.error(JSON.stringify({ error: 'operator_command_failed', type: name, code })); process.exitCode = 1;
+    })
         .finally(() => prisma.$disconnect());
 }
