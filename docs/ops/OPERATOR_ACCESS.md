@@ -80,7 +80,10 @@ No secret values go into argv, environment additions, logs or GitHub records.
 - `request`: supply `method`, an existing `/api/ops/...` `apiPath`, and
   optional JSON `body`. The helper reads its own credential file. API response
   bodies stay in the root-private result directory; stdout reports HTTP status
-  only. Query and display only the fields relevant to the human's task.
+  only. The reviewed child shares the exact selected app network namespace and
+  sends to fixed loopback port 3000. Public ingress clears Authorization; local
+  operation does not require changing that public boundary. Fixed public Host
+  and Origin headers preserve the existing same-origin checks for Staff writes. Query and display only the fields relevant to the human's task.
 - `close`: a bounded bootstrap for human-authorized closure of exact residual
   events before the new Bearer-capable app is deployed. Supply the dedicated
   operator `email`, up to ten exact `sessionIds`, and a printable non-PII `reason`

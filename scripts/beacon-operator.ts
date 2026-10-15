@@ -88,11 +88,15 @@ export async function runOperator(r: OperatorRequest) {
     const token = (await readFile(r.tokenPath!, 'utf8')).trim();
     const operator = await resolveOperatorAuthorization(`Bearer ${token}`);
     if (!operator) throw new Error('Valid machine credential required');
-    const origin = r.environment === 'production' ? 'https://live.harmonicbeacon.com' : 'https://live-staging.harmonicbeacon.com';
+    // The root adapter shares the exact selected app's network namespace.
+    // Public ingress deliberately clears Authorization; keep this request local.
+    const origin = 'http://127.0.0.1:3000';
+    const publicOrigin = r.environment === 'production' ? 'https://live.harmonicbeacon.com' : 'https://live-staging.harmonicbeacon.com';
     const output = await createRootOutput(r.responsePath!);
     try {
         const response = await fetch(origin + r.apiPath, { method: r.method, redirect: 'error',
-            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json',
+                Origin: publicOrigin, Host: new URL(publicOrigin).host },
             ...(r.body === undefined ? {} : { body: JSON.stringify(r.body) }), signal: AbortSignal.timeout(30_000) });
         const bytes = await response.arrayBuffer();
         if (bytes.byteLength > 1_048_576) throw new Error('Operator response exceeds private output bound');
