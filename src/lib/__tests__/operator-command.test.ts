@@ -20,6 +20,7 @@ beforeEach(() => {
 describe('root operator command', () => {
     it('requires exact source/environment and named targets', () => {
         expect(validateOperatorRequest(request, env)).toEqual(request);
+        expect(validateOperatorRequest({ ...request, environment: 'staging' }, { ...env, BEACON_OPERATOR_ENVIRONMENT: 'staging', DATABASE_URL: 'postgresql://localhost/beacon_live_staging' })).toMatchObject({ environment: 'staging' });
         expect(() => validateOperatorRequest(request, { ...env, BEACON_GIT_SHA: 'b'.repeat(40) })).toThrow();
         expect(() => validateOperatorRequest(request, { ...env, BEACON_OPERATOR_ENVIRONMENT: 'staging' })).toThrow();
         expect(() => validateOperatorRequest({ ...request, sessionIds: [] }, env)).toThrow();

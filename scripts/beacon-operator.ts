@@ -26,7 +26,7 @@ export function validateOperatorRequest(value: unknown, env: Record<string, stri
         !/^[a-f0-9]{40}$/.test(r.expectedSourceSha) || r.expectedSourceSha !== env.BEACON_GIT_SHA ||
         env.BEACON_OPERATOR_ENVIRONMENT !== r.environment) throw new Error('Exact operator environment/source required');
     const database = new URL(env.DATABASE_URL ?? '');
-    if (!['postgres:','postgresql:'].includes(database.protocol) || database.pathname !== '/beacon') {
+    if (!['postgres:','postgresql:'].includes(database.protocol) || database.pathname !== (r.environment === 'production' ? '/beacon' : '/beacon_live_staging')) {
         throw new Error('Exact Beacon database required');
     }
     if (r.operation === 'close' && (!Array.isArray(r.sessionIds) || !r.sessionIds.length || r.sessionIds.length > 10 ||
