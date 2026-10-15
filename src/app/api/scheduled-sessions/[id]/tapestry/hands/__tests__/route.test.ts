@@ -83,6 +83,25 @@ beforeEach(() => {
 });
 
 describe('GET /api/scheduled-sessions/[id]/tapestry/hands', () => {
+    it('uses the confirmed event alias when LiveKit carries a neutral or stale name', async () => {
+        mocks.findMany.mockResolvedValue([
+            participant({ displayName: '  Ana María  ' }),
+            participant({ participantIdentity: 'lk-beto', displayName: 'Beto' }),
+        ]);
+        mocks.listParticipants.mockResolvedValue([
+            { identity: 'lk-ana', name: 'Participant' },
+            { identity: 'lk-beto', name: 'Old alias' },
+        ]);
+
+        const response = await GET(createRequest('http://x'), mockParams({ id: SESSION_ID }));
+        expect(await response.json()).toMatchObject({
+            hands: [{ name: 'Ana María' }, { name: 'Beto' }],
+        });
+        expect(mocks.findMany).toHaveBeenCalledWith(expect.objectContaining({
+            select: expect.objectContaining({ displayName: true }),
+        }));
+    });
+
     it('names connected waiting hands in queue order with their grid cells', async () => {
         const response = await GET(createRequest('http://x'), mockParams({ id: SESSION_ID }));
 

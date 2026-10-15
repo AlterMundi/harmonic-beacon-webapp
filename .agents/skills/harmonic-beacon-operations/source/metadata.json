@@ -1,13 +1,25 @@
 {
   "name": "harmonic-beacon-operations",
   "description": "Operate Harmonic Beacon from authoritative live state.",
-  "version": "0.2.0",
-  "author": "Nicolás Echániz, Codex, CompAII",
+  "version": "0.2.1",
+  "author": "Nicol\u00e1s Ech\u00e1niz, Codex, CompAII",
   "license": "Apache-2.0",
-  "platforms": ["linux", "macos", "windows"],
+  "platforms": [
+    "linux",
+    "macos",
+    "windows"
+  ],
   "hermes": {
-    "tags": ["harmonic-beacon", "operations", "release", "incident-response"],
+    "tags": [
+      "harmonic-beacon",
+      "operations",
+      "release",
+      "incident-response"
+    ],
     "category": "devops",
-    "related_skills": ["fast-forward-mode", "review-agent"]
+    "related_skills": [
+      "fast-forward-mode",
+      "review-agent"
+    ]
   }
 }

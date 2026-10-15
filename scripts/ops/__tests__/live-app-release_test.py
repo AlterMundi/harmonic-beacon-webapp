@@ -24,6 +24,36 @@ class Admission(unittest.TestCase):
         with self.assertRaises(RuntimeError):a.validate_permit({**p,'command':'sh'},'apply',now)
         with self.assertRaises(RuntimeError):a.validate_permit(p,'apply',now+datetime.timedelta(hours=2))
         self.assertEqual(a.validate_permit(p,'recover',now+datetime.timedelta(days=2)),p)
+    def tapestry_permit(self):
+        return {**self.permit(), 'candidateTapestryImageId':'sha256:'+'6'*64,
+                'priorTapestryImageId':'sha256:'+'7'*64, 'priorTapestrySourceSha':'8'*40}
+
+    def test_optional_tapestry_is_closed_all_or_none_and_cannot_use_live_test_exception(self):
+        p=self.tapestry_permit();now=datetime.datetime(2026,9,28,tzinfo=datetime.timezone.utc)
+        self.assertEqual(a.validate_permit(p,'prepare',now),p)
+        for field in a.TAPESTRY_FIELDS:
+            with self.assertRaises(RuntimeError):a.validate_permit({k:v for k,v in p.items() if k!=field},'prepare',now)
+            with self.assertRaises(RuntimeError):a.validate_permit({**p,field:'invalid'},'prepare',now)
+        with self.assertRaises(RuntimeError):a.validate_permit({**p,'activeTestSessionId':'1'*36},'prepare',now)
+        with self.assertRaises(RuntimeError):a.validate_permit({**p,'priorTapestryImageId':p['candidateTapestryImageId']},'prepare',now)
+
+    def test_selected_app_tapestry_requires_exact_joint_rehearsal_and_current_images(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p=self.tapestry_permit();e=SimpleNamespace(safe_path=lambda p:None)
+            first,forward=a.configure(e,p,True,'prepare',Path(tmp),'fingerprint')
+            self.assertEqual(set(e.IMAGES),{'app','tapestry'})
+            self.assertEqual(e.IMAGES['tapestry'],(p['candidateTapestryImageId'][7:],p['priorTapestryImageId'][7:]))
+            targets={'app':p['candidateImageId'],'tapestry':p['candidateTapestryImageId']}
+            for directory,phase in [(first,'rolled-back'),(forward,'applied')]:
+                d=directory/'staging';d.mkdir(parents=True)
+                (d/'state.json').write_text(json.dumps({'phase':phase,'candidateVerified':True,'helperSha256':'fingerprint','source':p['sourceSha'],'targets':targets}))
+            e.inspect=lambda name:{'Image':targets[name.removeprefix('hb-live-staging-')]}
+            calls=[];e.health=lambda names,*args:calls.append(names)
+            a.require_rehearsal(e,p,first,forward,'fingerprint')
+            self.assertEqual(set(calls[0]),{'app','tapestry'})
+            e.inspect=lambda name:{'Image':p['candidateImageId']}
+            with self.assertRaises(RuntimeError):a.require_rehearsal(e,p,first,forward,'fingerprint')
+
     def test_forward_window_never_blocks_interrupted_recovery(self):
         with tempfile.TemporaryDirectory() as tmp:
             e=SimpleNamespace(ROOT=Path(tmp),safe_path=lambda p:None)

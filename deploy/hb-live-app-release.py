@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Owner-only app release retaining the existing media staging configuration.
 
-No runner sudo grant. Root admits one exact image pair through the private permit.
+No runner sudo grant. Root admits exact app and optional tapestry image pairs through the private permit.
 The separately installed original #590 helper and its recovery state stay intact.
 """
 import datetime
@@ -18,15 +18,24 @@ ENGINE = Path('/usr/local/libexec/harmonic-beacon/live-app-release-v1/hb-live-me
 PERMIT = Path('/etc/harmonic-beacon/live-app-release/permit.json')
 ROOT = Path('/var/lib/harmonic-beacon/live-app-release')
 FIELDS = {'permitId', 'sourceSha', 'priorSourceSha', 'candidateImageId', 'priorImageId', 'expiresAt'}
+TAPESTRY_FIELDS = {'candidateTapestryImageId', 'priorTapestryImageId', 'priorTapestrySourceSha'}
 
 def validate_permit(value, verb, now=None):
-    if not isinstance(value, dict) or set(value) not in (FIELDS, FIELDS | {'activeTestSessionId'}):
+    if not isinstance(value, dict) or set(value) not in (FIELDS, FIELDS | {'activeTestSessionId'}, FIELDS | TAPESTRY_FIELDS):
         raise RuntimeError('invalid app release permit')
     for key, pattern in [('permitId', r'[0-9a-f]{64}'), ('sourceSha', r'[0-9a-f]{40}'),
                          ('priorSourceSha', r'[0-9a-f]{40}'), ('candidateImageId', r'sha256:[0-9a-f]{64}'),
                          ('priorImageId', r'sha256:[0-9a-f]{64}')]:
         if not isinstance(value[key], str) or not re.fullmatch(pattern, value[key]):
             raise RuntimeError('invalid app release identity')
+    if TAPESTRY_FIELDS <= set(value):
+        for key in ['candidateTapestryImageId', 'priorTapestryImageId']:
+            if not isinstance(value[key], str) or not re.fullmatch(r'sha256:[0-9a-f]{64}', value[key]):
+                raise RuntimeError('invalid exact tapestry image')
+        if not isinstance(value['priorTapestrySourceSha'], str) or not re.fullmatch(r'[0-9a-f]{40}', value['priorTapestrySourceSha']):
+            raise RuntimeError('invalid prior tapestry source')
+        if value['candidateTapestryImageId'] == value['priorTapestryImageId']:
+            raise RuntimeError('tapestry release requires a distinct candidate')
     if 'activeTestSessionId' in value and (not isinstance(value['activeTestSessionId'], str) or not re.fullmatch(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', value['activeTestSessionId'])):
         raise RuntimeError('invalid explicitly authorized test session')
     if value['candidateImageId'] == value['priorImageId']:
@@ -43,6 +52,8 @@ def validate_permit(value, verb, now=None):
 def configure(engine, permit, staging, verb, root, fingerprint):
     engine.IMAGES = {'app': (permit['candidateImageId'][7:], permit['priorImageId'][7:]) if staging
                      else (permit['priorImageId'][7:], permit['candidateImageId'][7:])}
+    if 'candidateTapestryImageId' in permit:
+        engine.IMAGES['tapestry'] = (permit['candidateTapestryImageId'][7:], permit['priorTapestryImageId'][7:]) if staging else (permit['priorTapestryImageId'][7:], permit['candidateTapestryImageId'][7:])
     engine.SOURCE = engine.PRIOR_SOURCE = permit['sourceSha']
     engine.implementation_digest = lambda: fingerprint
     transaction = root / permit['permitId']
@@ -62,6 +73,8 @@ def configure(engine, permit, staging, verb, root, fingerprint):
     return rehearsal, forward
 
 def require_rehearsal(engine, permit, rehearsal, forward, fingerprint):
+    targets = {'app': permit['candidateImageId']}
+    if 'candidateTapestryImageId' in permit: targets['tapestry'] = permit['candidateTapestryImageId']
     for directory, phase in [(rehearsal, 'rolled-back'), (forward, 'applied')]:
         path = directory / 'staging' / 'state.json'
         engine.safe_path(path)
@@ -69,12 +82,13 @@ def require_rehearsal(engine, permit, rehearsal, forward, fingerprint):
         if (value.get('phase') != phase or value.get('candidateVerified') is not True
             or value.get('helperSha256') != fingerprint
             or value.get('source') != permit['sourceSha']
-            or value.get('targets') != {'app': permit['candidateImageId']}):
+            or value.get('targets') != targets):
             raise RuntimeError('exact staging rollback and forward proof required')
-    observed = engine.inspect('hb-live-staging-app')
-    if not observed or observed['Image'] != permit['candidateImageId']:
-        raise RuntimeError('staging no longer runs the qualified candidate')
-    engine.health({'app': 'hb-live-staging-app'}, permit['sourceSha'], 'http://127.0.0.1:3200')
+    for service, image in targets.items():
+        observed = engine.inspect('hb-live-staging-' + service)
+        if not observed or observed['Image'] != image:
+            raise RuntimeError('staging no longer runs the qualified candidate')
+    engine.health({service: 'hb-live-staging-' + service for service in targets}, permit['sourceSha'], 'http://127.0.0.1:3200')
 
 def forward_admission_required(engine, staging, verb):
     if staging or verb not in ('prepare', 'apply'):
@@ -130,7 +144,10 @@ def main():
         raw = PERMIT.read_bytes()
         permit = validate_permit(json.loads(raw), sys.argv[2])
         fingerprint = hashlib.sha256(ENGINE.read_bytes() + Path(__file__).read_bytes() + raw).hexdigest()
-        for field, source in [('candidateImageId', 'sourceSha'), ('priorImageId', 'priorSourceSha')]:
+        identities = [('candidateImageId', 'sourceSha'), ('priorImageId', 'priorSourceSha')]
+        if 'candidateTapestryImageId' in permit:
+            identities += [('candidateTapestryImageId', 'sourceSha'), ('priorTapestryImageId', 'priorTapestrySourceSha')]
+        for field, source in identities:
             image = engine.api('GET', '/images/' + permit[field] + '/json')
             if image['Config'].get('Labels', {}).get('org.opencontainers.image.revision') != permit[source]:
                 raise RuntimeError('image source identity mismatch')

@@ -91,7 +91,10 @@ withdrew the inferred preventive freeze on 27 September.
 For later app-only changes in this owner-authorized batch,
 [deploy/LIVE_APP_RELEASE.md](../../deploy/LIVE_APP_RELEASE.md) admits an exact
 root-owned image-pair permit, separate engine/state, and mandatory staging
-rollback plus forward proof. It retains the media staging configuration and
+rollback plus forward proof. Its closed optional tapestry image pair supports
+app+tapestry qualification when the reviewed change includes that artifact, with
+the same exact combined rollback/forward proof and no active-test exception.
+It retains the media staging configuration and
 original #590 recovery helper. It grants no runner authority and preserves the
 24-hour forward-deployment exclusion and actual activity continuity guards.
 

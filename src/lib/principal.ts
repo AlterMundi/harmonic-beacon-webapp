@@ -20,7 +20,8 @@
  * by review.
  */
 
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
+import { OPERATOR_ISSUER, OPERATOR_TOKEN_PREFIX, resolveOperatorAuthorization } from '@/lib/operator-credentials';
 import type { StaffRole, TicketTier } from '@prisma/client';
 
 import { prisma } from '@/lib/db';
@@ -182,7 +183,7 @@ export async function principalFromToken(
     token: string | null | undefined,
     now = new Date(),
 ): Promise<Principal | null> {
-    if (!token) {
+    if (!token || token.startsWith(OPERATOR_TOKEN_PREFIX)) {
         return null;
     }
 
@@ -235,7 +236,7 @@ export async function principalFromToken(
         },
     });
 
-    if (!webSession) {
+    if (!webSession || webSession.accountIssuer === OPERATOR_ISSUER) {
         return null;
     }
 
@@ -319,6 +320,8 @@ export async function principalFromToken(
 
 /** Resolve the caller of the current request. */
 export async function currentPrincipal(now = new Date()): Promise<Principal | null> {
+    const authorization = (await headers()).get('authorization');
+    if (authorization !== null) return (await resolveOperatorAuthorization(authorization, now))?.principal ?? null;
     const store = await cookies();
     return principalFromToken(store.get(SESSION_COOKIE_NAME)?.value, now);
 }

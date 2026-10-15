@@ -40,3 +40,14 @@ candidate, phase, relevant runs, blocker and next action. Do not copy secrets,
 customer data or private skill history into it. After interruption, consult the
 target before repeating an action. Completion requires the requested deployed
 behavior and readback, not merely a report, merged PR or green CI.
+
+## Non-browser operator access
+
+For human-authorized machine administration, consult
+`docs/ops/OPERATOR_ACCESS.md` in the owning checkout.
+Verify the installed reviewed helper, credential identity and actual target before
+use. Reuse dedicated revocable Bearer access for Staff operations; do not borrow
+human cookies or assume that a browser login is the only supported route. The
+root bootstrap closure is limited to exact human-authorized residual events and
+calls the normal lifecycle functions. This route does not grant media participation
+or authority over separately owned services.

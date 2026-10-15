@@ -29,6 +29,7 @@ function withWebSession(row: WebSessionRow) {
 
 function withCookie(value: string | undefined) {
     vi.doMock('next/headers', () => ({
+        headers: vi.fn().mockResolvedValue(new Headers()),
         cookies: vi.fn().mockResolvedValue({
             get: (name: string) => (name === SESSION_COOKIE_NAME && value ? { value } : undefined),
         }),

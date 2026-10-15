@@ -17,6 +17,7 @@ import type { StaffRole } from '@prisma/client';
 
 import { prisma } from '@/lib/db';
 import { SESSION_COOKIE_NAME, digestSessionToken } from '@/lib/session-auth';
+import { OPERATOR_ISSUER, OPERATOR_TOKEN_PREFIX, resolveOperatorAuthorization } from '@/lib/operator-credentials';
 import {
     beaconAccountEnabled,
     validatedAccountIdentity,
@@ -37,7 +38,7 @@ export type StaffPrincipal = {
  * rather than staff, or the staff account has been disabled.
  */
 export async function resolveStaffByToken(token: string | undefined): Promise<StaffPrincipal | null> {
-    if (!token) {
+    if (!token || token.startsWith(OPERATOR_TOKEN_PREFIX)) {
         return null;
     }
 
@@ -46,7 +47,7 @@ export async function resolveStaffByToken(token: string | undefined): Promise<St
         include: { staffUser: true },
     });
 
-    if (!session || !session.staffUser) {
+    if (!session || !session.staffUser || session.accountIssuer === OPERATOR_ISSUER) {
         return null;
     }
     if (session.revokedAt !== null || session.expiresAt <= new Date()) {
@@ -80,5 +81,7 @@ export async function resolveStaffByToken(token: string | undefined): Promise<St
 }
 
 export async function resolveStaffSession(request: NextRequest): Promise<StaffPrincipal | null> {
+    const authorization = request.headers.get('authorization');
+    if (authorization !== null) return (await resolveOperatorAuthorization(authorization))?.staff ?? null;
     return resolveStaffByToken(request.cookies.get(SESSION_COOKIE_NAME)?.value);
 }

@@ -91,6 +91,7 @@ export async function GET(
             take: MAX_HAND_CANDIDATES,
             select: {
                 participantIdentity: true,
+                displayName: true,
                 publishGrantedAt: true,
                 publishRevokedAt: true,
                 staffUser: { select: { name: true } },
@@ -133,7 +134,8 @@ export async function GET(
                 // a configuration detail.
             }
             return {
-                name: participant.staffUser?.name ??
+                name: participant.staffUser?.name?.trim() ||
+                    participant.displayName?.trim() ||
                     (liveIdentities.get(participant.participantIdentity) || 'Attendee'),
                 column: cell?.column ?? null,
                 row: cell?.row ?? null,
