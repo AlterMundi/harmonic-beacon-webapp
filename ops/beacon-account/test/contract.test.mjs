@@ -568,6 +568,23 @@ test('nginx keeps Account hosts isolated and never logs token-bearing routes', (
   }
 });
 
+test('Account revalidation avoids shared-IP quotas without exempting sibling routes', () => {
+  for (const name of ['account.harmonicbeacon.com.conf.template',
+    'account-staging.harmonicbeacon.com.conf.template']) {
+    const nginx = fs.readFileSync(path.join(ROOT, 'nginx', name), 'utf8');
+    const start = nginx.indexOf('    location = /api/account/session-status {');
+    assert.ok(start >= 0);
+    const exact = nginx.slice(start, nginx.indexOf('\n    }', start));
+    assert.match(exact, /if \(\$request_method != POST\) \{ return 405; \}/);
+    assert.match(exact, /client_max_body_size 16k;/);
+    assert.match(exact, /access_log off;/);
+    assert.match(exact, /Cache-Control "private, no-store"/);
+    assert.doesNotMatch(exact, /limit_req\b|return 200|Authorization/);
+    const sibling = nginx.slice(nginx.indexOf('    location ^~ /api/account/ {'));
+    assert.match(sibling, /limit_req zone=beacon_account_(prod|staging)_auth burst=10 nodelay;/);
+  }
+});
+
 test('Account ACME bootstraps expose only the exact certificate challenge', () => {
   for (const [name, host] of [
     ['account-acme-bootstrap.conf.template', 'account.harmonicbeacon.com'],
