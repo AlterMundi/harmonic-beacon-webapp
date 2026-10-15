@@ -138,6 +138,19 @@ server {
         add_header Referrer-Policy "no-referrer" always;
     }
 
+    # Server-to-server revalidation authenticates and limits by client/sub in
+    # the application. A shared egress IP must not pool participant quotas.
+    location = /api/account/session-status {
+        if ($request_method != POST) { return 405; }
+        access_log off;
+        client_max_body_size 16k;
+        proxy_pass http://127.0.0.1:13002;
+        add_header Cache-Control "private, no-store" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "no-referrer" always;
+    }
+
     location ^~ /api/account/ {
         if ($request_method !~ ^(GET|HEAD|POST)$) { return 405; }
         access_log off;

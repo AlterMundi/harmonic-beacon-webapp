@@ -139,6 +139,28 @@ describe('Account RP session status backchannel', () => {
         expect(await response.json()).toEqual({ active: false });
     });
 
+    it('keeps client-scoped throttling before session lookup without an origin bucket', async () => {
+        limited.mockResolvedValue(false);
+        const response = await POST(request());
+        expect(response.status).toBe(429);
+        expect(await response.json()).toEqual({ active: false });
+        expect(limited).toHaveBeenCalledWith(expect.objectContaining({
+            purpose: 'session-status-hb-listener', email: 'opaque-account',
+            includeOriginBucket: false,
+        }));
+        expect(db.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('rejects unauthenticated requests before client throttling and session lookup', async () => {
+        const req = request();
+        req.headers.delete('authorization');
+        const response = await POST(req);
+        expect(response.status).toBe(401);
+        expect(await response.json()).toEqual({ active: false });
+        expect(limited).not.toHaveBeenCalled();
+        expect(db.findUnique).not.toHaveBeenCalled();
+    });
+
     it('compares the full confidential-client secret without stripping a prefix', async () => {
         const wrong = request();
         wrong.headers.set('authorization', `Basic ${Buffer.from(
