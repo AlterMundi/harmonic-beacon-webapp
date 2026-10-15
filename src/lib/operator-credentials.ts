@@ -77,7 +77,7 @@ export async function issueOperatorCredential(userId: string, ttlHours: number, 
         const created = await tx.webSession.create({ data: {
             tokenDigest: digestSessionToken(token), staffUserId: userId,
             accountIssuer: OPERATOR_ISSUER, accountSubject: userId,
-            accountSessionId: OPERATOR_SESSION, expiresAt, createdAt: now,
+            accountSessionId: OPERATOR_SESSION, accountValidatedAt: now, expiresAt, createdAt: now,
         } });
         await tx.auditLog.create({ data: { actorUserId: userId, actorRole: user.role,
             action: 'operator.credential.issued', targetType: 'WebSession', targetId: created.id,

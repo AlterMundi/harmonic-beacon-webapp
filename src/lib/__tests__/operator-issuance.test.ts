@@ -38,7 +38,7 @@ describe('root operator provisioning and revocation', () => {
     it('stores only the issued token digest and does not audit the secret', async () => {
         const result = await issueOperatorCredential(user.id, 24);
         expect(result.token).toMatch(/^hbop_v1_[A-Za-z0-9_-]{43}$/);
-        expect(m.sessionCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ tokenDigest: digestSessionToken(result.token), accountIssuer: OPERATOR_ISSUER, accountSubject: user.id, accountSessionId: OPERATOR_SESSION }) });
+        expect(m.sessionCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ tokenDigest: digestSessionToken(result.token), accountIssuer: OPERATOR_ISSUER, accountSubject: user.id, accountSessionId: OPERATOR_SESSION, accountValidatedAt: expect.any(Date) }) });
         expect(JSON.stringify(m.audit.mock.calls)).not.toContain(result.token);
         expect(JSON.stringify(m.sessionCreate.mock.calls)).not.toContain(result.token);
     });
