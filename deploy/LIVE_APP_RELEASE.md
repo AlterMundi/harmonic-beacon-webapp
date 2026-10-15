@@ -31,6 +31,36 @@ revision as the app candidate. Partial fields, unknown services and combination
 with the active-test exception are rejected. Rollback/forward proof binds the
 complete selected image set; production rechecks every selected staging image.
 
+## Build-context permissions
+
+Keep release snapshots, permits and credentials root-private. The tracked Docker
+build context must still have application-readable public assets: extracting a Git
+archive under a restrictive root umask can leave nested public directories at
+0700, which Docker preserves. Use 0755 for tracked context directories without
+changing the private artifact parent, credential files or release snapshots.
+
+Before staging, verify the exact candidate image as its configured application
+user. Do not override that user with root:
+
+```bash
+docker run --rm --network none --read-only --cap-drop ALL \
+  --entrypoint node "$candidate_image" -e '
+const fs = require("fs"), path = require("path");
+if (process.getuid() === 0) throw Error("non-root application user required");
+const root = "/app/public";
+for (const name of fs.readdirSync(root, { recursive: true })) {
+  fs.accessSync(path.join(root, name), fs.constants.R_OK);
+}
+console.log("public assets readable by application user");'
+```
+
+An unreadable asset rejects that image before replacement. Rebuild from the same
+reviewed source with corrected context modes, retain the failed image and its
+transaction evidence, and admit a fresh exact image permit after recovery.
+Never edit an active transaction's helper or permit to substitute an image.
+
+## Transaction and rehearsal
+
 The helper verifies image source labels, custody and the closed permit schema.
 The transaction binds the exact wrapper, engine and permit bytes. Do not edit
 any of those during a transaction: recovery requires the original bytes.

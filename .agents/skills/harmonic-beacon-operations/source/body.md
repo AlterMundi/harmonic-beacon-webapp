@@ -35,6 +35,10 @@ work and keep one owner per mutable target.
   and continue independent in-scope work. Do not change identities or weaken
   branch protection to manufacture independent approval.
 
+For owner-operated Live app/tapestry images, use `deploy/LIVE_APP_RELEASE.md`,
+including its build-context permission guidance and non-root public-asset preflight.
+Root-private artifact custody must not make the application image unreadable.
+
 Keep one continuation record in the owning issue/PR with owner, objective,
 candidate, phase, relevant runs, blocker and next action. Do not copy secrets,
 customer data or private skill history into it. After interruption, consult the
