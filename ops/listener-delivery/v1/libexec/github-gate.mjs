@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 const API_ROOT = 'https://api.github.com/repos/AlterMundi/harmonic-beacon-webapp';
 export const REVIEWED_WORKFLOW_SHA256 = Object.freeze({
   delivery: 'bdc1f2c9fdf05d44c852b83a435f2b8c3bb6b9df6c54f721bb27e24cc639290c',
-  ci: 'd97238427baf50958b0432239c542cc88bb9c604fdf652dc7819697875766e68',
+  ci: '762860f5cf38faf6db269dcef1044e6c798f76837ec72e884a91d04a3d5d2ec7',
 });
 export const EXPECTED_CI_CHECKS = Object.freeze([
   'listener-reactive',

@@ -116,6 +116,20 @@ Production rejects this operation.
 
 ## Activation gates
 
+Before a new source-bound dispatch, preserve the previous private deploy env and
+installed lifecycle bundle, then align both `BEACON_ACCOUNT_GIT_SHA` and
+`BEACON_ACCOUNT_IMAGE_TAG` in the existing root-only deploy file with the exact
+qualified source. Keep the build-time coordinate accurate and all secret/provider
+values unchanged. A matching installed source bundle alone does not select the
+candidate: preflight deliberately rejects stale deploy selectors before effects.
+
+Capture actual prior app/worker image IDs and verify their commit-tag references
+resolve to those same IDs before cutover. A shared SHA tag can have been rebuilt
+for another environment; matching source alone is not proof of restoring the
+original artifact. Retain the actual images independently and never rebuild a
+prior image as recovery. Keep the source-bound lane stable through the workflow
+and its final receipt.
+
 Activation is external to this change. An administrator/operator must:
 
 1. protect the `account-staging` and `account-production` environments, restrict

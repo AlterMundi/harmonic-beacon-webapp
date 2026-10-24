@@ -4,6 +4,11 @@ This directory defines the **inactive, fail-closed** Listen delivery contract fo
 `early-birds`. It does not deploy anything merely by being merged. Account,
 product, payment, OIDC, and public-copy surfaces are outside this contract.
 
+This contract governs runner automation. While inactive, it does not supersede
+the existing authorized owner-operated root helpers linked from the parent
+README. Those helpers retain their own exact-source, backup, staging, protected
+runtime and rollback requirements; they are not a fallback available to runners.
+
 ## Trust boundary
 
 The self-hosted runner may invoke only:
@@ -143,3 +148,7 @@ a durable CAS; an existing different result is a conflict.
   or host ownership/modes. Those remain external activation prerequisites.
 - This adapter does not change Account behavior, product/payment semantics,
   OIDC, public copy, dependencies, or the existing early-birds lane.
+
+The reviewed CI workflow fingerprint includes the maintained Account trigger and
+production dependency/native-codec checks. When that workflow changes, review its
+bytes and update the pinned fingerprint together; the contract test rejects drift.
