@@ -4,6 +4,29 @@ This package prepares the production Listener relying-party secret without
 changing the running Listener or enabling Account. It deliberately precedes
 the coordinated Account/Listener cutover.
 
+## Existing owner-operated release path
+
+After the first cutover, these same root helpers support ordinary immutable
+Listener releases, including dependency patches. Use only a root-owned clean
+release checkout at the exact qualified source; never execute them from a
+runner checkout or a development tree writable by application/service users.
+Authorization comes from the human's selected operation, not SSH access.
+
+Prove the candidate and rollback/forward on isolated identity staging first.
+Both Compose builds use the same root Dockerfile and build-argument contract: retain
+the tested image ID and tag that exact image for production instead of rebuilding
+it. Verify its baked SHA/schema and non-root access to public assets. Capture
+actual prior image IDs and verify their commit-tag references resolve to those
+same IDs; preserve them independently. Retain the private activation state for
+the explicit rollback helper. No database downgrade or stream/worker restart is
+part of an app-only patch.
+
+The separate `listener-delivery/v1` runner contract remains inactive until its
+external installation and protected-runner setup are complete. Owner operation
+does not install or activate that automation or expand another operator's grants.
+
+## Preparation and activation
+
 1. Build the exact reviewed `early-birds` SHA as
    `harmonic-beacon/earlybirds-preview-listener:<sha40>`, with
    `EARLYBIRDS_PREVIEW_SCHEMA_VERSION` equal to the exact

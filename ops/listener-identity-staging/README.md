@@ -5,6 +5,15 @@ This stack replaces the disposable `listener-ui-dev` process behind
 and a dedicated PostgreSQL database. It does not share the production Listener
 database, volume or database network.
 
+For an authorized dependency release, use these reviewed root helpers from a
+clean root-owned checkout of the qualified commit. Preserve the current image
+and deployment configuration, verify that its commit tag resolves to the actual
+running image ID, then exercise `start.sh`, `rollback.sh`, and a separate forward
+`start.sh`. Record real health, source/image IDs and protected-runtime readback.
+Keep tracked source directories readable (0755) and regular files at their Git
+modes (0644/0755) inside the private release parent; a restrictive clone umask
+must not become unreadable public assets in the application image.
+
 ## Frozen topology
 
 - Compose project: `listener-identity-staging`

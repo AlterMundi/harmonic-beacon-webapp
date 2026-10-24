@@ -4,6 +4,11 @@ This directory defines the **inactive, fail-closed** Listen delivery contract fo
 `early-birds`. It does not deploy anything merely by being merged. Account,
 product, payment, OIDC, and public-copy surfaces are outside this contract.
 
+This contract governs runner automation. While inactive, it does not supersede
+the existing authorized owner-operated root helpers linked from the parent
+README. Those helpers retain their own exact-source, backup, staging, protected
+runtime and rollback requirements; they are not a fallback available to runners.
+
 ## Trust boundary
 
 The self-hosted runner may invoke only:
