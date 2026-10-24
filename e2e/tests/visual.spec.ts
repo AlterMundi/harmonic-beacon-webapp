@@ -52,10 +52,16 @@ async function resetStageRoom(): Promise<void> {
  */
 
 stackTest.describe('visual baselines', () => {
-    stackTest('landing', async ({ page }) => {
+    stackTest('landing', async ({ page }, testInfo) => {
         await page.goto(ROUTES.landing);
-        await expect(page.getByRole('link', { name: 'Ingresar al evento' })).toHaveCount(4);
-        await expect(page).toHaveScreenshot('landing.png', { fullPage: true });
+        await expect(page.getByRole('link', { name: 'Ingresar al evento' })).toHaveCount(6);
+        // The 320 px project keeps full-document geometry coverage in
+        // responsive.spec.ts. Its screenshot is viewport-bound because the
+        // hosted runner's fallback font metrics vary the six-card page height
+        // by one line; 390 px retains the full-page mobile visual contract.
+        await expect(page).toHaveScreenshot('landing.png', {
+            fullPage: testInfo.project.name !== 'w320',
+        });
     });
 
     stackTest('staff login', async ({ page }) => {

@@ -10,7 +10,7 @@ import Link from "next/link";
 
 import { EventLocalTime, EventSchedule } from "@/components/events/EventSchedule";
 import { prisma } from "@/lib/db";
-import { isPublicCycleSession } from "@/lib/public-cycle";
+import { isPublicFreeSession } from "@/lib/public-cycle";
 import { redactError } from "@/lib/redact";
 
 import LoginClient from "./login/LoginClient";
@@ -103,7 +103,7 @@ export default async function LandingPage({
         : null;
     const accountError = params.account_error === '1';
     const events = await weekendEvents();
-    const hasTicketedEvents = events === null || events.some((event) => !isPublicCycleSession(event.id));
+    const hasTicketedEvents = events === null || events.some((event) => !isPublicFreeSession(event.id));
     const purchaseUrlSession1 = process.env.TICKET_PURCHASE_URL_SESSION_1 || process.env.TICKET_PURCHASE_URL;
     const purchaseUrlSession2 = process.env.TICKET_PURCHASE_URL_SESSION_2 || process.env.TICKET_PURCHASE_URL;
     const purchaseUrlFor = (language: string) =>
@@ -149,7 +149,7 @@ export default async function LandingPage({
                         <EventSchedule locale={locale}>
                             <ul className="grid gap-4 md:grid-cols-2">
                                 {events.map((event) => {
-                                    const publicCycle = isPublicCycleSession(event.id);
+                                    const publicFreeSession = isPublicFreeSession(event.id);
                                     return (
                                 <li key={event.id} className="event-card">
                                     <div className="flex items-start justify-between gap-3">
@@ -157,7 +157,7 @@ export default async function LandingPage({
                                             <p className="event-card__label">
                                                 {event.language === "ENGLISH" ? copy.english : copy.spanish}
                                             </p>
-                                            {publicCycle && (
+                                            {publicFreeSession && (
                                                 <>
                                                     <h3 className="font-serif text-xl text-[var(--paper)]">{event.title}</h3>
                                                     {event.description && (
@@ -169,13 +169,13 @@ export default async function LandingPage({
                                         </div>
                                         <div className="text-right">
                                             <p className="text-xs font-mono text-[var(--text-secondary)]">
-                                                {publicCycle ? (locale === 'en' ? 'Free' : 'Gratis') : (event.language === "ENGLISH" ? "US $50" : "US $20")}
+                                                {publicFreeSession ? (locale === 'en' ? 'Free' : 'Gratis') : (event.language === "ENGLISH" ? "US $50" : "US $20")}
                                             </p>
                                         </div>
                                     </div>
 
                                     <div className="mt-4 pt-4 border-t border-[var(--border-subtle)]">
-                                        {publicCycle ? (
+                                        {publicFreeSession ? (
                                             <>
                                                 <p className="text-xs leading-relaxed text-[var(--text-secondary)]">
                                                     {copy.accountEntryHint}
@@ -202,7 +202,7 @@ export default async function LandingPage({
                                                 {copy.salesSoon}
                                             </p>
                                         )}
-                                        {!publicCycle && (
+                                        {!publicFreeSession && (
                                             <p className="mt-3 text-xs text-[var(--text-secondary)]">
                                                 USD $50 {copy.globalNorth} · USD $20 {copy.globalSouth}
                                             </p>
