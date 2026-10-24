@@ -1,42 +1,6 @@
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
-import path from 'node:path';
 
-import {
-    evaluateProductionAudit,
-    type InstalledAuditPackage,
-    type InstalledAuditPackages,
-} from '../src/lib/production-audit-guard';
-
-function readInstalledPackage(relativePath: string): InstalledAuditPackage {
-    const packagePath = path.join(process.cwd(), relativePath, 'package.json');
-    const parsed = JSON.parse(readFileSync(packagePath, 'utf8')) as {
-        version?: unknown;
-        dependencies?: unknown;
-    };
-
-    if (typeof parsed.version !== 'string') {
-        throw new Error(`Missing package version at ${relativePath}`);
-    }
-
-    const dependencies = parsed.dependencies ?? {};
-    if (typeof dependencies !== 'object' || dependencies === null || Array.isArray(dependencies)) {
-        throw new Error(`Missing dependency map at ${relativePath}`);
-    }
-
-    return {
-        version: parsed.version,
-        dependencies: dependencies as Record<string, string>,
-    };
-}
-
-function readInstalledPackages(): InstalledAuditPackages {
-    return {
-        prisma: readInstalledPackage('node_modules/prisma'),
-        '@prisma/config': readInstalledPackage('node_modules/@prisma/config'),
-        'deepmerge-ts': readInstalledPackage('node_modules/deepmerge-ts'),
-    };
-}
+import { evaluateProductionAudit } from '../src/lib/production-audit-guard';
 
 const audit = spawnSync(
     'npm',
@@ -57,14 +21,7 @@ try {
     process.exit(1);
 }
 
-let installed: InstalledAuditPackages | undefined;
-try {
-    installed = readInstalledPackages();
-} catch {
-    installed = undefined;
-}
-
-const decision = evaluateProductionAudit(report, installed);
+const decision = evaluateProductionAudit(report);
 const log = decision.ok ? console.log : console.error;
 log(decision.message);
 process.exit(decision.ok ? 0 : 1);
