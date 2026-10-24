@@ -62,3 +62,7 @@ normal API audit without browser automation or general Docker/sudo access.
 Receiving tool installation, access verification and staging acceptance are
 separate evidence; do not claim another operator is ready from a shared key or
 a published skill alone.
+
+When onboarding a receiver, distinguish its harness PATH from a diagnostic
+non-login shell. Check existing user-local tools and authenticated bindings
+before installing replacements; record the actual invocation in its runbook.

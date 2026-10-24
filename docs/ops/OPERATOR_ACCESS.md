@@ -142,3 +142,9 @@ this broker does not issue permits or grant arbitrary host execution. Qualify th
 receiving operator with an isolated staging task and recovery before claiming
 production delivery competence. Keep machine-specific routes in the receiver's
 private binding, not in public documentation or the shared skill.
+
+Before installing receiving tools, inspect both the harness PATH and existing
+user installations such as `~/.local/bin`. A command missing from an Incus
+non-login shell does not establish that the body lacks it. Reuse and test its
+existing authenticated CLI before installing another copy or touching credentials.
+Use explicit paths in the receiving binding when shell discovery differs.
