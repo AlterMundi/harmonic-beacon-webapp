@@ -148,3 +148,7 @@ a durable CAS; an existing different result is a conflict.
   or host ownership/modes. Those remain external activation prerequisites.
 - This adapter does not change Account behavior, product/payment semantics,
   OIDC, public copy, dependencies, or the existing early-birds lane.
+
+The reviewed CI workflow fingerprint includes the maintained Account trigger and
+production dependency/native-codec checks. When that workflow changes, review its
+bytes and update the pinned fingerprint together; the contract test rejects drift.
