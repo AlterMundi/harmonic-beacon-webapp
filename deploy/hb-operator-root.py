@@ -77,9 +77,17 @@ def container_config(runtime, image, environment, inputs, outputs, run_id):
             'Binds': [str(inputs) + ':/run/operator-in:ro', str(outputs) + ':/run/operator-out:rw'],
             'Tmpfs': {'/tmp': 'rw,noexec,nosuid,nodev,size=16m'}}}
 
-def operate(environment):
+def profile_directory(environment, operator=None):
+    if environment not in TARGETS: raise RuntimeError("Unknown environment")
+    if operator is not None and not re.fullmatch(r"[a-z][a-z0-9-]{0,31}", operator):
+        raise RuntimeError("Invalid operator profile")
+    base = CONFIG / environment
+    return base if operator is None else base / "operators" / operator
+
+def operate(environment, operator=None):
     if environment not in TARGETS: raise RuntimeError('Unknown environment')
-    request_file = CONFIG / environment / 'request.json'
+    profile = profile_directory(environment, operator)
+    request_file = profile / 'request.json'
     for path in [Path(__file__).resolve(), BUNDLE, MANIFEST, request_file]: custody(path, path in [MANIFEST, request_file])
     if request_file.stat().st_size > 65536 or MANIFEST.stat().st_size > 16384 or BUNDLE.stat().st_size > 8_388_608:
         raise RuntimeError('Input size bound exceeded')
@@ -102,7 +110,7 @@ def operate(environment):
     operation = request.get('operation')
     if operation not in ['provision','revoke','close','request']: raise RuntimeError('Unsupported operation')
     if request.get('tokenPath') or request.get('responsePath'): raise RuntimeError('Wrapper owns credential/output paths')
-    credential = CONFIG / environment / 'credential'
+    credential = profile / 'credential'
     if operation == 'provision' and credential.exists(): raise RuntimeError('Preserve/revoke prior credential before issuing another')
     STATE.mkdir(mode=0o700, parents=True, exist_ok=True); custody(STATE)
     run_id = uuid.uuid4().hex; directory = STATE / run_id; directory.mkdir(mode=0o700)
@@ -116,7 +124,7 @@ def operate(environment):
     # This record contains no credential values; private API responses remain in output/.
     record = {'helperSha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(), 'sourceSha': manifest['sourceSha'], 'bundleSha256': manifest['bundleSha256'],
         'runtimeSourceSha': revision, 'runtimeImage': runtime['Image'], 'environment': environment,
-        'operation': operation, 'runId': run_id}
+        'operation': operation, 'operatorProfile': operator, 'runId': run_id}
     (directory / 'record.json').write_text(json.dumps(record)); os.chmod(directory / 'record.json', 0o600)
     cid = None
     try:
@@ -147,7 +155,7 @@ def operate(environment):
                 file.write(source.read_bytes()); file.flush(); os.fsync(file.fileno())
             source.unlink()
         record['complete'] = True; (directory / 'record.json').write_text(json.dumps(record))
-        print(json.dumps({'runId': run_id, 'result': result}))
+        return {'runId': run_id, 'result': result}
     finally:
         if cid: api('DELETE', '/containers/' + cid + '?force=true')
         copied = inputs / 'credential'
@@ -155,11 +163,11 @@ def operate(environment):
 
 if __name__ == '__main__':
     try:
-        if os.geteuid() != 0 or len(sys.argv) != 2: raise RuntimeError('Root and exact environment required')
+        if os.geteuid() != 0 or len(sys.argv) not in (2, 3): raise RuntimeError('Root and exact environment required')
         os.umask(0o077)
         lock_path = Path('/var/lib/harmonic-beacon/app-bridge/operation.lock'); custody(lock_path)
         with lock_path.open('r+') as lock:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            operate(sys.argv[1])
+            print(json.dumps(operate(sys.argv[1], sys.argv[2] if len(sys.argv) == 3 else None)))
     except Exception:
         print('Beacon operator stopped; inspect private request/result', file=sys.stderr); sys.exit(1)
