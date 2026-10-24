@@ -98,3 +98,53 @@ release. Private receipts under `/var/lib/harmonic-beacon/operator/` bind CLI
 source/digest, actual runtime image/source, environment, operation and run ID.
 Credential output is moved into root custody; temporary credential inputs are
 removed. Never publish these directories, request bodies or API responses.
+
+## Additional operators
+
+Keep each authorized operator's credential separate. The root helper accepts
+`hb-operator ENVIRONMENT PROFILE`, where PROFILE is a lowercase slug. Its fixed
+root-only input and credential directory is
+`/etc/harmonic-beacon/operator/ENVIRONMENT/operators/PROFILE/`. Omitting PROFILE
+retains the original single-operator directory; existing credentials are unchanged.
+Provision and revoke through the same reviewed CLI. A dedicated `.invalid`
+address may identify a machine account; it is not a mailbox or human login.
+
+For an operator with a Unix SSH account, install `deploy/hb-operator-access.py`
+as root-owned `/usr/local/sbin/hb-operator-access` and grant sudo only for its
+exact `staging` and/or `production` invocations. Do not add the account to Docker
+or grant general sudo. Root owns a mode-0600 `access.json` next to the existing
+operator configuration, mapping each Unix username to `{uid,operator,environments}`.
+The broker verifies sudo's authenticated UID against this policy and never lets
+the request select another operator, credential, output path or root operation.
+It uses the installed helper and existing lock/read-only execution boundary.
+
+Send a JSON request on stdin with `expectedSourceSha`, `method`, `apiPath`, and
+optional `body`. Only existing `/api/ops` and `/api/admin` routes are admitted;
+normal application authorization and audit apply. Responses retain the run ID
+and HTTP status. JSON responses use `body`; other bounded bytes use `bodyBase64`
+and `responseEncoding=base64`. An empty response has `body=null`. Never repeat a
+write because output decoding or transport failed; inspect its original run first.
+
+The receiving `scripts/beacon-staff-api.py` command reads only `sshTarget` from
+`~/.config/harmonic-beacon/operator.json`, obtains the current public health SHA,
+and invokes that exact broker. Example: `beacon-ops staging GET /api/ops/events`.
+Supply JSON on stdin for writes. Tokens stay in root custody on the host.
+
+A credential lasts at most 30 days. Root renewal uses the same operator profile:
+revoke the exact previous credential, preserve its private file/receipt, then
+issue a replacement. Removing the Unix policy/key prevents further host access;
+revoke the machine credential too when withdrawing its application authority.
+
+Staff API access is distinct from image delivery. Repository changes and GitHub
+workflows retain each service's existing delivery lane. Private release permits,
+exact image admission and recovery remain owned by the existing release helper;
+this broker does not issue permits or grant arbitrary host execution. Qualify the
+receiving operator with an isolated staging task and recovery before claiming
+production delivery competence. Keep machine-specific routes in the receiver's
+private binding, not in public documentation or the shared skill.
+
+Before installing receiving tools, inspect both the harness PATH and existing
+user installations such as `~/.local/bin`. A command missing from an Incus
+non-login shell does not establish that the body lacks it. Reuse and test its
+existing authenticated CLI before installing another copy or touching credentials.
+Use explicit paths in the receiving binding when shell discovery differs.

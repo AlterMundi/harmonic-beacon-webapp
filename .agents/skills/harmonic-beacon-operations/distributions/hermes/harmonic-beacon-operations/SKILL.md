@@ -1,7 +1,7 @@
 ---
 name: harmonic-beacon-operations
 description: "Operate Harmonic Beacon from authoritative live state."
-version: 0.2.1
+version: 0.2.2
 author: "Nicolás Echániz, Codex, CompAII"
 license: Apache-2.0
 platforms: ["linux", "macos", "windows"]
@@ -69,3 +69,14 @@ human cookies or assume that a browser login is the only supported route. The
 root bootstrap closure is limited to exact human-authorized residual events and
 calls the normal lifecycle functions. This route does not grant media participation
 or authority over separately owned services.
+
+Use a separate credential profile for every appointed operator. The delegated
+Unix Staff API path in OPERATOR_ACCESS.md preserves root credential custody and
+normal API audit without browser automation or general Docker/sudo access.
+Receiving tool installation, access verification and staging acceptance are
+separate evidence; do not claim another operator is ready from a shared key or
+a published skill alone.
+
+When onboarding a receiver, distinguish its harness PATH from a diagnostic
+non-login shell. Check existing user-local tools and authenticated bindings
+before installing replacements; record the actual invocation in its runbook.
