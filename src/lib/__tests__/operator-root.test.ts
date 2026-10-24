@@ -6,6 +6,10 @@ function python(code: string) {
     expect(r.status, r.stderr).toBe(0); return JSON.parse(r.stdout);
 }
 describe('root operator Docker execution boundary', () => {
+    it('verifies delegated caller, profile and response boundaries', () => {
+        const result = spawnSync('python3', ['-B', '-m', 'unittest', 'discover', '-s', 'deploy', '-p', 'test_operator_access.py'], { encoding: 'utf8' });
+        expect(result.status, result.stderr).toBe(0);
+    });
     it('uses the exact runtime image in a fresh read-only unprivileged container', () => {
         const result = python(`r={'Id':'target-container','Config':{'Env':['DATABASE_URL=test-only','BEACON_GIT_SHA='+'a'*40,'ACCOUNT_SECRET=must-not-copy','NODE_OPTIONS=must-not-copy']}}\nc=m.container_config(r,'sha256:exact','production','/root/in','/root/out','run')\nprint(json.dumps(c))`);
         expect(result.Image).toBe('sha256:exact');
