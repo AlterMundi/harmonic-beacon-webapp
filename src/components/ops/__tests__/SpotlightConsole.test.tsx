@@ -174,6 +174,23 @@ describe('SpotlightConsole', () => {
         expect(screen.getByText(/Raised hands appear automatically/)).toBeVisible();
     });
 
+    it('keeps departures in expandable history and preserves unknown connections in the audience', async () => {
+        vi.stubGlobal('fetch', mockFetch(snapshot([
+            attendee('present', { displayName: 'Present person' }),
+            attendee('unknown', { displayName: 'Unconfirmed person', connected: null }),
+            attendee('departed', { displayName: 'Departed person', connected: false }),
+        ])));
+        render(<SpotlightConsole sessionId="event-1" role="OPERATOR" view="scene" />);
+        await screen.findByRole('heading', { name: 'Audience (2)' });
+        expect(screen.getByText(/Present person/)).toBeVisible();
+        expect(screen.getByText(/Unconfirmed person/)).toBeVisible();
+        expect(screen.getByText(/Departed person/)).not.toBeVisible();
+        expect(screen.getAllByRole('button', { name: 'Invite to stage' })).toHaveLength(1);
+        fireEvent.click(screen.getByText('Outside the room (1)', { selector: 'summary' }));
+        expect(screen.getByText(/Departed person/)).toBeVisible();
+        expect(screen.getAllByRole('button', { name: 'Invite to stage' })).toHaveLength(1);
+    });
+
     it('lets system administrators select exactly 6, 9, or 12 scene publishers', async () => {
         vi.stubGlobal('fetch', mockFetch(snapshot([])));
         render(<SpotlightConsole sessionId="event-1" role="ADMIN" />);

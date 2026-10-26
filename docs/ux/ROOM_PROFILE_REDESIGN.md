@@ -171,6 +171,7 @@ media controls.
 | Repeated counts and tool entry points | Remove the top signal strip and extra tool header. Hands, Stage and Chat each have one tab in the sidebar. Counts live in those tabs. |
 | Event tools mixed with frequent queue work | Doors, system health, tapestry composition and admission support have one compact menu beside the room. Capacity and manual synchronization belong in Stage. |
 | Long instructions before the waiting queue | Keep the queue and invitations first; disclose the existing privacy and queue explanation on demand. |
+| Departed people inflate and crowd the audience list | Keep the current audience first and retain observed departures in expandable history. Unknown connection state stays visible; hand queues and pending invitations are never filtered by this grouping. |
 | Ambiguous state and close controls | Translate health levels, distinguish loading from a confirmed warning, and name panel closure accurately. Escape works from both the panel and its tabs and restores the relevant trigger. |
 | Staff controls follow a long tool panel on phones | Show the room first below 900px, with same-document shortcuts between personal controls and staff tools. Keep both columns at 1024px. |
 | Both exits share the same warning treatment | Use a neutral secondary action for leaving the scene and a distinct danger treatment for leaving the room. Keep confirmations and grant/device boundaries intact. |

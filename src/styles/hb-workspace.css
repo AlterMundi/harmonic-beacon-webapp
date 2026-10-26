@@ -159,3 +159,9 @@ html[data-hb-embedded-surface="cockpit"] .hb-room-controls { position: relative;
 .hb-staff-tools:focus-visible { outline: 2px solid var(--gold); outline-offset: 4px; }
 
 .hb-room summary, .hb-staff-workspace summary { font-size: 16px; line-height: 1.5; }
+
+.hb-departed-people { margin-top: 20px; border-top: 1px solid var(--border-subtle); padding-top: 8px; }
+.hb-departed-people summary { display: flex; align-items: center; gap: 8px; cursor: pointer; color: var(--text-secondary); }
+.hb-departed-people summary::before { content: "+"; color: var(--gold); }
+.hb-departed-people[open] summary::before { content: "−"; }
+.hb-departed-people ul { margin-top: 12px; }

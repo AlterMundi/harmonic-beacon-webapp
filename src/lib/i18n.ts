@@ -395,6 +395,7 @@ export type Messages = {
             muteTrack: string;
             takeFloor: string;
             audience: string;
+            departedAudience: string;
             noAudience: string;
             inviteToStage: string;
             recentSnapshotAlt: string;
@@ -980,6 +981,7 @@ export const messages: Record<UiLocale, Messages> = {
                 muteTrack: 'Silenciar {track}',
                 takeFloor: 'Quitar la palabra',
                 audience: 'Público ({count})',
+                departedAudience: 'Fuera de la sala ({count})',
                 noAudience: 'No hay otras personas.',
                 inviteToStage: 'Invitar a la escena',
                 recentSnapshotAlt: 'Imagen reciente del tapiz de {name}',
@@ -1607,6 +1609,7 @@ export const messages: Record<UiLocale, Messages> = {
                 muteTrack: 'Mute {track}',
                 takeFloor: 'Take floor',
                 audience: 'Audience ({count})',
+                departedAudience: 'Outside the room ({count})',
                 noAudience: 'No other participants.',
                 inviteToStage: 'Invite to stage',
                 recentSnapshotAlt: 'Recent tapestry snapshot of {name}',
