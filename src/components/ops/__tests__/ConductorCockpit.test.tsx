@@ -43,6 +43,7 @@ vi.mock('../TapestryArrange', () => ({
 vi.mock('../AdmissionConsole', () => ({
     default: () => <div data-testid="admission-panel">Admission</div>,
 }));
+vi.mock('@/components/session/SessionContributions', () => ({ default: () => <div>Staff composer</div> }));
 vi.mock('../SessionContributionsStaff', () => ({
     default: () => <div data-testid="contributions-panel">Contributions</div>,
 }));
@@ -119,10 +120,10 @@ describe('ConductorCockpit', () => {
             expect(trigger).not.toBeNull();
             if (!trigger) throw new Error(`Missing ${signal} signal`);
             fireEvent.click(trigger);
-            const dialog = screen.getByRole('dialog');
+            const dialog = screen.getByRole('region');
             expect(dialog).toBeVisible();
             fireEvent.click(within(dialog).getByRole('button', { name: /Return to the live room/ }));
-            expect(screen.queryByRole('dialog')).toBeNull();
+            expect(screen.queryByRole('region')).toBeNull();
             expect(screen.getByTestId('persistent-room')).toBe(room);
         }
 
@@ -132,9 +133,10 @@ describe('ConductorCockpit', () => {
         expect(contributionsTool).not.toBeNull();
         if (!contributionsTool) throw new Error('Missing contributions tool');
         fireEvent.click(contributionsTool);
+        fireEvent.click(screen.getByText('Staff view'));
         expect(screen.getByTestId('contributions-panel')).toBeVisible();
-        fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: /Return to the live room/ }));
-        expect(screen.queryByRole('dialog')).toBeNull();
+        fireEvent.click(within(screen.getByRole('region')).getByRole('button', { name: /Return to the live room/ }));
+        expect(screen.queryByRole('region')).toBeNull();
         expect(screen.getByTestId('persistent-room')).toBe(room);
     });
 
@@ -215,14 +217,14 @@ describe('ConductorCockpit', () => {
         });
     });
 
-    it('closes a drawer with Escape and restores focus to its trigger', async () => {
+    it('closes the focused tools region with Escape and restores focus to its trigger', async () => {
         render(<LocaleProvider initialLocale="en"><ConductorCockpit {...props} /></LocaleProvider>);
         const trigger = screen.getByRole('button', { name: /Hands/i });
         fireEvent.click(trigger);
-        expect(within(screen.getByRole('dialog')).getByRole('button', { name: /Return to the live room/ })).toHaveFocus();
-        fireEvent.keyDown(window, { key: 'Escape' });
+        const panel = screen.getByRole('region');
+        fireEvent.keyDown(panel, { key: 'Escape' });
         await waitFor(() => expect(trigger).toHaveFocus());
-        expect(screen.queryByRole('dialog')).toBeNull();
+        expect(screen.queryByRole('region')).toBeNull();
     });
 
     it('activates the health preview only while its drawer is visible', () => {
@@ -232,7 +234,7 @@ describe('ConductorCockpit', () => {
         fireEvent.click(screen.getByRole('button', { name: /Health.*yellow/i }));
         expect(callbacks.healthVisualActive).toBe(true);
 
-        fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', {
+        fireEvent.click(within(screen.getByRole('region')).getByRole('button', {
             name: /Return to the live room/,
         }));
         expect(callbacks.healthVisualActive).toBe(false);

@@ -41,14 +41,14 @@ function readDraft(sessionId: string): { body: string; key: string } | null {
     }
 }
 
-export default function SessionContributions({ sessionId }: { sessionId: string }) {
-    const { copy } = useLocale();
+export default function SessionContributions({ sessionId, staff = false, panelActive = true }: { sessionId: string; staff?: boolean; panelActive?: boolean }) {
+    const { copy, locale } = useLocale();
     const t = copy.contributions;
     const [expanded, setExpanded] = useState(true);
     const feed = useContributionsFeed<PublicContribution>({
         sessionId,
         audience: 'public',
-        active: expanded,
+        active: expanded && panelActive,
     });
 
     // ---- composer state ----
@@ -224,7 +224,7 @@ export default function SessionContributions({ sessionId }: { sessionId: string 
                 className="flex min-h-11 w-full items-center justify-between gap-3 px-4 py-3 text-left"
             >
                 <h2 id={headingId} className="text-xs font-mono uppercase tracking-[0.12em] text-[var(--gold)]">
-                    {t.heading}
+                    {locale === 'es' ? 'Conversación' : 'Conversation'}
                 </h2>
                 <span aria-hidden="true" className="text-[var(--text-secondary)]">{expanded ? '−' : '+'}</span>
                 <span className="sr-only">{expanded ? t.collapse : t.expand}</span>
@@ -321,7 +321,7 @@ export default function SessionContributions({ sessionId }: { sessionId: string 
                             )}
                         </div>
                         <p id={noteId} className="text-xs leading-4 text-[var(--text-muted)]">
-                            {t.anonymityNote}
+                            {staff ? (locale === 'es' ? 'Tu mensaje se publica con tu nombre y rol del equipo.' : 'Your message includes your staff name and role.') : t.anonymityNote}
                         </p>
                         <div className="grid gap-2 sm:grid-cols-2">
                             <button
@@ -332,14 +332,14 @@ export default function SessionContributions({ sessionId }: { sessionId: string 
                             >
                                 {sending === 'NAMED' ? t.sending : t.share}
                             </button>
-                            <button
+                            {!staff && <button
                                 type="button"
                                 disabled={disabled}
                                 onClick={() => void submit('ANONYMOUS')}
                                 className="event-button event-button--secondary min-h-11 w-full disabled:opacity-50"
                             >
                                 {sending === 'ANONYMOUS' ? t.sending : t.shareAnonymous}
-                            </button>
+                            </button>}
                         </div>
                         {error === 'retry' && retryVisibility && (
                             <button

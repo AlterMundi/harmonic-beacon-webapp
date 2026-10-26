@@ -505,3 +505,32 @@ describe('offline and i18n', () => {
         expect(screen.getByText(/la sala no verá tu nombre/)).toBeInTheDocument();
     });
 });
+
+
+describe('staff composer and panel catch-up', () => {
+    it('offers named staff posting without an anonymous author option', async () => {
+        const { calls } = installFetch(async (url, init) => init?.method === 'POST'
+            ? jsonResponse(201, contribution({ displayName: 'Julián · Facilitación', body: 'Welcome' }))
+            : jsonResponse(200, page([])));
+        render(<SessionContributions sessionId={SESSION} staff />);
+        await screen.findByRole('textbox');
+        expect(screen.queryByRole('button', { name: /Share anonymous/i })).toBeNull();
+        await userEvent.setup().type(screen.getByRole('textbox'), 'Welcome');
+        await userEvent.setup().click(screen.getByRole('button', { name: /^Share$/ }));
+        expect(postCalls(calls)[0].body).toMatchObject({ body: 'Welcome', visibility: 'NAMED' });
+    });
+    it('catches up as soon as a hidden panel opens, preserving canonical timestamp order', async () => {
+        vi.useFakeTimers();
+        const { calls } = installFetch(url => url.includes('cursor=')
+            ? jsonResponse(200, page([contribution({ id: 'c1', body: 'Earlier arrival', createdAt: '2026-08-08T19:59:00Z' })], { resumeCursor: 'tail-2' }))
+            : jsonResponse(200, page([contribution({ id: 'c2', body: 'Later arrival' })], { resumeCursor: 'tail-1' })));
+        const { rerender } = render(<SessionContributions sessionId={SESSION} panelActive={false} />);
+        await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+        expect(getCalls(calls)).toHaveLength(1);
+        rerender(<SessionContributions sessionId={SESSION} panelActive />);
+        await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+        expect(getCalls(calls)).toHaveLength(2);
+        const messages = screen.getByTestId('contributions-feed').querySelectorAll('article');
+        expect(messages[0]).toHaveTextContent('Earlier arrival'); expect(messages[1]).toHaveTextContent('Later arrival');
+    });
+});

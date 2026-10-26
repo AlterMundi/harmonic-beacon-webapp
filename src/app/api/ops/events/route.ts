@@ -10,7 +10,7 @@ const response = (body: unknown, status = 200) => NextResponse.json(body, {statu
 export async function GET(request: NextRequest) {
     const staff = await resolveStaffSession(request);
     if (!staff) return response({error:'Iniciá sesión como equipo.'},401);
-    if (!hasStaffCapability(staff.role,'administer_system')) return response({error:'Sin permiso.'},403);
+    if (!hasStaffCapability(staff.role,'manage_events')) return response({error:'Sin permiso.'},403);
     const [events,facilitators] = await Promise.all([
         prisma.scheduledSession.findMany({orderBy:{scheduledAt:'desc'},take:200}),
         prisma.user.findMany({where:{disabledAt:null,role:{in:['FACILITATOR','FACILITATOR_OP']}},select:{id:true,name:true},orderBy:{name:'asc'}}),
@@ -22,7 +22,7 @@ async function write(request: NextRequest, update: boolean) {
         if (request.headers.get('origin') !== trustedLiveRequestOrigin(request)) return response({error:'Origen inválido.'},403);
         const staff = await resolveStaffSession(request);
         if (!staff) return response({error:'Iniciá sesión como equipo.'},401);
-        if (!hasStaffCapability(staff.role,'administer_system')) return response({error:'Sin permiso.'},403);
+        if (!hasStaffCapability(staff.role,'manage_events')) return response({error:'Sin permiso.'},403);
         const raw = await request.text();
         if (raw.length > 12000) return response({error:'Contenido demasiado largo.'},413);
         let body;

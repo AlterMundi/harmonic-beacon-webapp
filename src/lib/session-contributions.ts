@@ -334,13 +334,20 @@ function replayOrConflict(
  */
 export async function createContribution(params: {
     scheduledSessionId: string;
-    ticketEntitlementId: string;
+    ticketEntitlementId?: string;
+    staffUserId?: string;
     displayName: string;
     body: unknown;
     visibility: unknown;
     idempotencyKey: unknown;
     now?: Date;
 }): Promise<CreateContributionResult> {
+    if (Boolean(params.ticketEntitlementId) === Boolean(params.staffUserId)) {
+        throw new ContributionError('invalid_author', 403, 'Exactly one authenticated author is required');
+    }
+    if (params.staffUserId && params.visibility !== 'NAMED') {
+        throw new ContributionError('staff_must_be_named', 400, 'Staff contributions must be named');
+    }
     const visibility = parseContributionVisibility(params.visibility);
     const body = normalizeContributionBody(params.body);
     const idempotencyKey = parseIdempotencyKey(params.idempotencyKey);
@@ -349,7 +356,8 @@ export async function createContribution(params: {
     const participant = await prisma.sessionParticipant.findFirst({
         where: {
             scheduledSessionId: params.scheduledSessionId,
-            ticketEntitlementId: params.ticketEntitlementId,
+            ...(params.staffUserId ? { staffUserId: params.staffUserId }
+                : { ticketEntitlementId: params.ticketEntitlementId }),
         },
         select: { id: true },
     });

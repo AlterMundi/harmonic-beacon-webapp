@@ -7,6 +7,8 @@ import {
     listPublicContributions,
     parseContributionsPageLimit,
 } from '@/lib/session-contributions';
+import { isSameOriginLiveRequest } from '@/lib/account-rp';
+import { messages } from '@/lib/i18n';
 import { resolveRoomViewer } from '@/lib/room-entitlement';
 
 export const dynamic = 'force-dynamic';
@@ -93,8 +95,8 @@ export async function GET(
 }
 
 /**
- * Publish one contribution. Attendees only: staff observe and moderate from
- * the ops console, they do not post into the audience feed. The client sends
+ * Publish a contribution for an authenticated room participant. Staff are named
+ * by the server and share the same replay, rate and session boundaries. The client sends
  * body, visibility and an idempotency key — never identity.
  */
 export async function POST(
@@ -106,11 +108,15 @@ export async function POST(
     if (!principal) {
         return error;
     }
-    if (!principal.ticketEntitlementId) {
+    if (!principal.ticketEntitlementId && !principal.staffUserId) {
         return NextResponse.json(
             { error: 'Insufficient permissions' },
             { status: 403 },
         );
+    }
+
+    if (!isSameOriginLiveRequest(request)) {
+        return NextResponse.json({ error: 'invalid_origin' }, { status: 403 });
     }
 
     let payload: { body?: unknown; visibility?: unknown; idempotencyKey?: unknown };
@@ -132,8 +138,11 @@ export async function POST(
     try {
         const result = await createContribution({
             scheduledSessionId: id,
-            ticketEntitlementId: principal.ticketEntitlementId,
-            displayName: principal.displayName,
+            ...(principal.staffUserId ? { staffUserId: principal.staffUserId }
+                : { ticketEntitlementId: principal.ticketEntitlementId! }),
+            displayName: principal.staffUserId && principal.role !== 'ATTENDEE'
+                ? `${principal.displayName} · ${messages.es.staffRoles[principal.role]}`
+                : principal.displayName,
             body: payload.body,
             visibility: payload.visibility,
             idempotencyKey: payload.idempotencyKey,

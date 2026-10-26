@@ -36,7 +36,7 @@ export function eventEditorFields(value: unknown) {
 }
 
 export async function saveEvent(actor: StaffPrincipal, value: unknown, eventId?: string) {
-    if (!hasStaffCapability(actor.role, 'administer_system')) throw new EventEditorError(403, 'No tenés permiso para administrar eventos.');
+    if (!hasStaffCapability(actor.role, 'manage_events')) throw new EventEditorError(403, 'No tenés permiso para administrar eventos.');
     const fields = eventEditorFields(value);
     const input = value as Record<string, unknown>;
     const id = eventId || String(input.id || randomUUID());

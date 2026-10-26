@@ -11,7 +11,7 @@ export function StaffModeAccess({ availableRole, activeStaffRole }: {
     const { locale, copy } = useLocale();
     if (!availableRole) return null;
     const es = locale === 'es';
-    const manages = availableRole === 'ADMIN' || availableRole === 'FACILITATOR_OP';
+    const manages = true;
     const destination = manages ? '/ops/events/manage' : '/ops/events';
     const staffHref = activeStaffRole ? destination
         : `/api/account/login?flow=staff&next=${encodeURIComponent(destination)}`;

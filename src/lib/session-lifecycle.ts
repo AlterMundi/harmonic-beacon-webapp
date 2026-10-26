@@ -70,7 +70,7 @@ export function decideSessionTransition(input: {
 
     // Cancellation is an administrative action even when a repeated request
     // has nothing left to mutate.
-    if (targetStatus === 'CANCELLED' && !hasStaffCapability(actor.role, 'administer_system')) {
+    if (targetStatus === 'CANCELLED' && !hasStaffCapability(actor.role, 'manage_events')) {
         throw new SessionLifecycleError(
             403,
             'forbidden',
@@ -109,7 +109,7 @@ export function decideSessionTransition(input: {
         const latest = session.scheduledAt.getTime() + SESSION_OPEN_LATE_MS;
         const outsideWindow = now.getTime() < earliest || now.getTime() > latest;
         if (outsideWindow) {
-            if (!hasStaffCapability(actor.role, 'administer_system')) {
+            if (!hasStaffCapability(actor.role, 'manage_events')) {
                 throw new SessionLifecycleError(
                     409,
                     'outside_open_window',

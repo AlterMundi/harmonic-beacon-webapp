@@ -11,9 +11,9 @@ describe('event editor',()=>{
         expect(result).toMatchObject({isPublished:false,publicAccess:true,paidMode:true,isTest:false,status:'SCHEDULED',roomName:`event-${fields.id}`});
         expect(tx.auditLog.create).toHaveBeenCalledOnce();
     });
-    it.each(['FACILITATOR','OPERATOR'] as const)('denies editing to %s',async role=>{
-        await expect(saveEvent({...actor,role},fields)).rejects.toMatchObject({status:403});
-        expect(tx.scheduledSession.create).not.toHaveBeenCalled();
+    it.each(['FACILITATOR','OPERATOR'] as const)('allows event creation for %s',async role=>{
+        await expect(saveEvent({...actor,role},fields)).resolves.toMatchObject({status:'SCHEDULED'});
+        expect(tx.auditLog.create).toHaveBeenCalledWith(expect.objectContaining({data:expect.objectContaining({actorRole:role})}));
     });
     it.each([{title:'x'},{scheduledAt:'2026-09-23T18:00'},{eventTimeZone:'unknown'},{facilitatorId:'bad'},{language:'xx'},{publicAccess:'true'},{isPublished:null},{checkoutUrl:'https://evil.invalid/'},{checkoutUrl:'javascript:alert(1)'},{publicAccess:false,isPublished:true,checkoutUrl:''}])('rejects invalid input %j',patch=>{
         expect(()=>eventEditorFields({...fields,...patch})).toThrow();

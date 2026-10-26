@@ -109,10 +109,12 @@ stackTest.describe('media continuity', () => {
         await expect(
             facilitator.getByRole('button', { name: /Mute microphone|Silenciar micrófono/i }),
         ).toBeVisible();
+        await facilitator.getByText(/Audio and connection settings|Ajustes de audio y conexión/i).click();
         const qualityMonitor = facilitator.getByTestId('facilitator-audio-quality');
         await expect(qualityMonitor).toBeVisible();
         await expect(qualityMonitor).not.toHaveAttribute('data-severity', 'waiting', { timeout: 10_000 });
         await expect(qualityMonitor).toContainText(/96 kbps/);
+        await facilitator.getByText(/Audio and connection settings|Ajustes de audio y conexión/i).click();
         await facilitator.getByRole('button', { name: /Turn camera on|Encender cámara/i }).click();
         await expect(
             facilitator.getByRole('button', { name: /Turn camera off|Apagar cámara/i }),
@@ -266,7 +268,7 @@ stackTest.describe('media continuity', () => {
 
             for (const signal of ['door', 'hands', 'stage', 'primary', 'health']) {
                 await page.locator(`[data-signal="${signal}"]`).click();
-                const dialog = page.getByRole('dialog');
+                const dialog = page.locator('.hb-staff-tools > aside');
                 await expect(dialog).toBeVisible();
                 await dialog.getByRole('button', { name: /Return to the live room|Volver a la sala en vivo/i }).click();
                 await expect(dialog).toBeHidden();

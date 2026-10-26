@@ -346,13 +346,13 @@ describe('requireSessionAccess', () => {
         expect(principal).toMatchObject({ kind: 'staff' });
     });
 
-    it('refuses an unassigned facilitator but admits FACILITATOR_OP globally', async () => {
+    it('admits enabled facilitators and composite staff globally', async () => {
         const facilitatorDb = mountRequest(await staffRow('FACILITATOR'));
         facilitatorDb.scheduledSession.findUnique.mockResolvedValue({
             facilitatorId: 'other-user',
         });
         let authModule = await import('../auth');
-        expect((await authModule.requireSessionAccess('session-2'))[1]!.status).toBe(403);
+        expect((await authModule.requireSessionAccess('session-2'))[0]).toMatchObject({ kind: 'staff', role: 'FACILITATOR' });
 
         vi.resetModules();
         const compositeDb = mountRequest(await staffRow('FACILITATOR_OP'));

@@ -138,10 +138,10 @@ stackTest.describe('role surfaces', () => {
             ['health', '[data-signal="health"]'],
         ] as const) {
             await page.locator(selector).click();
-            await expect(page.getByRole('dialog')).toBeVisible();
+            await expect(page.locator('.hb-staff-tools > aside')).toBeVisible();
             await assertAccessible(page, `ops-session-${name}-drawer`, testInfo);
             await page.keyboard.press('Escape');
-            await expect(page.getByRole('dialog')).toBeHidden();
+            await expect(page.locator('.hb-staff-tools > aside')).toBeHidden();
         }
     });
 });

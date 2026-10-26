@@ -13,7 +13,7 @@ export async function PATCH(
     request: NextRequest,
     { params }: { params: Promise<{ id: string }> },
 ) {
-    const [staff, errorResponse] = await requireStaffCapability('administer_system');
+    const [staff, errorResponse] = await requireStaffCapability('manage_events');
     if (!staff) return errorResponse;
 
     const invalidCapacity = () => NextResponse.json(

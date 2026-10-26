@@ -472,7 +472,7 @@ describe('resolveRoomPrincipal', () => {
         expect(upsertParticipant).not.toHaveBeenCalled();
     });
 
-    it('lets only the assigned facilitator preflight with an initial grant', async () => {
+    it('preserves assigned facilitator attribution while granting publication', async () => {
         upsertParticipant.mockResolvedValue({
             publishGrantedAt: now,
             publishRevokedAt: null,
@@ -587,7 +587,7 @@ describe('resolveRoomPrincipal', () => {
         });
     });
 
-    it('rejects a facilitator assigned to another event', async () => {
+    it('allows an enabled facilitator to operate an unassigned event', async () => {
         findWebSession.mockResolvedValue({
             expiresAt: new Date('2026-08-03T00:00:00Z'),
             revokedAt: null,
@@ -602,8 +602,8 @@ describe('resolveRoomPrincipal', () => {
         const { resolveRoomPrincipal } = await import('../room-entitlement');
         const result = await resolveRoomPrincipal(request(), 'event-1', now);
 
-        expect(result).toMatchObject({ ok: false, status: 403 });
-        expect(upsertParticipant).not.toHaveBeenCalled();
+        expect(result).toMatchObject({ ok: true, principal: { isAssignedFacilitator: false } });
+        expect(upsertParticipant).toHaveBeenCalledWith(expect.objectContaining({ create: expect.objectContaining({ publishGrantedAt: null }) }));
     });
 
     it('treats FACILITATOR_OP as facilitator and grants initial publish only when assigned', async () => {
@@ -642,7 +642,7 @@ describe('resolveRoomPrincipal', () => {
         }));
     });
 
-    it('lets FACILITATOR_OP operate another event but never grants initial publish there', async () => {
+    it('lets FACILITATOR_OP operate another event with explicit publication activation available', async () => {
         findWebSession.mockResolvedValue({
             expiresAt: new Date('2026-08-03T00:00:00Z'),
             revokedAt: null,

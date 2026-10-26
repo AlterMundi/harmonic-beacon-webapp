@@ -19,6 +19,7 @@ import { requestLocale } from "@/lib/i18n-server";
 import { messages } from "@/lib/i18n";
 import "@/styles/hb-brand.css";
 import "./globals.css";
+import "@/styles/hb-workspace.css";
 import { Toaster } from "sonner";
 
 const cormorant = localFont({

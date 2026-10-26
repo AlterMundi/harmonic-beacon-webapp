@@ -224,6 +224,35 @@ describe('Beacon Account OAuth 2.1 RP', () => {
         })).toThrow('Untrusted Live origin');
     });
 
+    it('requires the exact public origin for writes and rejects cross-environment or missing origins', async () => {
+        const { isSameOriginLiveRequest } = await import('../account-rp');
+        const request = (origin?: string) => ({
+            nextUrl: new URL('http://127.0.0.1:3000/api/write'),
+            headers: new Headers({ host: 'live.harmonicbeacon.com', ...(origin ? { origin } : {}) }),
+        });
+        expect(isSameOriginLiveRequest(request('https://live.harmonicbeacon.com'))).toBe(true);
+        expect(isSameOriginLiveRequest(request('https://live-staging.harmonicbeacon.com'))).toBe(false);
+        expect(isSameOriginLiveRequest(request('https://attacker.example'))).toBe(false);
+        expect(isSameOriginLiveRequest(request())).toBe(false);
+    });
+
+    it('allows production-build loopback writes only in the explicitly enabled browser fixture', async () => {
+        vi.stubEnv('NODE_ENV', 'production');
+        vi.stubEnv('E2E_DASHBOARD_ENABLED', '0');
+        const { isSameOriginLiveRequest } = await import('../account-rp');
+        const request = (host: string, origin: string) => ({
+            nextUrl: new URL('http://127.0.0.1:3100/api/write'),
+            headers: new Headers({ host, origin }),
+        });
+        expect(isSameOriginLiveRequest(request('localhost:3100', 'http://localhost:3100'))).toBe(false);
+        vi.stubEnv('E2E_DASHBOARD_ENABLED', '1');
+        expect(isSameOriginLiveRequest(request('localhost:3100', 'http://localhost:3100'))).toBe(true);
+        expect(isSameOriginLiveRequest(request('127.0.0.1:3100', 'http://127.0.0.1:3100'))).toBe(true);
+        expect(isSameOriginLiveRequest(request('localhost:3100', 'http://localhost:3200'))).toBe(false);
+        expect(isSameOriginLiveRequest(request('localhost.attacker.example:3100', 'http://localhost.attacker.example:3100'))).toBe(false);
+        vi.unstubAllEnvs();
+    });
+
     it('starts a one-use confidential-client authorization with PKCE, nonce and safe return', async () => {
         const fetchMock = vi.fn().mockResolvedValue(json(discovery()));
         vi.stubGlobal('fetch', fetchMock);

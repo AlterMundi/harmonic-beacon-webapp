@@ -83,7 +83,7 @@ export async function closeLivePresence(input: {
             endedAt: null,
             participant: { participantIdentity: input.participantIdentity },
         },
-        data: { endedAt: now, lastHeartbeatAt: now, endReason: input.reason },
+        data: { endedAt: now, endReason: input.reason },
     });
     return result.count;
 }
@@ -98,7 +98,7 @@ export async function closeSessionPresence(
     if (!delegate) return 0;
     const result = await delegate.updateMany({
         where: { scheduledSessionId, endedAt: null },
-        data: { endedAt: now, lastHeartbeatAt: now, endReason: 'event_closed' },
+        data: { endedAt: now, endReason: 'event_closed' },
     });
     return result.count;
 }

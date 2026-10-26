@@ -79,10 +79,8 @@ describe('decideSessionTransition', () => {
         },
     );
 
-    it('scopes facilitators to their assigned event', () => {
-        expectLifecycleError(() => decide({
-            actor: { id: 'another-facilitator', role: 'FACILITATOR' },
-        }), 'forbidden');
+    it('lets an enabled facilitator operate an unassigned event', () => {
+        expect(decide({ actor: { id: 'another-facilitator', role: 'FACILITATOR' } }).kind).toBe('transition');
     });
 
     it.each(['OPERATOR', 'ADMIN', 'FACILITATOR_OP'] as const)('allows %s to operate any event', (role) => {
@@ -96,11 +94,11 @@ describe('decideSessionTransition', () => {
         expect(decide({ now: latest }).kind).toBe('transition');
         expectLifecycleError(
             () => decide({ now: new Date(earliest.getTime() - 1) }),
-            'outside_open_window',
+            'reason_required',
         );
         expectLifecycleError(
             () => decide({ now: new Date(latest.getTime() + 1) }),
-            'outside_open_window',
+            'reason_required',
         );
     });
 
@@ -138,10 +136,8 @@ describe('decideSessionTransition', () => {
         }), 'reason_required');
     });
 
-    it('reserves cancellation for administrators', () => {
-        expectLifecycleError(() => decide({
-            targetStatus: 'CANCELLED',
-            reason: 'Cannot proceed',
-        }), 'forbidden');
-    });
+    it.each(['FACILITATOR', 'FACILITATOR_OP', 'OPERATOR', 'ADMIN'] as const)(
+        'allows reasoned cancellation for %s', role => {
+            expect(decide({ actor: { id: 'staff', role }, targetStatus: 'CANCELLED', reason: 'Cannot proceed' }).kind).toBe('transition');
+        });
 });

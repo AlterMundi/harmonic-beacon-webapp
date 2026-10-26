@@ -26,7 +26,7 @@ export default async function OpsLayout({
     return (
         <div className="live-ops-shell min-h-screen bg-[var(--night)]">
             <OpsNavigation analytics={Boolean(analyticsRole)} />
-            <main className="mx-auto max-w-5xl px-4 py-6">{children}</main>
+            <main className="mx-auto max-w-[1680px] px-4 py-6">{children}</main>
         </div>
     );
 }

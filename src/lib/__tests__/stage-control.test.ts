@@ -434,7 +434,7 @@ describe('stage control', () => {
         expect(mocks.transitionGrant).toHaveBeenCalledOnce();
     });
 
-    it('refuses a stale unassigned facilitator principal without an attendee ticket', async () => {
+    it('admits an enabled unassigned facilitator without an attendee ticket', async () => {
         participants = [{
             ...attendee('former-facilitator'),
             staffUserId: 'former-facilitator',
@@ -448,8 +448,8 @@ describe('stage control', () => {
             scheduledSessionId: event.id,
             participantId: 'former-facilitator',
             actorUserId: 'operator-1',
-        })).rejects.toMatchObject({ code: 'entitlement_inactive', status: 409 });
-        expect(mocks.transitionGrant).not.toHaveBeenCalled();
+        })).resolves.toMatchObject({ canPublish: true });
+        expect(mocks.transitionGrant).toHaveBeenCalled();
     });
 
     it('refuses to promote a disabled staff principal', async () => {

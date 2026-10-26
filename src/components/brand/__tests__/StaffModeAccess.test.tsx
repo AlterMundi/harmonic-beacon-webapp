@@ -24,9 +24,9 @@ describe('visible staff access', () => {
         expect(screen.getByRole('link', { name: 'Manage events' })).toHaveAttribute('href', '/ops/events/manage');
         expect(screen.getByRole('link', { name: 'Enter as participant' })).toHaveAttribute('href', '/api/account/login?flow=attendee&next=%2F');
     });
-    it('routes operators to their existing permissions, not event management', () => {
+    it('offers event management to enabled operators', () => {
         render(<LocaleProvider initialLocale="en"><StaffModeAccess availableRole="OPERATOR" activeStaffRole={null} /></LocaleProvider>);
-        expect(screen.getByRole('link', { name: 'Open operations' })).toHaveAttribute('href', '/api/account/login?flow=staff&next=%2Fops%2Fevents');
+        expect(screen.getByRole('link', { name: 'Manage events' })).toHaveAttribute('href', '/api/account/login?flow=staff&next=%2Fops%2Fevents%2Fmanage');
     });
     it('asks before leaving an active room and permits cancellation', () => {
         render(<LocaleProvider initialLocale="en"><RoomExitProvider><ActiveRoom /><StaffModeAccess availableRole="ADMIN" activeStaffRole={null} /></RoomExitProvider></LocaleProvider>);

@@ -158,12 +158,12 @@ describe('GET /api/ops/sessions/[id]/tapestry/manifest', () => {
         expect(mocks.fetch).not.toHaveBeenCalled();
     });
 
-    it('rejects a facilitator assigned to another event', async () => {
+    it('admits a facilitator assigned to another event', async () => {
         staffOk('FACILITATOR', 'staff-9');
 
         const response = await GET(createRequest('http://x'), mockParams({ id: SESSION_ID }));
-        expect(response.status).toBe(403);
-        expect(mocks.fetch).not.toHaveBeenCalled();
+        expect(response.status).toBe(200);
+        expect(mocks.fetch).toHaveBeenCalled();
     });
 
     it('allows the assigned facilitator of this event', async () => {

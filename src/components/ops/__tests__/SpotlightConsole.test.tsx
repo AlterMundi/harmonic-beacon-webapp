@@ -174,12 +174,12 @@ describe('SpotlightConsole', () => {
         expect(await screen.findByText('Scene capacity changed to 12 publishers')).toBeInTheDocument();
     });
 
-    it('does not expose the capacity selector to stage-only operators', async () => {
+    it('offers the capacity selector to enabled operators', async () => {
         vi.stubGlobal('fetch', mockFetch(snapshot([])));
         render(<SpotlightConsole sessionId="event-1" role="OPERATOR" />);
 
         await screen.findByText(/Stage: 2\/6 publishing/);
-        expect(screen.queryByRole('combobox', { name: 'Scene capacity' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('combobox', { name: 'Scene capacity' })).toBeInTheDocument();
     });
 
     it('renders the stage workflow and staff role in Spanish', async () => {

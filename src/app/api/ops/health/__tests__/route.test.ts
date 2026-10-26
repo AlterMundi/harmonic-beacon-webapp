@@ -114,7 +114,7 @@ describe('GET /api/ops/health', () => {
         expect(collectOperatorHealth).toHaveBeenCalledWith({ selected: true });
     });
 
-    it('prevents a facilitator from inspecting another event', async () => {
+    it('allows a facilitator to inspect another event', async () => {
         requireStaffCapability.mockResolvedValue([
             { kind: 'staff', webSessionId: 'ws-1', userId: 'facilitator-2', role: 'FACILITATOR' },
             null,
@@ -124,8 +124,8 @@ describe('GET /api/ops/health', () => {
             createRequest('/api/ops/health?sessionId=session-1'),
         ));
 
-        expect(status).toBe(403);
-        expect(collectOperatorHealth).not.toHaveBeenCalled();
+        expect(status).toBe(200);
+        expect(collectOperatorHealth).toHaveBeenCalled();
     });
 
     it('lets FACILITATOR_OP inspect an unassigned event through the central event policy', async () => {

@@ -115,15 +115,10 @@ describe('session scene capacity service', () => {
         expect(mocks.transaction).not.toHaveBeenCalled();
     });
 
-    it('rejects staff without system-administration authority', async () => {
+    it.each(['FACILITATOR', 'FACILITATOR_OP', 'OPERATOR', 'ADMIN'] as const)('allows %s to manage room capacity', async actorRole => {
         const { setSessionSceneCapacity } = await import('../session-capacity');
-        await expect(setSessionSceneCapacity({
-            scheduledSessionId: 'event-1',
-            actorUserId: 'operator-1',
-            actorRole: 'OPERATOR',
-            maxPublishers: 9,
-        })).rejects.toMatchObject({ code: 'forbidden', status: 403 });
-        expect(mocks.sessionUpdate).not.toHaveBeenCalled();
+        await expect(setSessionSceneCapacity({ scheduledSessionId: 'event-1', actorUserId: 'staff-1', actorRole, maxPublishers: 9 }))
+            .resolves.toMatchObject({ maxPublishers: 9 });
     });
 
     it('allows six attendee grants when the facilitator is not publishing', async () => {

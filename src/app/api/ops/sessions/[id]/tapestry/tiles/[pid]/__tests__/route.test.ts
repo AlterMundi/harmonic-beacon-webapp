@@ -88,7 +88,7 @@ describe('GET private tapestry tile', () => {
         expect(mocks.fetch).not.toHaveBeenCalled();
     });
 
-    it('denies a facilitator assigned elsewhere and returns 404 for an unknown session', async () => {
+    it('admits a facilitator assigned elsewhere and returns 404 for an unknown session', async () => {
         mocks.requireStaff.mockResolvedValue([{
             kind: 'staff',
             webSessionId: 'web-2',
@@ -100,9 +100,10 @@ describe('GET private tapestry tile', () => {
             createRequest(`/api/ops/sessions/${SESSION_ID}/tapestry/tiles/${OPAQUE_PID}`),
             mockParams({ id: SESSION_ID, pid: OPAQUE_PID }),
         );
-        expect(forbidden.status).toBe(403);
-        expect(mocks.fetch).not.toHaveBeenCalled();
+        expect(forbidden.status).toBe(503);
+        expect(mocks.fetch).toHaveBeenCalled();
 
+        mocks.fetch.mockClear();
         mocks.sessionFindUnique.mockResolvedValueOnce(null);
         const missing = await GET(
             createRequest('/api/ops/sessions/missing/tapestry/tiles/tp-safe'),

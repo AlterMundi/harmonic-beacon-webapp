@@ -9,6 +9,7 @@ import {
 } from '../staff-capabilities';
 
 const CAPABILITIES: StaffCapability[] = [
+    'manage_events',
     'administer_system',
     'view_operations_health',
     'look_up_admission',
@@ -19,15 +20,9 @@ const CAPABILITIES: StaffCapability[] = [
 ];
 
 const EXPECTED_GLOBAL: Record<(typeof STAFF_ROLES)[number], StaffCapability[]> = {
-    FACILITATOR: ['view_operations_health', 'look_up_admission'],
-    OPERATOR: [
-        'view_operations_health',
-        'look_up_admission',
-        'mutate_entitlement',
-        'issue_support_override',
-    ],
-    ADMIN: CAPABILITIES,
-    FACILITATOR_OP: CAPABILITIES,
+    FACILITATOR: ['manage_events', 'view_operations_health', 'look_up_admission'],
+    OPERATOR: ['manage_events', 'view_operations_health', 'look_up_admission', 'mutate_entitlement', 'issue_support_override'],
+    ADMIN: CAPABILITIES, FACILITATOR_OP: CAPABILITIES,
 };
 
 describe('staff capability policy', () => {
@@ -41,7 +36,7 @@ describe('staff capability policy', () => {
     });
 
     it.each([
-        ['FACILITATOR', false, false, false, false],
+        ['FACILITATOR', false, true, false, false],
         ['FACILITATOR', true, true, true, true],
         ['OPERATOR', false, true, false, false],
         ['OPERATOR', true, true, false, false],
@@ -61,7 +56,7 @@ describe('staff capability policy', () => {
     );
 
     it.each([
-        ['FACILITATOR', false],
+        ['FACILITATOR', true],
         ['OPERATOR', true],
         ['ADMIN', true],
         ['FACILITATOR_OP', true],

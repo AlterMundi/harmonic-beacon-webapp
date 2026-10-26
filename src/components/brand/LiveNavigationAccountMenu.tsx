@@ -103,6 +103,7 @@ export function LiveNavigationAccountMenu({
             {displayName && <p className="hb-live-account-menu__identity">{displayName}</p>}
             {roleLabel && <p className="hb-live-account-menu__role">{roleLabel}</p>}
             {sessionId ? <SessionAliasEditor sessionId={sessionId} /> : null}
+            <Link role="menuitem" href="/profile">{locale === 'es' ? 'Mi Beacon' : 'My Beacon'}</Link>
             <a role="menuitem" href={accountURL.toString()}>
                 {navCopy.account}
             </a>

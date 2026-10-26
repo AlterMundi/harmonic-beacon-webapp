@@ -72,7 +72,7 @@ export default async function EventPage({
         ?? (overdue ? alternatives.find(event => event.id !== scheduledSession.id &&
             event.status === 'SCHEDULED' && event.scheduledAt >= now) : undefined);
     return (
-        <section className="mx-auto max-w-4xl py-4">
+        <section className="mx-auto w-full py-4">
             <EventHeading title={scheduledSession.title} language={scheduledSession.language}
                 status={scheduledSession.status} scheduledAt={scheduledSession.scheduledAt.toISOString()} />
             {(overdue || suggested) && <EventSelectionNotice overdue={overdue}
