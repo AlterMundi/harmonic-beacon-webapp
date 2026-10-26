@@ -81,6 +81,15 @@ stackTest('operational tapestry stays O(1) at 0/1/50/150 participants', async ({
     await page.route(`**/api/ops/sessions/${SESSION_ES.id}/tapestry/tiles/**`, async (route) => {
         await route.fulfill({ status: 404 });
     });
+    // The scene tool opens initially and has its own hand-thumbnail contract.
+    // Keep that independent roster empty when measuring OpsTapestry requests.
+    await page.route(`**/api/ops/sessions/${SESSION_ES.id}/participants`, async route => {
+        await route.fulfill({ json: {
+            sessionId: SESSION_ES.id, sessionStatus: 'SCHEDULED', maxPublishers: 6,
+            activePublishers: 0, grantedPublishers: 0, liveStateAvailable: true,
+            participants: [],
+        } });
+    });
     // The measurement is the cockpit's OpsTapestry; the room iframe has its
     // own optional composite poll (covered by its own contract) and would
     // only add noise here, so its document is stubbed out.
