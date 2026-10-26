@@ -59,6 +59,6 @@ export async function closeListeningIntervals(input: {
     if (!delegate || input.leaseIds.length === 0) return;
     await delegate.updateMany({
         where: { leaseId: { in: input.leaseIds }, endedAt: null },
-        data: { endedAt: input.now, lastHeartbeatAt: input.now, endReason: input.reason },
+        data: { endedAt: input.now, endReason: input.reason },
     });
 }
