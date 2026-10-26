@@ -163,15 +163,16 @@ stackTest('FACILITATOR_OP completes two consecutive event lifecycles without swi
                                 name: /Accept and join|Aceptar y entrar/i,
                             }).click();
                             await expect(attendee.getByRole('button', {
-                                name: /Turn camera off|Apagar (?:la )?cámara/i,
+                                name: /^(?:Turn camera off|Apagar (?:la )?cámara)$/i,
                             })).toBeVisible({ timeout: 15_000 });
+                            await staff.getByRole('tab', { name: /^(?:Escena|Stage)$/ }).click();
                             const stageRow = scene.locator('li').filter({ hasText: attendeeName });
                             await expect(stageRow.getByRole('button', { name: /Take floor|Quitar la palabra/i })).toBeVisible({
                                 timeout: 10_000,
                             });
                             await stageRow.getByRole('button', { name: /Take floor|Quitar la palabra/i }).click();
                             await expect(attendee.getByRole('button', {
-                                name: /Turn camera off|Apagar (?:la )?cámara/i,
+                                name: /^(?:Turn camera off|Apagar (?:la )?cámara)$/i,
                             })).toHaveCount(0, { timeout: 10_000 });
                         }
 

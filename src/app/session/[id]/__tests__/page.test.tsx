@@ -956,7 +956,7 @@ describe('SessionRoomPage - stage invitation consent', () => {
         );
     });
 
-    it('requests no device and exposes no stage controls before the attendee accepts', async () => {
+    it('requests no stage device and keeps stage controls disabled before the attendee accepts', async () => {
         const roomCount = (Room as unknown as { mock: { calls: unknown[] } }).mock.calls.length;
         const { room, dialog } = await receiveInvitation();
 
@@ -966,7 +966,7 @@ describe('SessionRoomPage - stage invitation consent', () => {
         expect(room.localParticipant.setCameraEnabled).not.toHaveBeenCalled();
         expect(room.localParticipant.setMicrophoneEnabled).not.toHaveBeenCalled();
         expect(screen.queryByRole('button', { name: 'Turn camera on' })).not.toBeInTheDocument();
-        expect(screen.queryByRole('button', { name: 'Unmute microphone' })).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Unmute microphone' })).toBeDisabled();
         expect((Room as unknown as { mock: { calls: unknown[] } }).mock.calls).toHaveLength(roomCount + 1);
         expect(room.disconnect).not.toHaveBeenCalled();
     });
@@ -1102,7 +1102,7 @@ describe('SessionRoomPage - stage invitation consent', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Leave the scene' }));
         const confirmation = await screen.findByRole('alertdialog', { name: 'Return to the audience?' });
         expect(confirmation).toHaveAttribute('aria-modal', 'true');
-        expect(confirmation).toHaveTextContent(/keep hearing the session and Beacon without reconnecting/i);
+        expect(confirmation).toHaveTextContent(/stay in the room; the connection renews automatically/i);
         expect(screen.getByRole('button', { name: 'Stay on stage' })).toHaveFocus();
         expect(room.disconnect).not.toHaveBeenCalled();
 
@@ -1110,7 +1110,7 @@ describe('SessionRoomPage - stage invitation consent', () => {
         fireEvent.click(confirm);
         fireEvent.click(confirm);
 
-        await waitFor(() => expect(screen.queryByRole('button', { name: 'Leave the scene' })).not.toBeInTheDocument());
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Leave the scene' })).toBeDisabled());
         const leaveRequests = vi.mocked(global.fetch).mock.calls.filter(([, init]) =>
             init?.method === 'PATCH' &&
             init.body === JSON.stringify({ action: 'leave_stage', expectedGrantVersion: 1 }));
@@ -1155,14 +1155,51 @@ describe('SessionRoomPage - stage invitation consent', () => {
         await waitFor(() => expect(releaseCamera).toBeTypeOf('function'));
         fireEvent.click(screen.getByRole('button', { name: 'Leave the scene' }));
         fireEvent.click(screen.getByRole('button', { name: 'Yes, leave the scene' }));
-        await waitFor(() => expect(screen.queryByRole('button', { name: 'Leave the scene' })).not.toBeInTheDocument());
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Leave the scene' })).toBeDisabled());
 
         releaseCamera?.();
         await act(async () => {});
 
-        expect(screen.queryByRole('button', { name: 'Leave the scene' })).not.toBeInTheDocument();
-        expect(screen.queryByRole('button', { name: 'Unmute microphone' })).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Leave the scene' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Unmute microphone' })).toBeDisabled();
         expect(room.disconnect).not.toHaveBeenCalled();
+    });
+
+    it('ignores a delayed stage-exit response after a newer grant has already been confirmed', async () => {
+        const { room } = await receiveInvitation();
+        fireEvent.click(screen.getByRole('button', { name: 'Accept and join' }));
+        await screen.findByRole('button', { name: 'Turn camera off' });
+        const fallback = vi.mocked(global.fetch).getMockImplementation()!;
+        let releaseExit: (response: Response) => void = () => {};
+        const delayedExit = new Promise<Response>(resolve => { releaseExit = resolve; });
+        let polledNewGrant = false;
+        vi.mocked(global.fetch).mockImplementation((url, init) => {
+            if (String(url).includes('/hand')) {
+                if (init?.method === 'PATCH') return delayedExit;
+                polledNewGrant = true;
+                return Promise.resolve({ ok: true, json: async () => ({
+                    participantId: 'participant-1', raised: false, raisedAt: null, queuePosition: null,
+                    canPublish: true, grantVersion: 3,
+                }) } as Response);
+            }
+            return fallback(url, init);
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Leave the scene' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Yes, leave the scene' }));
+        await waitFor(() => expect(polledNewGrant).toBe(true), { timeout: 4_000 });
+        await act(async () => {
+            releaseExit({ ok: true, json: async () => ({ canPublish: false, grantVersion: 2 }) } as Response);
+            await delayedExit;
+        });
+        await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+        expect(screen.getByRole('button', { name: 'Leave the scene' })).toBeEnabled();
+        expect(screen.getByRole('button', { name: 'Turn camera off' })).toHaveAttribute('aria-pressed', 'true');
+        expect(room.localParticipant.isCameraEnabled).toBe(true);
+        fireEvent.click(screen.getByRole('button', { name: 'Leave the scene' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Yes, leave the scene' }));
+        expect(global.fetch).toHaveBeenLastCalledWith('/api/scheduled-sessions/session-1/hand', expect.objectContaining({
+            method: 'PATCH', body: JSON.stringify({ action: 'leave_stage', expectedGrantVersion: 3 }),
+        }));
     });
 
     it('traps focus in the stage exit confirmation and restores it on Escape', async () => {
@@ -1235,7 +1272,7 @@ describe('SessionRoomPage - deliberate session exit', () => {
         await renderConnected();
         const room = currentRoom();
 
-        fireEvent.click(screen.getByRole('button', { name: 'Leave session' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Leave room' }));
         const confirmation = screen.getByRole('alertdialog', { name: 'Leave the room?' });
         expect(confirmation).toHaveAttribute('aria-modal', 'true');
         expect(confirmation).toHaveTextContent(/disconnects this page from the session and Beacon/i);
@@ -1244,8 +1281,8 @@ describe('SessionRoomPage - deliberate session exit', () => {
 
         fireEvent.click(screen.getByRole('button', { name: 'Stay in the room' }));
         expect(room.disconnect).not.toHaveBeenCalled();
-        expect(screen.getByRole('button', { name: 'Leave session' })).toHaveFocus();
-        fireEvent.click(screen.getByRole('button', { name: 'Leave session' }));
+        expect(screen.getByRole('button', { name: 'Leave room' })).toHaveFocus();
+        fireEvent.click(screen.getByRole('button', { name: 'Leave room' }));
         fireEvent.click(screen.getByRole('button', { name: 'Leave the room' }));
 
         expect(room.disconnect).toHaveBeenCalledOnce();
@@ -1463,7 +1500,7 @@ describe('SessionRoomPage - intentional disconnects are not terminal states', ()
     it('does not show a terminal view when the participant chose to leave', async () => {
         await renderConnected();
 
-        fireEvent.click(screen.getByRole('button', { name: 'Leave session' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Leave room' }));
         fireEvent.click(screen.getByRole('button', { name: 'Leave the room' }));
         await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/'));
 

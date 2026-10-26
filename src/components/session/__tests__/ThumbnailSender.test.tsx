@@ -37,6 +37,24 @@ function mockCamera() {
 }
 
 describe('ThumbnailSender', () => {
+    it('keeps a named camera toggle beside the hand controls and does not restart capture after an explicit stage exit', async () => {
+        const { getUserMedia, stops } = mockCamera();
+        const view = render(<ThumbnailSender sessionId="session-1" connected isPublishing={false} compact />);
+        const off = await screen.findByRole('button', { name: 'Turn camera off · Tapestry camera' });
+        expect(off).toHaveAttribute('aria-pressed', 'true');
+        fireEvent.click(off);
+        expect(stops[0]).toHaveBeenCalledOnce();
+        const on = screen.getByRole('button', { name: 'Turn camera on · Tapestry camera' });
+        fireEvent.click(on);
+        await waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(2));
+        view.rerender(<ThumbnailSender sessionId="session-1" connected isPublishing compact />);
+        await waitFor(() => expect(stops[1]).toHaveBeenCalledOnce());
+        view.rerender(<ThumbnailSender sessionId="session-1" connected isPublishing={false} compact cameraOffSignal={1} />);
+        expect(getUserMedia).toHaveBeenCalledTimes(2);
+        fireEvent.click(screen.getByRole('button', { name: 'Turn camera on · Tapestry camera' }));
+        await waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(3));
+        expect(getUserMedia.mock.calls.every(([constraints]) => constraints.audio === false)).toBe(true);
+    });
     it('counts denied capture attempts in the continuity probe, including VIDEO-only and audio separately', async () => {
         const { installMediaProbe, expectMediaContinuity } = await import('../../../../e2e/helpers/media-probe');
         const { getUserMedia } = mockCamera();

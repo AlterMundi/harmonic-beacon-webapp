@@ -94,6 +94,7 @@ type Props = {
     copy: Messages['ops']['spotlight'];
     staffRoles: Messages['staffRoles'];
     onSummary?: (summary: SpotlightSummary) => void;
+    view?: 'all' | 'hands' | 'scene';
 };
 
 export type SpotlightSummary = {
@@ -237,7 +238,7 @@ function HandThumbnail({
     );
 }
 
-export default function SpotlightConsole({ sessionId, role, copy, staffRoles, onSummary }: Props) {
+export default function SpotlightConsole({ sessionId, role, copy, staffRoles, onSummary, view = 'all' }: Props) {
     const [snapshot, setSnapshot] = useState<ParticipantsSnapshot | null>(null);
     const [pollError, setPollError] = useState<string | null>(null);
     const [actionError, setActionError] = useState<ActionError | null>(null);
@@ -428,7 +429,7 @@ export default function SpotlightConsole({ sessionId, role, copy, staffRoles, on
     const thumbnailFreshForSeconds = snapshot?.thumbnailFreshForSeconds ?? 10;
 
     return (
-        <section className="space-y-6" aria-live="polite">
+        <section className="hb-spotlight space-y-6" aria-live="polite">
             {/* Status banners */}
             {pollError ? (
                 <div role="alert" className="rounded border border-[var(--danger)]/40 bg-[var(--danger)]/10 px-4 py-2 text-sm text-[var(--danger)]">
@@ -512,8 +513,8 @@ export default function SpotlightConsole({ sessionId, role, copy, staffRoles, on
             </div>
 
             {/* Hand queue comes first so a facilitator never has to hunt below the stage. */}
-            <div>
-                <h2 className="mb-1 text-lg font-semibold text-[var(--cream)]">{copy.handQueue}</h2>
+            <div hidden={view === 'scene'}>
+                <h2 className="mb-1 text-lg font-semibold text-[var(--cream)]"><span aria-hidden="true">✋ </span>{copy.handQueue}</h2>
                 <p className="mb-2 text-xs text-[var(--text-muted)]">
                     {fill(copy.handQueueHelp, { seconds: thumbnailFreshForSeconds })}
                 </p>
@@ -566,7 +567,7 @@ export default function SpotlightConsole({ sessionId, role, copy, staffRoles, on
                 )}
             </div>
 
-            <div>
+            <div hidden={view === 'scene'}>
                 <h2 className="mb-2 text-lg font-semibold text-[var(--cream)]">{copy.invitedHeading}</h2>
                 {invited.length === 0 ? (
                     <p className="text-sm text-[var(--text-secondary)]">{copy.noInvitations}</p>
@@ -599,7 +600,7 @@ export default function SpotlightConsole({ sessionId, role, copy, staffRoles, on
             </div>
 
             {/* Stage */}
-            <div>
+            <div hidden={view === 'hands'}>
                 <h2 className="mb-2 text-lg font-semibold text-[var(--cream)]">{copy.onStage}</h2>
                 {onStage.length === 0 ? (
                     <p className="text-sm text-[var(--text-secondary)]">{copy.nobodyOnStage}</p>
@@ -664,7 +665,7 @@ export default function SpotlightConsole({ sessionId, role, copy, staffRoles, on
             </div>
 
             {/* Audience */}
-            <div>
+            <div hidden={view === 'hands'}>
                 <h2 className="mb-2 text-lg font-semibold text-[var(--cream)]">
                     {fill(copy.audience, { count: audience.length })}
                 </h2>

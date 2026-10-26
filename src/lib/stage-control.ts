@@ -81,7 +81,7 @@ type GrantInput = {
 
 type DemoteInput = Omit<GrantInput, 'actorUserId'> & {
     actorUserId: string | null;
-    auditAction?: 'stage.demote' | 'stage.invitation.decline' | 'stage.attendee.leave';
+    auditAction?: 'stage.demote' | 'stage.invitation.decline' | 'stage.attendee.leave' | 'stage.staff.leave';
     clearHand?: boolean;
     expectedGrantVersion?: number;
 };
@@ -439,9 +439,15 @@ export async function demoteParticipant(
                 reconcileNeeded: target.grantReconcileNeeded,
             };
         }
+        // Staff cannot remove the designated facilitator. That person may
+        // voluntarily return to the audience through the own-row, CAS-fenced
+        // self_leave route; no browser-supplied audit action reaches this API.
         if (
             target.staffUserId === scheduledSession.facilitatorId &&
-            target.staffUser?.disabledAt === null
+            target.staffUser?.disabledAt === null &&
+            !(input.auditAction === 'stage.staff.leave' &&
+                input.actorUserId === target.staffUserId &&
+                input.expectedGrantVersion !== undefined)
         ) {
             throw new StageControlError(
                 'facilitator_required',

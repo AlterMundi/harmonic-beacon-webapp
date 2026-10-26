@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useLocale } from '@/context/LocaleContext';
 import { useStaffRoomExitBridge } from '@/components/navigation/RoomExitGuard';
 import type { StaffRole } from '@prisma/client';
@@ -19,7 +19,8 @@ import SessionLifecycleControl from './SessionLifecycleControl';
 import SpotlightConsole, { type SpotlightSummary } from './SpotlightConsole';
 import TapestryArrange from './TapestryArrange';
 
-type Drawer = 'doors' | 'scene' | 'tapestry' | 'admission' | 'health' | 'contributions';
+type Drawer = 'doors' | 'hands' | 'scene' | 'tapestry' | 'admission' | 'health' | 'contributions';
+const ROOM_TABS = ['hands', 'scene', 'contributions'] as const;
 
 type AdmissionEvent = {
     id: string;
@@ -78,7 +79,8 @@ export default function ConductorCockpit({
         contributionsPanel: contributionsCopy, tapestryArrange: tapestryCopy,
         opsTapestry: opsTapestryCopy } = messages.ops;
     const staffRoleLabels = messages.staffRoles;
-    const [drawer, setDrawer] = useState<Drawer | null>('scene');
+    const [drawer, setDrawer] = useState<Drawer | null>('hands');
+    const tabsId = useId();
     const [roomHeight, setRoomHeight] = useState(700);
     const [status, setStatus] = useState<LifecycleStatus>(session.status);
     const roomFrameRef = useRef<HTMLIFrameElement>(null);
@@ -146,8 +148,10 @@ export default function ConductorCockpit({
 
     const drawerTitle = drawer === 'doors'
         ? copy.doorsPanel
-        : drawer === 'scene'
-          ? copy.handsPanel
+        : drawer === 'hands'
+          ? copy.hands
+          : drawer === 'scene'
+          ? copy.stage
           : drawer === 'tapestry'
             ? copy.tapestryPanel
             : drawer === 'admission'
@@ -176,7 +180,7 @@ export default function ConductorCockpit({
                 <button
                     type="button"
                     className="operational-panel min-h-16 text-left"
-                    onClick={(event) => openDrawer('scene', event.currentTarget)}
+                    onClick={(event) => openDrawer('hands', event.currentTarget)}
                     data-signal="hands"
                 >
                     <span className="block text-xs text-[var(--text-secondary)]">{copy.hands}</span>
@@ -210,7 +214,7 @@ export default function ConductorCockpit({
                 <button
                     type="button"
                     className="operational-panel col-span-2 min-h-16 text-left md:col-span-1"
-                    onClick={(event) => openDrawer(primaryDrawer, event.currentTarget)}
+                    onClick={(event) => openDrawer(primaryDrawer === 'scene' && !needsReconciliation && stage.handCount > 0 ? 'hands' : primaryDrawer, event.currentTarget)}
                     data-signal="primary"
                 >
                     <span className="block text-xs text-[var(--text-secondary)]">{copy.primary}</span>
@@ -276,8 +280,28 @@ export default function ConductorCockpit({
                     data-testid="persistent-room"
                 />
 
-            <div className="hb-staff-tools" hidden={!drawer}>
-                <aside role="region" aria-labelledby="cockpit-drawer-title" onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); closeDrawer(); } }}>
+            <div className="hb-staff-tools">
+                <div className="hb-room-tabs hb-staff-tabs" role="tablist" aria-label={locale === 'es' ? 'Panel de la sala' : 'Room panel'}>
+                    {ROOM_TABS.map((tab, index) => <button key={tab} type="button" role="tab"
+                        id={`${tabsId}-${tab}`} aria-controls={`${tabsId}-${tab === 'contributions' ? 'chat' : 'stage'}-panel`}
+                        aria-selected={drawer === tab} tabIndex={drawer === tab || (!ROOM_TABS.some(key => key === drawer) && index === 0) ? 0 : -1}
+                        data-room-tab={tab}
+                        onClick={event => { returnFocusRef.current = event.currentTarget; setDrawer(tab); }}
+                        onKeyDown={event => {
+                            if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+                            event.preventDefault();
+                            const next = event.key === 'Home' ? 0 : event.key === 'End' ? ROOM_TABS.length - 1
+                                : (index + (event.key === 'ArrowRight' ? 1 : -1) + ROOM_TABS.length) % ROOM_TABS.length;
+                            // Tab navigation keeps focus in the tablist. The room
+                            // and both tool trees retain their existing instances.
+                            setDrawer(ROOM_TABS[next]);
+                            document.getElementById(`${tabsId}-${ROOM_TABS[next]}`)?.focus();
+                        }}>
+                        {tab === 'hands' ? <><span aria-hidden="true">✋</span> {copy.hands} <span>{stage.handCount}</span></>
+                            : tab === 'scene' ? (locale === 'es' ? 'Escena' : 'Stage') : 'Chat'}
+                    </button>)}
+                </div>
+                <aside role="region" aria-labelledby="cockpit-drawer-title" hidden={!drawer} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); closeDrawer(); } }}>
                     <div className="hb-staff-tools-heading">
                         <h2 id="cockpit-drawer-title" tabIndex={-1} ref={panelHeadingRef}>{drawerTitle}</h2>
                         <button type="button" onClick={closeDrawer} className="event-button event-button--secondary">
@@ -296,13 +320,14 @@ export default function ConductorCockpit({
                             onStatusChange={setStatus}
                         />
                     </div>
-                    <div hidden={drawer !== 'scene'}>
+                    <div role="tabpanel" id={`${tabsId}-stage-panel`} aria-labelledby={`${tabsId}-${drawer === 'hands' ? 'hands' : 'scene'}`} hidden={drawer !== 'hands' && drawer !== 'scene'}>
                         <SpotlightConsole
                             sessionId={session.id}
                             role={role}
                             copy={spotlightCopy}
                             staffRoles={staffRoleLabels}
                             onSummary={onStageSummary}
+                            view={drawer === 'hands' ? 'hands' : 'scene'}
                         />
                     </div>
                     <div hidden={drawer !== 'tapestry'}>
@@ -323,7 +348,7 @@ export default function ConductorCockpit({
                             copy={admissionCopy}
                         />
                     </div>
-                    <div hidden={drawer !== 'contributions'}>
+                    <div role="tabpanel" id={`${tabsId}-chat-panel`} aria-labelledby={`${tabsId}-contributions`} hidden={drawer !== 'contributions'}>
                         <SessionContributions sessionId={session.id} staff panelActive={drawer === 'contributions'} />
                         <details><summary>{locale === 'es' ? 'Vista del equipo' : 'Staff view'}</summary>
                         <SessionContributionsStaff

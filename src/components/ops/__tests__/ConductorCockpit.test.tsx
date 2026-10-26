@@ -100,6 +100,20 @@ afterEach(() => {
 });
 
 describe('ConductorCockpit', () => {
+    it('keeps chat and stage controls in adjacent keyboard-accessible tabs without replacing the room or a draft', () => {
+        render(<LocaleProvider initialLocale="en"><ConductorCockpit {...props} /></LocaleProvider>);
+        const room = screen.getByTestId('persistent-room');
+        const hands = screen.getByRole('tab', { name: /Hands/ });
+        expect(hands).toHaveAttribute('aria-selected', 'true');
+        fireEvent.keyDown(hands, { key: 'End' });
+        expect(screen.getByRole('tab', { name: 'Chat' })).toHaveFocus();
+        expect(screen.getByText('Staff composer')).toBeVisible();
+        fireEvent.keyDown(screen.getByRole('tab', { name: 'Chat' }), { key: 'ArrowLeft' });
+        expect(screen.getByRole('tab', { name: 'Stage' })).toHaveFocus();
+        expect(screen.getByTestId('spotlight-panel')).toBeVisible();
+        expect(screen.getByText('Staff composer')).not.toBeVisible();
+        expect(screen.getByTestId('persistent-room')).toBe(room);
+    });
     it('updates Staff copy and an open drawer in place when language changes', () => {
         render(<LocaleProvider initialLocale="en"><LanguageControl /><ConductorCockpit {...props} /></LocaleProvider>);
         const room = screen.getByTestId('persistent-room');

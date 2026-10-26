@@ -10,7 +10,7 @@ export async function leaveConnectedRoom(
     const state = surface.getByTestId('connection-state');
     let dialogs: Locator[] = [];
     let ownerIndex = -1;
-    const leave = surface.getByRole('button', { name: /^(?:Leave session|Salir de la sesión)$/i });
+    const leave = surface.getByRole('button', { name: /^(?:Leave room|Salir de la sala|Leave session|Salir de la sesión)$/i });
     if (await leave.isVisible()) {
         await leave.click();
         // Page role locators do not cross iframe documents. A Frame may own
@@ -18,7 +18,7 @@ export async function leaveConnectedRoom(
         const surfaces = 'page' in surface && surface !== surface.page().mainFrame()
             ? [surface, surface.page()] : [surface];
         dialogs = surfaces.map((owner) => owner.getByRole('alertdialog', {
-            name: /^(?:Leave the room\?|¿Salir de la sala\?|Leave session|Salir de la sesión)$/i,
+            name: /^(?:Leave the room\?|¿Salir de la sala\?|Leave room|Salir de la sala|Leave session|Salir de la sesión)$/i,
         }));
         let counts: number[] = [];
         await expect.poll(async () => {

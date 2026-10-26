@@ -118,3 +118,43 @@ schema/migrations are unchanged too. This supports worker compatibility review
 for the admitted owner-operated app delivery path; current host/image custody
 and its actual permit still need readback. Existing Mona sudo grants expose only
 the staging and production Staff API brokers, with no image-admission command.
+
+## Follow-up: hands, camera and voluntary return
+
+The staff sidebar has adjacent **Hands / Stage / Chat** tabs, with the queue
+count always visible. Hands shows waiting people and pending invitations; Stage
+shows publishers and the audience. One Spotlight tree, chat draft and room iframe
+remain mounted across tab changes. Other operational tools stay reachable.
+
+The participant's raised-hand button uses a decorative ✋ and an accessible
+pressed state. Camera controls sit beside the microphone: outside the stage they
+control video-only tapestry snapshots, explicitly labelled **Tapestry camera**;
+after accepting, they control **Stage camera**. The existing default-on tapestry
+policy is preserved; raising a hand never changes camera/microphone consent.
+Microphone and **Leave the scene** remain visible and disabled until applicable.
+**Leave room** stays available independently. Explicit scene exit also keeps the
+tapestry camera off until the person turns it on again.
+
+Staff can voluntarily release their own stage slot, including the assigned
+facilitator, while continuing to receive audio and operate the event. This uses
+the existing locked grant revocation/outbox path, an exact grant version, and an
+own-row lookup from the authenticated staff principal. Ordinary staff demotion
+still protects the assigned facilitator. Delayed exit responses cannot replace a
+newer confirmed grant or misreport its devices. The private staff grant snapshot
+never publishes or acquires devices by polling.
+
+Real-browser exit qualification observes the existing security fence: revoking a
+grant rotates the room identity and renews both receiving transports. Scene exit
+is distinct from leaving the room page or logging out, but it is **not gapless
+audio**. The confirmation explains a possible brief audio pause. Keep this fence;
+do not weaken revocation to satisfy a zero-reconnect assertion. Browser coverage
+checks the changed identity, resumed room, devices staying off, and explicit
+re-entry for both assigned facilitators and unassigned operators.
+
+Follow-up qualification: the five production-build PostgreSQL/LiveKit journeys
+passed, including both staff roles, private profile/share behavior, preserved
+chat drafts, invite/decline/reload/accept/return, and staff-panel overflow checks
+at 1440/390/320px. Ten affected visual cases rendered at all five reference
+widths. The broad local unit suite passed 1,796 cases; the added staff-version
+regression and the final 101-case authority/room group also passed. Hosted
+qualification and image delivery remain separate requirements.

@@ -312,6 +312,7 @@ function SessionRoom() {
     const [stageExitConfirming, setStageExitConfirming] = useState(false);
     const [stageExitBusy, setStageExitBusy] = useState(false);
     const [stageExitError, setStageExitError] = useState<string | null>(null);
+    const [tapestryCameraOffSignal, setTapestryCameraOffSignal] = useState(0);
 
     const roomRef = useRef<Room | null>(null);
     // Keep ownership by track so an unsubscribe can remove the exact DOM node
@@ -339,6 +340,8 @@ function SessionRoom() {
     const stageInvitationRef = useRef<HTMLDivElement>(null);
     const stageExitCancelRef = useRef<HTMLButtonElement>(null);
     const stageExitTriggerRef = useRef<HTMLButtonElement>(null);
+    const roomExitTriggerRef = useRef<HTMLButtonElement>(null);
+    const wasStageExitConfirmingRef = useRef(false);
     const participantFallbackRef = useRef(copy.session.participantFallback);
     const beaconConnectionHistoryRef = useRef({ sessionId: id, established: false });
     if (beaconConnectionHistoryRef.current.sessionId !== id) {
@@ -637,7 +640,7 @@ function SessionRoom() {
 
     const leaveStage = useCallback(async () => {
         if (
-            principalKind !== 'ticket' ||
+            !principalKind ||
             !canPublish ||
             stageExitBusy ||
             stageExitInFlightRef.current ||
@@ -648,23 +651,32 @@ function SessionRoom() {
         setStageExitBusy(true);
         setStageExitError(null);
         try {
-            const response = await fetch(`/api/scheduled-sessions/${id}/hand`, {
-                method: 'PATCH',
+            const response = await fetch(principalKind === 'staff'
+                ? `/api/ops/sessions/${id}/stage` : `/api/scheduled-sessions/${id}/hand`, {
+                method: principalKind === 'staff' ? 'POST' : 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    action: 'leave_stage',
+                    action: principalKind === 'staff' ? 'self_leave' : 'leave_stage',
                     expectedGrantVersion: grantVersion,
                 }),
             });
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const next = await response.json() as { grantVersion?: unknown };
+            if (Number.isSafeInteger(next.grantVersion) && grantVersionRef.current !== null &&
+                (next.grantVersion as number) < grantVersionRef.current) {
+                // A later invitation/grant may already be confirmed while the
+                // earlier leave response was in transit. It owns the UI now;
+                // do not misreport new media as off or lower its CAS version.
+                setStageExitConfirming(false);
+                return;
+            }
             if (Number.isSafeInteger(next.grantVersion) && (next.grantVersion as number) >= 0) {
                 grantVersionRef.current = next.grantVersion as number;
                 setGrantVersion(next.grantVersion as number);
             }
 
             // LiveKit's permission event releases the local devices. These
-            // state updates make the attendee UI converge immediately while
+            // state updates make the room UI converge immediately while
             // both receiving rooms and their audio activation stay mounted.
             desiredCameraRef.current = false;
             desiredMicRef.current = false;
@@ -673,6 +685,7 @@ function SessionRoom() {
             setCanPublish(false);
             setIsCameraOn(false);
             setIsMicOn(false);
+            setTapestryCameraOffSignal(value => value + 1);
             setStageExitConfirming(false);
         } catch (failure) {
             console.error('Failed to leave the stage:', redactErrorDetail(failure));
@@ -1039,10 +1052,11 @@ function SessionRoom() {
     useEffect(() => {
         if (stageExitConfirming) {
             stageExitCancelRef.current?.focus();
-        } else {
-            stageExitTriggerRef.current?.focus();
+        } else if (wasStageExitConfirmingRef.current) {
+            (canPublish ? stageExitTriggerRef : roomExitTriggerRef).current?.focus();
         }
-    }, [stageExitConfirming]);
+        wasStageExitConfirmingRef.current = stageExitConfirming;
+    }, [stageExitConfirming, canPublish]);
 
     useEffect(() => {
         const gains = roomMixGains(volume, mix);
@@ -1343,7 +1357,7 @@ function SessionRoom() {
 
                 {/* Stage + contributions panel (side on desktop, below on mobile) */}
                 <div className="hb-room-workspace">
-                {/* Bottom controls */}
+                {/* Stable controls above the scene. */}
                 <div className="hb-room-controls">
                     {(!isBeaconPlaying || !isStageAudioPlaying) && (
                         <div className="hb-room-activation event-card w-full text-center" role="group" aria-label={copy.session.audioActivationLabel}>
@@ -1365,7 +1379,7 @@ function SessionRoom() {
                         </div>
                     )}
 
-                    {principalKind === 'staff' && isConnected && !canPublish && <StaffPublicationAccess sessionId={id} />}
+                    {principalKind === 'staff' && isConnected && <StaffPublicationAccess sessionId={id} canPublish={canPublish} onGrantChange={applyGrantState} />}
 
                     {isConnected && principalKind === "ticket" && (
                         <div className="hb-room-hand">
@@ -1376,21 +1390,8 @@ function SessionRoom() {
                             />
                         </div>
                     )}
-                    {canControlStageDevices && principalKind === 'ticket' ? (
-                        <div className="mx-auto mb-4 w-full max-w-md">
-                            {!stageExitConfirming ? (
-                                <button
-                                    type="button"
-                                    ref={stageExitTriggerRef}
-                                    onClick={() => {
-                                        setStageExitError(null);
-                                        setStageExitConfirming(true);
-                                    }}
-                                    className="event-button event-button--secondary w-full"
-                                >
-                                    {copy.session.leaveStage}
-                                </button>
-                            ) : (
+                    {stageExitConfirming ? (
+                        <div className="hb-room-stage-confirm">
                                 <section
                                     role="alertdialog"
                                     aria-modal="true"
@@ -1431,18 +1432,14 @@ function SessionRoom() {
                                         </button>
                                     </div>
                                 </section>
-                            )}
-                            {stageExitError ? (
-                                <p role="alert" className="mt-3 text-center text-sm text-[var(--danger)]">
-                                    {stageExitError}
-                                </p>
-                            ) : null}
                         </div>
                     ) : null}
+                    {stageExitError ? <p role="alert" className="w-full text-sm text-[var(--danger)]">{stageExitError}</p> : null}
                     <div className="hb-room-device-controls">
-                        {canControlStageDevices && (
-                            <div className="flex flex-col items-center gap-1">
+                        <div className="flex flex-col items-center gap-1">
                                 <button
+                                    disabled={!isConnected || !canControlStageDevices}
+                                    aria-describedby={!canControlStageDevices ? 'room-stage-controls-help' : undefined}
                                     onClick={toggleMic}
                                     className={`flex h-14 w-14 items-center justify-center rounded-full transition-all ${
                                         isMicOn
@@ -1466,14 +1463,36 @@ function SessionRoom() {
                                 <span className="text-xs text-[var(--text-secondary)]">{copy.session.mic}</span>
 
                             </div>
+
+                        <ThumbnailSender sessionId={id} connected={isConnected} isPublishing={canControlStageDevices} compact cameraOffSignal={tapestryCameraOffSignal} />
+                        {canControlStageDevices && (
+                            <div className="flex flex-col items-center gap-1">
+                                <button
+                                    onClick={toggleCamera}
+                                    disabled={!isConnected}
+                                    className={`flex h-14 w-14 items-center justify-center rounded-full transition-all ${
+                                        isCameraOn
+                                            ? "bg-[var(--cyan)] text-[var(--ink)]"
+                                            : "bg-white/10 text-[var(--text-muted)] hover:bg-white/20"
+                                    }`}
+                                    aria-label={isCameraOn ? copy.session.turnCameraOff : copy.session.turnCameraOn}
+                                    aria-pressed={isCameraOn}
+                                >
+                                    <svg className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                        {!isCameraOn && <line x1="3" y1="3" x2="21" y2="21" strokeLinecap="round" />}
+                                    </svg>
+                                </button>
+                                <span className="text-xs text-[var(--text-secondary)]">{copy.session.cameraStage}</span>
+                            </div>
                         )}
 
-                        {canControlStageDevices && isCameraOn && (
+                        {canControlStageDevices && (
                             <div className="flex flex-col items-center gap-1">
                                 <button
                                     type="button"
                                     onClick={() => void switchCamera()}
-                                    disabled={cameraSwitchBusy}
+                                    disabled={!isConnected || !isCameraOn || cameraSwitchBusy}
                                     className="flex h-14 w-14 items-center justify-center rounded-full bg-white/10 text-[var(--cream)] transition-all hover:bg-white/20 disabled:cursor-wait disabled:opacity-60"
                                     aria-label={cameraFacingMode === "user"
                                         ? copy.session.switchToRearCamera
@@ -1490,27 +1509,6 @@ function SessionRoom() {
                                             ? copy.session.frontCamera
                                             : copy.session.rearCamera}
                                 </span>
-                            </div>
-                        )}
-
-                        {canControlStageDevices && (
-                            <div className="flex flex-col items-center gap-1">
-                                <button
-                                    onClick={toggleCamera}
-                                    className={`flex h-14 w-14 items-center justify-center rounded-full transition-all ${
-                                        isCameraOn
-                                            ? "bg-[var(--cyan)] text-[var(--ink)]"
-                                            : "bg-white/10 text-[var(--text-muted)] hover:bg-white/20"
-                                    }`}
-                                    aria-label={isCameraOn ? copy.session.turnCameraOff : copy.session.turnCameraOn}
-                                    aria-pressed={isCameraOn}
-                                >
-                                    <svg className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                                        {!isCameraOn && <line x1="3" y1="3" x2="21" y2="21" strokeLinecap="round" />}
-                                    </svg>
-                                </button>
-                                <span className="text-xs text-[var(--text-secondary)]">{copy.session.camera}</span>
                             </div>
                         )}
 
@@ -1533,6 +1531,11 @@ function SessionRoom() {
                         </div>
 
                     </div>
+                    {!canControlStageDevices && <p id="room-stage-controls-help" className="hb-room-controls-help">
+                        {principalKind === 'staff'
+                            ? (locale === 'es' ? 'Habilitá tus controles para usar el micrófono en la escena. La cámara del mosaico funciona por separado.' : 'Enable your controls to use the stage microphone. The tapestry camera works separately.')
+                            : copy.session.stageControlsLocked}
+                    </p>}
                     {cameraSwitchError && (
                         <p className="mx-auto mt-3 max-w-md text-center text-sm text-[var(--danger)]" role="alert">
                             {cameraSwitchError}
@@ -1551,13 +1554,22 @@ function SessionRoom() {
                                 {echoMessage && <p role="status" className="max-w-48 text-center text-xs">{echoMessage}</p>}</div>
                     </details>}
                     <div className="hb-room-leave">
+                        <button type="button" ref={stageExitTriggerRef}
+                            disabled={!isConnected || !canControlStageDevices || grantVersion === null || stageExitBusy}
+                            aria-describedby={!canControlStageDevices ? 'room-stage-exit-help' : undefined}
+                            onClick={() => { setStageExitError(null); setStageExitConfirming(true); }}
+                            className="event-button event-button--secondary">
+                            {copy.session.leaveStage}
+                        </button>
                         <button
                             type="button"
+                            ref={roomExitTriggerRef}
                             onClick={event => { event.currentTarget.focus(); requestExit(leaveSession); }}
                             className="min-h-11 px-3 text-sm text-[var(--text-muted)] underline decoration-white/20 underline-offset-4 hover:text-[var(--cream)]"
                         >
                             {copy.session.leaveSession}
                         </button>
+                        {!canControlStageDevices && <span id="room-stage-exit-help" className="sr-only">{copy.session.stageExitLocked}</span>}
                     </div>
                 </div>
 
@@ -1690,12 +1702,6 @@ function SessionRoom() {
                             {stageInvitationError}
                         </p>
                     ) : null}
-
-                    <ThumbnailSender
-                        sessionId={id}
-                        connected={isConnected}
-                        isPublishing={canControlStageDevices}
-                    />
 
                     <ThumbnailTapestry sessionId={id} />
 

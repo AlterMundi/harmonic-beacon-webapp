@@ -21,7 +21,27 @@ type StageRequest = {
     reason?: unknown;
     trackSid?: unknown;
     muted?: unknown;
+    expectedGrantVersion?: unknown;
 };
+
+/** Own grant snapshot only: staff do not use the attendee hand queue. */
+export async function GET(
+    _request: NextRequest,
+    { params }: { params: Promise<{ id: string }> },
+) {
+    const [staff, errorResponse] = await requireStaff();
+    if (!staff) return errorResponse;
+    const { id } = await params;
+    const participant = await prisma.sessionParticipant.findFirst({
+        where: { scheduledSessionId: id, staffUserId: staff.userId },
+        select: { grantVersion: true, publishGrantedAt: true, publishRevokedAt: true, grantReconcileNeeded: true },
+    });
+    if (!participant) return NextResponse.json({ error: 'participant_not_joined' }, { status: 409 });
+    return NextResponse.json({
+        grantVersion: participant.grantVersion,
+        canPublish: participant.publishGrantedAt !== null && participant.publishRevokedAt === null && !participant.grantReconcileNeeded,
+    }, { headers: { 'Cache-Control': 'private, no-store' } });
+}
 
 export async function POST(
     request: NextRequest,
@@ -68,7 +88,7 @@ export async function POST(
     const reason = typeof body.reason === 'string' ? body.reason : undefined;
 
     try {
-        if (action === 'self_publish') {
+        if (action === 'self_publish' || action === 'self_leave') {
             if (!isSameOriginLiveRequest(request)) {
                 return NextResponse.json({ error: 'invalid_origin' }, { status: 403 });
             }
@@ -76,6 +96,16 @@ export async function POST(
                 where: { scheduledSessionId: id, staffUserId: staff.userId }, select: { id: true },
             });
             if (!participant) return NextResponse.json({ error: 'participant_not_joined' }, { status: 409 });
+            if (action === 'self_leave') {
+                if (!Number.isSafeInteger(body.expectedGrantVersion) || (body.expectedGrantVersion as number) < 0) {
+                    return invalidRequest('A current grant version is required');
+                }
+                return NextResponse.json(await demoteParticipant({
+                    scheduledSessionId: id, participantId: participant.id, actorUserId: staff.userId,
+                    reason: 'Staff voluntarily left the stage', auditAction: 'stage.staff.leave',
+                    clearHand: true, expectedGrantVersion: body.expectedGrantVersion as number,
+                }));
+            }
             return NextResponse.json(await promoteParticipant({
                 scheduledSessionId: id, participantId: participant.id, actorUserId: staff.userId,
                 reason: 'Staff requested publication controls',
@@ -154,7 +184,7 @@ export async function POST(
             });
         }
         return invalidRequest(
-            'Action must be promote, demote, mute, lower_hand, or reconcile',
+            'Action must be self_publish, self_leave, promote, demote, mute, lower_hand, or reconcile',
         );
     } catch (error) {
         if (error instanceof HandQueueError) {
