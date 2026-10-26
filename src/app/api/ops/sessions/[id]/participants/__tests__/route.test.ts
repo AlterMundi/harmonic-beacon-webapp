@@ -186,15 +186,16 @@ describe('GET /api/ops/sessions/[id]/participants', () => {
         expect(sessionFindUnique).not.toHaveBeenCalled();
     });
 
-    it('rejects a facilitator assigned to another event and an unknown session before tapestry lookup', async () => {
+    it('admits a facilitator assigned to another event and an unknown session before tapestry lookup', async () => {
         requireStaff.mockResolvedValue([{ ...operator, role: 'FACILITATOR', userId: 'facilitator-elsewhere' }, null]);
         const { GET } = await import('../route');
         const forbidden = await GET(
             createRequest('/api/ops/sessions/event-1/participants'),
             mockParams({ id: 'event-1' }),
         );
-        expect(forbidden.status).toBe(403);
+        expect(forbidden.status).toBe(200);
 
+        tapestryInternalUrl.mockClear();
         sessionFindUnique.mockResolvedValueOnce(null);
         const missing = await GET(
             createRequest('/api/ops/sessions/not-this-event/participants'),

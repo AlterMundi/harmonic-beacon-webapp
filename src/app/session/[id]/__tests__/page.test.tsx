@@ -652,9 +652,7 @@ describe('SessionRoomPage - participant identity', () => {
             'Signed in as: Nico',
         );
         expect(screen.getByTestId('viewer-identity')).not.toHaveTextContent(/ATTENDEE|12345678|ID/);
-        expect(screen.getByTestId('viewer-role-guidance')).toHaveTextContent(
-            /your camera and microphone stay under your control/i,
-        );
+        expect(screen.queryByTestId('viewer-role-guidance')).not.toBeInTheDocument();
         expect(screen.queryByText(/Beacon room:/)).not.toBeInTheDocument();
         expect(screen.queryByText('Audio A/B check')).not.toBeInTheDocument();
         expect(document.querySelector('audio[src*="/api/audio-diagnostic"]')).toBeNull();
@@ -711,6 +709,7 @@ describe('SessionRoomPage - staff cockpit handoff', () => {
         installStaffToken(true);
         await renderConnected();
         const room = currentRoom();
+        fireEvent.click(screen.getByText('Audio settings'));
         const toggle = screen.getByRole('switch', { name: /Echo cancellation/ });
         expect(toggle).toHaveAttribute('aria-checked', 'true');
         fireEvent.click(toggle);
@@ -731,9 +730,7 @@ describe('SessionRoomPage - staff cockpit handoff', () => {
             'Nico · Facilitator and operations',
         );
         expect(screen.getByTestId('viewer-identity')).not.toHaveTextContent('FACILITATOR_OP');
-        expect(screen.getByTestId('viewer-role-guidance')).toHaveTextContent(
-            /Assigned facilitator.*camera and microphone remain under your control/i,
-        );
+        expect(screen.queryByTestId('viewer-role-guidance')).not.toBeInTheDocument();
         const options = vi.mocked(Room).mock.calls.at(-1)?.[0] as RoomOptions;
         expect(options).toMatchObject({
             audioCaptureDefaults: {
@@ -777,9 +774,7 @@ describe('SessionRoomPage - staff cockpit handoff', () => {
         installStaffToken(false);
         await renderConnected();
 
-        expect(screen.getByTestId('viewer-role-guidance')).toHaveTextContent(
-            /Operational access.*do not publish as its assigned facilitator/i,
-        );
+        expect(screen.queryByTestId('viewer-role-guidance')).not.toBeInTheDocument();
         const options = vi.mocked(Room).mock.calls.at(-1)?.[0] as RoomOptions;
         expect(options.audioCaptureDefaults).toEqual({echoCancellation: true});
         expect(options.publishDefaults?.audioPreset).toBeUndefined();

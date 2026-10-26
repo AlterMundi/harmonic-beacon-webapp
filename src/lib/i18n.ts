@@ -667,7 +667,7 @@ export const messages: Record<UiLocale, Messages> = {
             signedIn: 'Ingresaste como',
             attendeeCapability: 'Participante · tu cámara y micrófono quedan bajo tu control; sólo entrás en escena después de aceptar una invitación.',
             assignedFacilitatorCapability: 'Facilitación asignada · podés conducir y publicar en este evento; tu cámara y micrófono siguen bajo tu control.',
-            operationalStaffCapability: 'Acceso operativo · podés acompañar este evento, pero no publicar como facilitación asignada.',
+            operationalStaffCapability: 'Acceso de equipo · podés operar este evento y habilitar tu micrófono y cámara cuando lo elijas.',
             staffConsole: 'Escena y manos',
             audioQuality: {
                 heading: 'Calidad de voz de facilitación',
@@ -861,10 +861,10 @@ export const messages: Record<UiLocale, Messages> = {
             ADMIN: 'Administración',
         },
         staffRoleDescriptions: {
-            FACILITATOR: 'Conduce y publica únicamente en los eventos que tiene asignados. Puede consultar entradas y estado técnico, pero no administrar accesos.',
-            FACILITATOR_OP: 'Opera todos los eventos. Sólo en su evento asignado actúa como facilitación y puede publicar; fuera de él conserva acceso operativo sin publicación.',
-            OPERATOR: 'Opera todos los eventos y resuelve admisión y accesos. No publica cámara o micrófono como facilitación.',
-            ADMIN: 'Administra el sistema, los eventos y los accesos globalmente. No publica cámara o micrófono como facilitación.',
+            FACILITATOR: 'Crea y opera cualquier evento y puede habilitar su micrófono y cámara. Puede consultar entradas y estado técnico; la administración de accesos conserva sus permisos propios.',
+            FACILITATOR_OP: 'Crea y opera cualquier evento y puede habilitar su micrófono y cámara. La asignación identifica quién conduce; conserva sus permisos de administración.',
+            OPERATOR: 'Crea y opera cualquier evento, puede habilitar su micrófono y cámara y resuelve admisión con sus permisos actuales.',
+            ADMIN: 'Administra el sistema, los eventos y los accesos globalmente, y puede habilitar su micrófono y cámara en la sala.',
         },
         ops: {
             brand: 'Beacon · Equipo',
@@ -1289,7 +1289,7 @@ export const messages: Record<UiLocale, Messages> = {
             signedIn: 'Signed in as',
             attendeeCapability: 'Participant · your camera and microphone stay under your control; you enter the stage only after accepting an invitation.',
             assignedFacilitatorCapability: 'Assigned facilitator · you can conduct and publish in this event; your camera and microphone remain under your control.',
-            operationalStaffCapability: 'Operational access · you can support this event, but you do not publish as its assigned facilitator.',
+            operationalStaffCapability: 'Staff access · you can operate this event and enable your microphone and camera when you choose.',
             staffConsole: 'Stage and hands',
             audioQuality: {
                 heading: 'Facilitator voice quality',
@@ -1483,10 +1483,10 @@ export const messages: Record<UiLocale, Messages> = {
             ADMIN: 'Administration',
         },
         staffRoleDescriptions: {
-            FACILITATOR: 'Conducts and publishes only in assigned events. Can inspect admission and system health, but cannot administer access.',
-            FACILITATOR_OP: 'Operates every event. Acts as facilitator and may publish only in the assigned event; elsewhere retains operational access without publication.',
-            OPERATOR: 'Operates every event and supports admission and access. Does not publish camera or microphone as facilitator.',
-            ADMIN: 'Administers the system, events, and access globally. Does not publish camera or microphone as facilitator.',
+            FACILITATOR: 'Creates and operates any event and can enable their microphone and camera. Can inspect admission and system health; access administration retains its own permissions.',
+            FACILITATOR_OP: 'Creates and operates any event and can enable their microphone and camera. Assignment identifies who leads; existing administration permissions remain available.',
+            OPERATOR: 'Creates and operates any event, can enable their microphone and camera, and supports admission with existing permissions.',
+            ADMIN: 'Administers the system, events and access globally, and can enable their microphone and camera in the room.',
         },
         ops: {
             brand: 'Beacon · Staff',

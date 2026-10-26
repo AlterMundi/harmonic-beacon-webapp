@@ -73,7 +73,7 @@ stackTest('private hand thumbnails remain bounded, accessible and actionable at 
         ROUTES.opsSession(SESSION_ES.id),
     );
     await page.locator('[data-signal="hands"]').click();
-    const drawer = page.getByRole('dialog');
+    const drawer = page.locator('.hb-staff-tools > aside');
 
     await expect(drawer.getByText(/No hands raised|No hay manos levantadas/i)).toBeVisible();
 

@@ -55,7 +55,7 @@ export async function setSessionSceneCapacity(input: SetSessionSceneCapacityInpu
             throw new SessionCapacityError('session_not_found', 404, 'Session not found');
         }
 
-        if (!hasStaffCapability(input.actorRole, 'administer_system')) {
+        if (!hasStaffCapability(input.actorRole, 'manage_events')) {
             throw new SessionCapacityError('forbidden', 403, 'Insufficient permissions');
         }
 

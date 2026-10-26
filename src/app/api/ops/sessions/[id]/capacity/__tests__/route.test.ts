@@ -74,7 +74,7 @@ describe('PATCH /api/ops/sessions/[id]/capacity', () => {
         const response = await PATCH(request({ maxPublishers: 9 }), mockParams({ id: 'event-1' }));
         expect(response.status).toBe(401);
         expect(mocks.setSessionSceneCapacity).not.toHaveBeenCalled();
-        expect(mocks.requireStaffCapability).toHaveBeenCalledWith('administer_system');
+        expect(mocks.requireStaffCapability).toHaveBeenCalledWith('manage_events');
     });
 
     it.each([

@@ -214,7 +214,7 @@ describe('SessionLifecycleControl', () => {
         );
     });
 
-    it('does not offer an unauthorized cancellation retry to an operator', () => {
+    it('offers the authorized cancellation retry to an operator', () => {
         render(<SessionLifecycleControl
             {...localized}
             sessionId="event-1"
@@ -223,10 +223,10 @@ describe('SessionLifecycleControl', () => {
             role="OPERATOR"
         />);
 
-        expect(screen.queryByRole('button', { name: 'Disconnect remaining clients' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Disconnect remaining clients' })).toBeInTheDocument();
     });
 
-    it('blocks non-admin staff outside the opening window', () => {
+    it('requires an explicit reason from operators outside the opening window', () => {
         render(<SessionLifecycleControl
             {...localized}
             sessionId="event-1"
@@ -235,7 +235,9 @@ describe('SessionLifecycleControl', () => {
             role="OPERATOR"
         />);
         expect(screen.getByRole('button', { name: 'Open doors' })).toBeDisabled();
-        expect(screen.getByText(/Doors can open from 10 minutes before/)).toBeInTheDocument();
+        expect(screen.getByLabelText(/Operational reason/)).toBeInTheDocument();
+        fireEvent.change(screen.getByLabelText(/Operational reason/), { target: { value: 'Approved rehearsal' } });
+        expect(screen.getByRole('button', { name: 'Open doors' })).toBeEnabled();
     });
 
     it('lets an admin provide an audited override reason', () => {

@@ -48,13 +48,13 @@ describe('ops tapestry route', () => {
         expect(init.headers['x-tapestry-internal-secret']).toBe('test-secret');
     });
 
-    it('GET rejects a facilitator of another event', async () => {
+    it('GET admits a facilitator of another event', async () => {
         staffOk('FACILITATOR');
         mocks.requireStaff.mockResolvedValue([{ userId: 'staff-9', role: 'FACILITATOR' }, null]);
 
         const response = await GET(createRequest('http://x'), mockParams({ id: SESSION_ID }));
-        expect(response.status).toBe(403);
-        expect(mocks.fetch).not.toHaveBeenCalled();
+        expect(response.status).toBe(503);
+        expect(mocks.fetch).toHaveBeenCalled();
     });
 
     it('PUT validates the order before proxying', async () => {

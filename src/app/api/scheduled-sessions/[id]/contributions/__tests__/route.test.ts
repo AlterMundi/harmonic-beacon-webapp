@@ -47,7 +47,7 @@ function request(method: string, body?: unknown, searchParams?: Record<string, s
         method,
         body,
         searchParams,
-        headers: { cookie: 'hb_session=attendee-token' },
+        headers: { cookie: 'hb_session=attendee-token', origin: 'http://localhost:3000', host: 'localhost:3000' },
     });
 }
 
@@ -235,12 +235,14 @@ describe('POST create — authorization', () => {
         expect(mocks.contributionCreate).not.toHaveBeenCalled();
     });
 
-    it('rejects staff — the audience feed is attendee-only', async () => {
+    it('publishes staff with a server-derived role and rejects anonymous staff posts', async () => {
         mockStaff();
-
-        const { status } = await parseResponse(await POST(request('POST', validBody), mockParams({ id: SESSION_ID })));
-
-        expect(status).toBe(403);
+        mocks.contributionCreate.mockImplementation(async ({ data }) => contributionRow(data));
+        expect((await POST(request('POST', validBody), mockParams({ id: SESSION_ID }))).status).toBe(201);
+        expect(mocks.contributionCreate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ authorDisplayName: 'Julián · Operaciones' }) }));
+        expect(mocks.participantFindFirst).toHaveBeenLastCalledWith(expect.objectContaining({ where: { scheduledSessionId: SESSION_ID, staffUserId: 'staff-1' } }));
+        mocks.contributionCreate.mockClear();
+        expect((await POST(request('POST', { ...validBody, visibility: 'ANONYMOUS' }), mockParams({ id: SESSION_ID }))).status).toBe(400);
         expect(mocks.contributionCreate).not.toHaveBeenCalled();
     });
 
@@ -250,7 +252,7 @@ describe('POST create — authorization', () => {
         const { NextRequest } = await import('next/server');
         const raw = new NextRequest('http://localhost:3000/x', {
             method: 'POST',
-            headers: { cookie: 'hb_session=attendee-token', 'content-type': 'application/json' },
+            headers: { cookie: 'hb_session=attendee-token', 'content-type': 'application/json', origin: 'http://localhost:3000', host: 'localhost:3000' },
             body: '{not json',
         });
         expect((await POST(raw, mockParams({ id: SESSION_ID }))).status).toBe(400);

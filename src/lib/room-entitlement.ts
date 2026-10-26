@@ -115,9 +115,9 @@ async function createRoomParticipant(
             where: { id: scheduledSessionId },
             select: { facilitatorId: true, maxPublishers: true },
         });
-        const assignedFacilitator = session?.facilitatorId === access.staffUserId;
+        const mayPublish = access.canPublishInitially && session?.facilitatorId === access.staffUserId;
         let grantAt: Date | null = null;
-        if (assignedFacilitator && session && isSceneCapacity(session.maxPublishers)) {
+        if (mayPublish && session && isSceneCapacity(session.maxPublishers)) {
             const activePublisherGrants = await tx.sessionParticipant.count({
                 where: {
                     scheduledSessionId,

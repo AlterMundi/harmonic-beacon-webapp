@@ -70,11 +70,11 @@ export function decideSessionTransition(input: {
 
     // Cancellation is an administrative action even when a repeated request
     // has nothing left to mutate.
-    if (targetStatus === 'CANCELLED' && !hasStaffCapability(actor.role, 'administer_system')) {
+    if (targetStatus === 'CANCELLED' && !hasStaffCapability(actor.role, 'manage_events')) {
         throw new SessionLifecycleError(
             403,
             'forbidden',
-            'Only an administrator may cancel an event',
+            'Only authorized event staff may cancel an event',
         );
     }
 
@@ -109,7 +109,7 @@ export function decideSessionTransition(input: {
         const latest = session.scheduledAt.getTime() + SESSION_OPEN_LATE_MS;
         const outsideWindow = now.getTime() < earliest || now.getTime() > latest;
         if (outsideWindow) {
-            if (!hasStaffCapability(actor.role, 'administer_system')) {
+            if (!hasStaffCapability(actor.role, 'manage_events')) {
                 throw new SessionLifecycleError(
                     409,
                     'outside_open_window',
@@ -120,7 +120,7 @@ export function decideSessionTransition(input: {
                 throw new SessionLifecycleError(
                     400,
                     'reason_required',
-                    'A non-PII reason is required for an administrator to open outside the event window',
+                    'A non-PII reason is required to open outside the event window',
                 );
             }
             adminOverride = true;

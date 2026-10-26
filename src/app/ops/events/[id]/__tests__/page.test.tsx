@@ -112,7 +112,7 @@ describe('canonical staff event page', () => {
             id: 'secret-event',
             title: 'Private event title',
             language: 'ENGLISH',
-            status: 'LIVE',
+            status: 'ENDED',
             scheduledAt: new Date(),
             facilitatorId: 'someone-else',
         });

@@ -40,10 +40,9 @@ describe('staff event navigation', () => {
     });
     afterEach(() => vi.useRealTimers());
 
-    it('scopes a facilitator to assignments and gives global roles the hub set', () => {
+    it('gives every staff role the complete event hub', () => {
         expect(staffEventWhere({ id: 'fac-1', role: 'FACILITATOR' })).toEqual({
             status: { in: ['LIVE', 'SCHEDULED'] },
-            facilitatorId: 'fac-1',
         });
         for (const role of ['FACILITATOR_OP', 'OPERATOR', 'ADMIN'] as const) {
             expect(staffEventWhere({ id: 'staff-1', role })).toEqual({

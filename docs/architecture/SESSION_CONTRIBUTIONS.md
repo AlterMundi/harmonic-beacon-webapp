@@ -111,8 +111,11 @@ All routes are `force-dynamic` and answer `Cache-Control: no-store`.
 
 ### `POST /api/scheduled-sessions/[id]/contributions`
 
-Publishes one contribution. Attendees only (a `BOUND` ticket for this
-session, session `LIVE`); staff observe from the ops console and receive 403.
+Publishes one contribution while the session is `LIVE`. Attendees need a
+`BOUND` ticket for this session. Enabled staff authorized by `eventStaffPolicy`
+may send named contributions from the cockpit. Staff cannot send anonymously;
+their display name and role are resolved from the authenticated principal.
+The request must originate from the same host.
 
 Request: `{ "body": string, "visibility": "NAMED" | "ANONYMOUS", "idempotencyKey": string }`
 
@@ -121,9 +124,10 @@ Responses:
 - `201` — created; body is the canonical PublicContribution.
 - `200` — idempotent replay; same body, the pre-existing canonical row.
 - `400` — `invalid_request` (malformed/non-object JSON), `invalid_body`,
-  `empty_body`, `body_too_long`, `invalid_visibility`,
+  `empty_body`, `body_too_long`, `invalid_visibility`, `staff_must_be_named`,
   `invalid_idempotency_key`.
-- `401` — unauthenticated. `403` — cross-session, staff, or non-LIVE session.
+- `401` — unauthenticated. `403` — cross-session, unauthorized, cross-origin,
+  or non-LIVE session.
 - `404` — unknown session (nothing else leaks).
 - `409` — `idempotency_key_conflict` (same key, different payload),
   `participant_not_joined`.
@@ -163,9 +167,9 @@ Suggested client poll: 5 seconds.
 
 The staff reading: `VISIBLE` + `HIDDEN` rows (there is no withdrawal path yet),
 same ordering and **the exact same page envelope** as the public feed, for
-staff whose `eventStaffPolicy` grants `canOperateEvent` — the assigned
-facilitator, facilitator-operators, operators and admins. An unassigned
-facilitator receives 403. Response items are `StaffContribution[]`.
+staff whose `eventStaffPolicy` grants `canOperateEvent` — enabled facilitators,
+facilitator-operators, operators and admins, regardless of assignment.
+Response items are `StaffContribution[]`.
 
 ## 7. Idempotency
 
@@ -231,26 +235,25 @@ is the database's unique idempotency index.
 | Attendee, ticket for another session | 403 | 403 | 403 |
 | Attendee, session ENDED / not LIVE | 403 | 403 | 403 |
 | Unauthenticated | 401 | 401 | 401 |
-| Assigned facilitator | 403 | 200 | 200 |
-| Facilitator of another event | 403 | 403 | 403 |
-| OPERATOR / ADMIN / FACILITATOR_OP | 403 | 200 | 200 |
+| Enabled FACILITATOR, regardless of assignment, LIVE | 201/200, named only | 200 | 200 |
+| Enabled OPERATOR / ADMIN / FACILITATOR_OP, LIVE | 201/200, named only | 200 | 200 |
 | Unknown session | 404 | 404 | 404 |
 
-## 10. Client implementation (CHAT-01 UI, #141)
+## 10. Client implementation (#141, #469)
 
-The web client consumes this contract through two surfaces, both shipped in
-the CHAT-01 UI pull request:
+The web client consumes this contract through two surfaces:
 
 - **Attendee room** (`src/app/session/[id]/page.tsx`): the
-  `SessionContributions` panel renders for ticket principals only — a
-  collapsible side panel on desktop, a collapsible section below the scene on
-  mobile, never an overlay on the tapestry or the audio controls. The
+  `SessionContributions` panel occupies the Chat tab beside the scene on
+  desktop and below the scene on mobile. The primary room controls precede
+  it. The
   composer presents the two explicit send actions from the canonical rules:
   "Compartir" (`NAMED`) and "Compartir anónimo" (`ANONYMOUS`), with the
   anonymity explanation always visible before sending.
-- **Staff cockpit** (`ConductorCockpit`, `ops/events/[id]`): a contributions
-  drawer shows the staff DTO as a compact console list — real author, body,
-  timestamp, and the "anonymous to the audience" badge. No moderation
+- **Staff cockpit** (`ConductorCockpit`, `ops/events/[id]`): the Chat tool
+  provides a named composer and public feed. A separate disclosure shows the
+  staff DTO — real author, body, timestamp, and the "anonymous to the audience"
+  badge. The embedded room does not duplicate the composer. No moderation
   controls yet (`[Planned — CHAT-02]`).
 
 Client behavior that the contract relies on:
@@ -262,7 +265,8 @@ Client behavior that the contract relies on:
 - Initial load drains the backlog with `nextPageCursor`; the 5-second poll
   follows the tail with `resumeCursor`, keeps its cursor on an empty page,
   dedupes by message id, serializes overlapping polls, and pauses in hidden
-  tabs.
+  tabs and inactive panels. Reopening a panel, focusing the window or returning
+  online catches up immediately; merged rows sort by `(createdAt, id)`.
 - A 429 disables sending and counts down from `retryAfterSeconds`; a 409
   rotates the key and asks for an explicit retry; network failures keep the
   draft and offer retry. A 403 marks the session read-only.

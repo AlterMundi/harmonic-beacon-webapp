@@ -56,8 +56,8 @@ export const CONTRIBUTIONS_POLL_MS = 5000;
 
 async function readErrorCode(response: Response): Promise<string | null> {
     try {
-        const payload = (await response.clone().json()) as { code?: unknown };
-        return typeof payload.code === 'string' ? payload.code : null;
+        const payload = (await response.clone().json()) as { code?: unknown; error?: unknown };
+        return typeof payload.error === 'string' ? payload.error : typeof payload.code === 'string' ? payload.code : null;
     } catch {
         return null;
     }
@@ -80,6 +80,7 @@ export function useContributionsFeed<T extends PublicContribution | StaffContrib
     const generationRef = useRef(0);
     const abortRef = useRef<AbortController | null>(null);
     const pollInFlightRef = useRef(false);
+    const wasActiveRef = useRef(active);
     const [reloadKey, setReloadKey] = useState(0);
     const reload = useCallback(() => setReloadKey((value) => value + 1), []);
 
@@ -143,7 +144,7 @@ export function useContributionsFeed<T extends PublicContribution | StaffContrib
                         next.push(row);
                     }
                 }
-                return next;
+                return next.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
             });
         };
 
@@ -175,6 +176,8 @@ export function useContributionsFeed<T extends PublicContribution | StaffContrib
     // Incremental polling with the tail cursor. Empty pages (both cursors
     // null) leave our cursor untouched — it stays valid.
     useEffect(() => {
+        const resumed = !wasActiveRef.current && active;
+        wasActiveRef.current = active;
         if (status !== 'ready' || !active) return;
         const generation = generationRef.current;
         const poll = async () => {
@@ -193,7 +196,7 @@ export function useContributionsFeed<T extends PublicContribution | StaffContrib
                     setItems((previous) => {
                         const known = new Set(previous.map((row) => row.id));
                         const fresh = result.page!.contributions.filter((row) => !known.has(row.id));
-                        return fresh.length > 0 ? [...previous, ...fresh] : previous;
+                        return fresh.length > 0 ? [...previous, ...fresh].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)) : previous;
                     });
                     cursorRef.current = result.page.resumeCursor ?? cursorRef.current;
                 }
@@ -204,11 +207,16 @@ export function useContributionsFeed<T extends PublicContribution | StaffContrib
         const onVisible = () => {
             if (document.visibilityState === 'visible') void poll();
         };
+        if (resumed) void poll();
         const timer = setInterval(() => void poll(), CONTRIBUTIONS_POLL_MS);
+        window.addEventListener('focus', onVisible);
+        window.addEventListener('online', onVisible);
         document.addEventListener('visibilitychange', onVisible);
         return () => {
             clearInterval(timer);
             document.removeEventListener('visibilitychange', onVisible);
+            window.removeEventListener('focus', onVisible);
+            window.removeEventListener('online', onVisible);
         };
     }, [active, fetchPage, status]);
 
@@ -248,7 +256,7 @@ export function useContributionsFeed<T extends PublicContribution | StaffContrib
             }
             setItems((previous) => previous.some((row) => row.id === contribution.id)
                 ? previous
-                : [...previous, contribution as unknown as T]);
+                : [...previous, contribution as unknown as T].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)));
             return { kind: response.status === 201 ? 'created' : 'replay', contribution };
         }
         if (response.status === 429) {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+import { isSameOriginLiveRequest } from '@/lib/account-rp';
 import { requireStaff } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { HandQueueError, lowerParticipantHand } from '@/lib/hand-queue';
@@ -67,6 +68,19 @@ export async function POST(
     const reason = typeof body.reason === 'string' ? body.reason : undefined;
 
     try {
+        if (action === 'self_publish') {
+            if (!isSameOriginLiveRequest(request)) {
+                return NextResponse.json({ error: 'invalid_origin' }, { status: 403 });
+            }
+            const participant = await prisma.sessionParticipant.findFirst({
+                where: { scheduledSessionId: id, staffUserId: staff.userId }, select: { id: true },
+            });
+            if (!participant) return NextResponse.json({ error: 'participant_not_joined' }, { status: 409 });
+            return NextResponse.json(await promoteParticipant({
+                scheduledSessionId: id, participantId: participant.id, actorUserId: staff.userId,
+                reason: 'Staff requested publication controls',
+            }));
+        }
         if (action === 'promote') {
             if (!participantId) {
                 return invalidRequest('A participant ID is required');

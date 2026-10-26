@@ -81,6 +81,15 @@ stackTest('operational tapestry stays O(1) at 0/1/50/150 participants', async ({
     await page.route(`**/api/ops/sessions/${SESSION_ES.id}/tapestry/tiles/**`, async (route) => {
         await route.fulfill({ status: 404 });
     });
+    // The scene tool opens initially and has its own hand-thumbnail contract.
+    // Keep that independent roster empty when measuring OpsTapestry requests.
+    await page.route(`**/api/ops/sessions/${SESSION_ES.id}/participants`, async route => {
+        await route.fulfill({ json: {
+            sessionId: SESSION_ES.id, sessionStatus: 'SCHEDULED', maxPublishers: 6,
+            activePublishers: 0, grantedPublishers: 0, liveStateAvailable: true,
+            participants: [],
+        } });
+    });
     // The measurement is the cockpit's OpsTapestry; the room iframe has its
     // own optional composite poll (covered by its own contract) and would
     // only add noise here, so its document is stubbed out.
@@ -95,7 +104,7 @@ stackTest('operational tapestry stays O(1) at 0/1/50/150 participants', async ({
     expect(counters).toEqual({ manifest: 0, composite: 0, tiles: 0 });
 
     await page.locator('[data-tool="tapestry"]').click();
-    const drawer = page.getByRole('dialog');
+    const drawer = page.locator('.hb-staff-tools > aside');
     const section = drawer.getByRole('region', { name: /Operational tapestry|Tapiz operativo/i });
     await expect(section).toBeVisible();
 
@@ -213,7 +222,7 @@ stackTest('hidden health preview spends 0/N/0 requests while the rail stays live
     expect(counters.composite, 'closed health drawer').toBe(0);
 
     await page.locator('[data-signal="health"]').click();
-    const drawer = page.getByRole('dialog');
+    const drawer = page.locator('.hb-staff-tools > aside');
     await expect(drawer.getByRole('region', { name: /Tapestry|Tapiz/i })).toBeVisible();
     await expect.poll(() => counters.composite).toBeGreaterThanOrEqual(1);
     await page.waitForTimeout(2_500);

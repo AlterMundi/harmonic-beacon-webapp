@@ -76,7 +76,7 @@ export default function HandRaiseButton({
     onPublishGrantChange,
     stageInvitationAccepted = false,
 }: Props) {
-    const { copy } = useLocale();
+    const { copy, locale } = useLocale();
     const [state, setState] = useState<OwnHandState | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
@@ -187,9 +187,10 @@ export default function HandRaiseButton({
                 </button>
             ) : null}
             {!state?.canPublish ? (
-                <p className="max-w-xs text-center text-xs leading-4 text-[var(--text-muted)]">
-                    {copy.hand.namingConsent}
-                </p>
+                <details className="hb-hand-help">
+                    <summary>{locale === 'es' ? 'Quién ve mi nombre' : 'Who sees my name'}</summary>
+                    <p>{copy.hand.namingConsent}</p>
+                </details>
             ) : null}
             {state?.canPublish && stageInvitationAccepted ? (
                 <p role="status" className="text-xs text-[var(--lime)]">

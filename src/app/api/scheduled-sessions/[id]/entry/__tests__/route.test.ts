@@ -200,14 +200,14 @@ describe('GET /api/scheduled-sessions/[id]/entry', () => {
         expect(readAttendeeDisplayName).not.toHaveBeenCalled();
     });
 
-    it('rejects an unassigned facilitator', async () => {
+    it('admits an unassigned facilitator', async () => {
         principalFromToken.mockResolvedValue({
             kind: 'staff',
             webSessionId: 'web-staff',
             userId: 'facilitator-2',
             role: 'FACILITATOR',
         });
-        expect((await getEntry()).status).toBe(403);
+        expect((await getEntry()).status).toBe(200);
     });
 
     it.each(['OPERATOR', 'ADMIN', 'FACILITATOR_OP'])('lets %s preflight any event', async (role) => {

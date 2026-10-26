@@ -28,13 +28,13 @@ describe('GET /api/tapestry/[sessionId]', () => {
         expect(findUnique).toHaveBeenCalled();
     });
 
-    it('rejects an unassigned facilitator in private mode', async () => {
+    it('admits an unassigned facilitator in private mode', async () => {
         requireStaff.mockResolvedValue([{ userId: 'facilitator-2', role: 'FACILITATOR' }, null]);
         const { GET } = await import('../route');
         const response = await GET(new NextRequest('http://localhost/api/tapestry/session-1'), context);
 
-        expect(response.status).toBe(403);
-        expect(fetch).not.toHaveBeenCalled();
+        expect(response.status).toBe(200);
+        expect(fetch).toHaveBeenCalled();
     });
 
     it('rejects unauthorised callers without reaching the internal service', async () => {

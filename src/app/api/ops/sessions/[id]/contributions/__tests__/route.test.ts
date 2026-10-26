@@ -76,11 +76,11 @@ describe('GET /api/ops/sessions/[id]/contributions — staff feed', () => {
         expect(mocks.contributionFindMany).not.toHaveBeenCalled();
     });
 
-    it('rejects a facilitator not assigned to the event', async () => {
+    it('admits a facilitator not assigned to the event', async () => {
         mocks.requireStaff.mockResolvedValue(staffPrincipal('FACILITATOR', 'someone-else'));
 
-        expect((await GET(createRequest('/x'), mockParams({ id: SESSION_ID }))).status).toBe(403);
-        expect(mocks.contributionFindMany).not.toHaveBeenCalled();
+        expect((await GET(createRequest('/x'), mockParams({ id: SESSION_ID }))).status).toBe(200);
+        expect(mocks.contributionFindMany).toHaveBeenCalled();
     });
 
     it('admits the assigned facilitator', async () => {

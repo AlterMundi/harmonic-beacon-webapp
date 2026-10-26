@@ -9,6 +9,7 @@ export const STAFF_ROLES = [
 ] as const satisfies readonly StaffRole[];
 
 export type StaffCapability =
+    | 'manage_events'
     | 'administer_system'
     | 'view_operations_health'
     | 'look_up_admission'
@@ -19,10 +20,10 @@ export type StaffCapability =
 
 const GLOBAL_CAPABILITIES: Record<StaffRole, ReadonlySet<StaffCapability>> = {
     FACILITATOR: new Set([
-        'view_operations_health',
-        'look_up_admission',
+        'manage_events', 'view_operations_health', 'look_up_admission',
     ]),
     OPERATOR: new Set([
+        'manage_events',
         'view_operations_health',
         'look_up_admission',
         'mutate_entitlement',
@@ -30,6 +31,7 @@ const GLOBAL_CAPABILITIES: Record<StaffRole, ReadonlySet<StaffCapability>> = {
     ]),
     ADMIN: new Set([
         'administer_system',
+        'manage_events',
         'view_operations_health',
         'look_up_admission',
         'mutate_entitlement',
@@ -39,6 +41,7 @@ const GLOBAL_CAPABILITIES: Record<StaffRole, ReadonlySet<StaffCapability>> = {
     ]),
     FACILITATOR_OP: new Set([
         'administer_system',
+        'manage_events',
         'view_operations_health',
         'look_up_admission',
         'mutate_entitlement',
@@ -61,33 +64,21 @@ export type EventStaffPolicy = {
     canOperateEvent: boolean;
     /** The real assignment, with a role that is allowed facilitator treatment. */
     isAssignedFacilitator: boolean;
-    /** Initial microphone/camera publication; intentionally narrower than operation. */
+    /** Capacity-checked initial staff publication; media capture still needs consent. */
     canPublishInitially: boolean;
 };
 
 /**
- * Resolve the asymmetric event policy once.
- *
- * `FACILITATOR_OP` operates every event, like ADMIN, but only becomes the
- * facilitator and receives an initial publish grant in its assigned event.
+ * Sai's 2026-10-26 room policy: every enabled staff role may operate events.
+ * Assignment describes who leads; it is not a second access grant. Unassigned staff opt into publication through the same stage tools. Publication
+ * still goes through the durable grant/capacity lock, and capture needs a gesture.
  */
-export function eventStaffPolicy(
-    role: StaffRole,
-    assignedToEvent: boolean,
-): EventStaffPolicy {
-    const facilitatorRole = role === 'FACILITATOR' || role === 'FACILITATOR_OP';
-    const isAssignedFacilitator = facilitatorRole && assignedToEvent;
-    const hasGlobalAccess = role === 'FACILITATOR_OP' ||
-        role === 'OPERATOR' ||
-        role === 'ADMIN';
-    return {
-        canOperateEvent: hasGlobalAccess || (role === 'FACILITATOR' && assignedToEvent),
-        isAssignedFacilitator,
-        canPublishInitially: isAssignedFacilitator,
-    };
+export function eventStaffPolicy(role: StaffRole, assignedToEvent: boolean): EventStaffPolicy {
+    const isAssignedFacilitator = (role === 'FACILITATOR' || role === 'FACILITATOR_OP') && assignedToEvent;
+    return { canOperateEvent: STAFF_ROLES.includes(role), isAssignedFacilitator,
+        canPublishInitially: isAssignedFacilitator };
 }
 
-/** Whether event listings should be scoped to the current user's assignments. */
 export function hasGlobalEventAccess(role: StaffRole): boolean {
-    return role === 'FACILITATOR_OP' || role === 'OPERATOR' || role === 'ADMIN';
+    return STAFF_ROLES.includes(role);
 }

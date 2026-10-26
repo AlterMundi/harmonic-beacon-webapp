@@ -6,6 +6,7 @@ import { createRequest, mockParams, parseResponse } from '@/__tests__/helpers';
 const mocks = vi.hoisted(() => ({
     requireStaff: vi.fn(),
     sessionFindUnique: vi.fn(),
+    participantFindFirst: vi.fn(),
     promoteParticipant: vi.fn(),
     demoteParticipant: vi.fn(),
     muteParticipantTrack: vi.fn(),
@@ -17,6 +18,7 @@ vi.mock('@/lib/auth', () => ({ requireStaff: mocks.requireStaff }));
 vi.mock('@/lib/db', () => ({
     prisma: {
         scheduledSession: { findUnique: mocks.sessionFindUnique },
+        sessionParticipant: { findFirst: mocks.participantFindFirst },
     },
 }));
 vi.mock('@/lib/stage-control', async (importOriginal) => {
@@ -95,7 +97,7 @@ describe('POST /api/ops/sessions/[id]/stage', () => {
         expect(mocks.promoteParticipant).not.toHaveBeenCalled();
     });
 
-    it('scopes a facilitator to their assigned event', async () => {
+    it('lets facilitators operate unassigned events', async () => {
         mocks.requireStaff.mockResolvedValue([
             { ...operator, userId: 'facilitator-2', role: 'FACILITATOR' },
             null,
@@ -110,8 +112,8 @@ describe('POST /api/ops/sessions/[id]/stage', () => {
             mockParams({ id: 'event-1' }),
         );
 
-        expect(response.status).toBe(403);
-        expect(mocks.promoteParticipant).not.toHaveBeenCalled();
+        expect(response.status).toBe(200);
+        expect(mocks.promoteParticipant).toHaveBeenCalled();
     });
 
     it('lets FACILITATOR_OP operate an unassigned event', async () => {
@@ -264,4 +266,23 @@ describe('POST /api/ops/sessions/[id]/stage', () => {
             reconcileNeeded: true,
         });
     });
+    it('activates only the current staff participation through the capacity-fenced controller', async () => {
+        mocks.participantFindFirst.mockResolvedValue({ id: 'own-participant' });
+        const { POST } = await import('../route');
+        const response = await POST(createRequest('/api/ops/sessions/event-1/stage', {
+            method: 'POST', headers: { host: 'localhost:3000', origin: 'http://localhost:3000' },
+            body: { action: 'self_publish', participantId: 'forged-participant', staffUserId: 'someone-else' },
+        }), mockParams({ id: 'event-1' }));
+        expect(response.status).toBe(200);
+        expect(mocks.participantFindFirst).toHaveBeenCalledWith({ where: { scheduledSessionId: 'event-1', staffUserId: 'operator-1' }, select: { id: true } });
+        expect(mocks.promoteParticipant).toHaveBeenCalledWith({ scheduledSessionId: 'event-1', participantId: 'own-participant', actorUserId: 'operator-1', reason: 'Staff requested publication controls' });
+    });
+    it('rejects cross-origin self activation without touching a grant', async () => {
+        const { POST } = await import('../route');
+        const response = await POST(createRequest('/api/ops/sessions/event-1/stage', {
+            method: 'POST', headers: { host: 'localhost:3000', origin: 'https://evil.invalid' }, body: { action: 'self_publish' },
+        }), mockParams({ id: 'event-1' }));
+        expect(response.status).toBe(403); expect(mocks.participantFindFirst).not.toHaveBeenCalled(); expect(mocks.promoteParticipant).not.toHaveBeenCalled();
+    });
+
 });

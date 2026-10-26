@@ -23,7 +23,9 @@ import { RoomExitProvider, useRoomExit } from "@/components/navigation/RoomExitG
 import { useLocale } from "@/context/LocaleContext";
 import HandRaiseButton from "@/components/session/HandRaiseButton";
 import FacilitatorAudioQuality from "@/components/session/FacilitatorAudioQuality";
-import SessionContributions from "@/components/session/SessionContributions";
+import StaffPublicationAccess from "@/components/session/StaffPublicationAccess";
+import RoomSidebar, { type RoomPerson } from "@/components/session/RoomSidebar";
+import ShareEventButton from "@/components/events/ShareEventButton";
 import SessionGuidance from "@/components/session/SessionGuidance";
 import SessionIdentityGate from "@/components/session/SessionIdentityGate";
 import StageLayout, { type StagePublisherView } from "@/components/session/StageLayout";
@@ -259,6 +261,17 @@ function SessionRoom() {
         hasLiveStream,
     } = useAudio();
 
+    useEffect(() => {
+        if (!embeddedInCockpit || window.parent === window) return;
+        const target = document.querySelector('main');
+        if (!target) return;
+        const report = () => window.parent.postMessage({ type: 'hb-room-height', sessionId: id,
+            height: Math.ceil(target.getBoundingClientRect().height) }, window.location.origin);
+        const observer = new ResizeObserver(report);
+        observer.observe(target); report();
+        return () => observer.disconnect();
+    }, [embeddedInCockpit, id]);
+
     const [sessionInfo, setSessionInfo] = useState<SessionInfo | null>(null);
     const [isConnected, setIsConnected] = useState(false);
     const [isConnecting, setIsConnecting] = useState(true);
@@ -280,6 +293,7 @@ function SessionRoom() {
     const [stagePublishers, setStagePublishers] = useState<StagePublisherView[]>([]);
     const [activeSpeakerIdentity, setActiveSpeakerIdentity] = useState<string | null>(null);
     const [participantCount, setParticipantCount] = useState(0);
+    const [roomPeople, setRoomPeople] = useState<RoomPerson[]>([]);
     const [volume, setVolume] = useState(0.8);
     // Start centered: the previous 0.8 default reduced the Beacon bed to
     // 16% gain before the listener touched the crossfader.
@@ -375,6 +389,11 @@ function SessionRoom() {
             });
 
         setStagePublishers(publishers);
+        setRoomPeople(everyone.filter(person => !person.identity.startsWith('bed-') && !person.identity.startsWith('playlist-')).map(person => ({
+            identity: person.identity, name: person.name?.trim() || participantFallbackRef.current,
+            local: person === local, publishing: isStagePublisher(person),
+            microphone: person.isMicrophoneEnabled, speaking: person.isSpeaking,
+        })));
         setParticipantCount(room.remoteParticipants.size + 1);
         setConnectionState(room.state);
         const localCanPublish = !stageAuthoritySuppressedRef.current &&
@@ -1278,10 +1297,10 @@ function SessionRoom() {
         : null;
 
     return (
-        <main className="event-shell">
-            <div className="relative z-10 flex min-h-screen flex-col">
+        <main className="event-shell hb-room">
+            <div className="hb-room-shell relative z-10">
                 {/* Header */}
-                <header className="flex items-center justify-between border-b border-[var(--border-subtle)] px-4 py-3">
+                <header className="hb-room-header">
                     <div className="min-w-0 flex-1">
                         <h1 className="break-words text-sm font-semibold leading-5 text-[var(--cream)]">
                             {sessionInfo?.title || copy.session.sessionFallback}
@@ -1305,15 +1324,6 @@ function SessionRoom() {
                                 {viewerStaffRole ? <>{' · '}{viewerStaffRole.label}</> : null}
                             </p>
                         )}
-                        {viewerInfo ? (
-                            <p className="mt-0.5 max-w-2xl break-words text-xs leading-5 text-[var(--text-muted)]" data-testid="viewer-role-guidance">
-                                {principalKind === 'ticket'
-                                    ? copy.session.attendeeCapability
-                                    : viewerInfo.isAssignedFacilitator
-                                        ? copy.session.assignedFacilitatorCapability
-                                        : copy.session.operationalStaffCapability}
-                            </p>
-                        ) : null}
                     </div>
                     <div className="ml-3 flex shrink-0 items-center gap-3">
                         {principalKind === "staff" && !embeddedInCockpit && (
@@ -1325,33 +1335,18 @@ function SessionRoom() {
                                 {copy.session.staffConsole}
                             </button>
                         )}
-                        <span className="font-mono text-xs text-[var(--gold)]">{formatTime(duration)}</span>
+                        <ShareEventButton sessionId={id} title={sessionInfo?.title || copy.session.sessionFallback} />
+                        <span className="font-mono text-xs text-[var(--gold)]" aria-label={locale === 'es' ? 'Tiempo en la sala' : 'Time in room'}>{formatTime(duration)}</span>
                     </div>
                 </header>
 
-                {principalKind === 'staff' ? (
-                    <div className="flex justify-center px-3 pt-3 sm:px-4">
-                        <FacilitatorAudioQuality
-                            key={`${viewerInfo?.identity ?? 'staff'}:${retryToken}`}
-                            room={activeRoom}
-                            isStaff
-                            isAssignedFacilitator={viewerInfo?.isAssignedFacilitator === true}
-                        />
-                    </div>
-                ) : null}
 
                 {/* Stage + contributions panel (side on desktop, below on mobile) */}
-                <div className="flex flex-1 flex-col lg:flex-row">
-                <div className="flex flex-1 flex-col items-center justify-center gap-5 px-3 py-4 sm:px-4">
-                    <StageLayout
-                        publishers={stagePublishers}
-                        activeSpeakerIdentity={activeSpeakerIdentity}
-                        audioOnly={audioOnly}
-                        maxPublishers={sessionInfo?.maxPublishers ?? 6}
-                    />
-
+                <div className="hb-room-workspace">
+                {/* Bottom controls */}
+                <div className="hb-room-controls">
                     {(!isBeaconPlaying || !isStageAudioPlaying) && (
-                        <div className="event-card w-full max-w-md text-center" role="group" aria-label={copy.session.audioActivationLabel}>
+                        <div className="hb-room-activation event-card w-full text-center" role="group" aria-label={copy.session.audioActivationLabel}>
                             <p className="mb-3 text-sm text-[var(--text-secondary)]">
                                 {copy.session.audioPrompt}
                             </p>
@@ -1369,6 +1364,266 @@ function SessionRoom() {
                             )}
                         </div>
                     )}
+
+                    {principalKind === 'staff' && isConnected && !canPublish && <StaffPublicationAccess sessionId={id} />}
+
+                    {isConnected && principalKind === "ticket" && (
+                        <div className="hb-room-hand">
+                            <HandRaiseButton
+                                sessionId={id}
+                                onPublishGrantChange={applyGrantState}
+                                stageInvitationAccepted={stageInvitationAccepted}
+                            />
+                        </div>
+                    )}
+                    {canControlStageDevices && principalKind === 'ticket' ? (
+                        <div className="mx-auto mb-4 w-full max-w-md">
+                            {!stageExitConfirming ? (
+                                <button
+                                    type="button"
+                                    ref={stageExitTriggerRef}
+                                    onClick={() => {
+                                        setStageExitError(null);
+                                        setStageExitConfirming(true);
+                                    }}
+                                    className="event-button event-button--secondary w-full"
+                                >
+                                    {copy.session.leaveStage}
+                                </button>
+                            ) : (
+                                <section
+                                    role="alertdialog"
+                                    aria-modal="true"
+                                    aria-labelledby="leave-stage-heading"
+                                    aria-describedby="leave-stage-body"
+                                    onKeyDown={(event) => keepFocusInsideDialog(
+                                        event,
+                                        () => setStageExitConfirming(false),
+                                        stageExitBusy,
+                                    )}
+                                    className="rounded border border-[var(--gold)]/40 bg-[var(--surface-alt)] p-4 text-center"
+                                >
+                                    <h2 id="leave-stage-heading" className="font-serif text-xl text-[var(--paper)]">
+                                        {copy.session.leaveStageHeading}
+                                    </h2>
+                                    <p id="leave-stage-body" className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">
+                                        {copy.session.leaveStageBody}
+                                    </p>
+                                    <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => void leaveStage()}
+                                            disabled={stageExitBusy || grantVersion === null}
+                                            className="event-button event-button--primary w-full"
+                                        >
+                                            {stageExitBusy
+                                                ? copy.session.leavingStage
+                                                : copy.session.leaveStageConfirm}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            ref={stageExitCancelRef}
+                                            onClick={() => setStageExitConfirming(false)}
+                                            disabled={stageExitBusy}
+                                            className="event-button event-button--secondary w-full"
+                                        >
+                                            {copy.session.leaveStageCancel}
+                                        </button>
+                                    </div>
+                                </section>
+                            )}
+                            {stageExitError ? (
+                                <p role="alert" className="mt-3 text-center text-sm text-[var(--danger)]">
+                                    {stageExitError}
+                                </p>
+                            ) : null}
+                        </div>
+                    ) : null}
+                    <div className="hb-room-device-controls">
+                        {canControlStageDevices && (
+                            <div className="flex flex-col items-center gap-1">
+                                <button
+                                    onClick={toggleMic}
+                                    className={`flex h-14 w-14 items-center justify-center rounded-full transition-all ${
+                                        isMicOn
+                                            ? "bg-[var(--cyan)] text-[var(--ink)]"
+                                            : "bg-white/10 text-[var(--text-muted)] hover:bg-white/20"
+                                    }`}
+                                    aria-label={isMicOn ? copy.session.muteMicrophone : copy.session.unmuteMicrophone}
+                                    aria-pressed={isMicOn}
+                                >
+                                    {isMicOn ? (
+                                        <svg className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                                        </svg>
+                                    ) : (
+                                        <svg className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                                            <line x1="2" y1="2" x2="22" y2="22" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                                        </svg>
+                                    )}
+                                </button>
+                                <span className="text-xs text-[var(--text-secondary)]">{copy.session.mic}</span>
+
+                            </div>
+                        )}
+
+                        {canControlStageDevices && isCameraOn && (
+                            <div className="flex flex-col items-center gap-1">
+                                <button
+                                    type="button"
+                                    onClick={() => void switchCamera()}
+                                    disabled={cameraSwitchBusy}
+                                    className="flex h-14 w-14 items-center justify-center rounded-full bg-white/10 text-[var(--cream)] transition-all hover:bg-white/20 disabled:cursor-wait disabled:opacity-60"
+                                    aria-label={cameraFacingMode === "user"
+                                        ? copy.session.switchToRearCamera
+                                        : copy.session.switchToFrontCamera}
+                                >
+                                    <svg className={`h-6 w-6 ${cameraSwitchBusy ? "animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden="true">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M20 7h-4V3M4 17h4v4m11.5-9a7.5 7.5 0 00-12.8-5.3L4 9m16 6-2.7 2.3A7.5 7.5 0 014.5 12" />
+                                    </svg>
+                                </button>
+                                <span className="text-xs text-[var(--text-secondary)]">
+                                    {cameraSwitchBusy
+                                        ? copy.session.switchingCamera
+                                        : cameraFacingMode === "user"
+                                            ? copy.session.frontCamera
+                                            : copy.session.rearCamera}
+                                </span>
+                            </div>
+                        )}
+
+                        {canControlStageDevices && (
+                            <div className="flex flex-col items-center gap-1">
+                                <button
+                                    onClick={toggleCamera}
+                                    className={`flex h-14 w-14 items-center justify-center rounded-full transition-all ${
+                                        isCameraOn
+                                            ? "bg-[var(--cyan)] text-[var(--ink)]"
+                                            : "bg-white/10 text-[var(--text-muted)] hover:bg-white/20"
+                                    }`}
+                                    aria-label={isCameraOn ? copy.session.turnCameraOff : copy.session.turnCameraOn}
+                                    aria-pressed={isCameraOn}
+                                >
+                                    <svg className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                        {!isCameraOn && <line x1="3" y1="3" x2="21" y2="21" strokeLinecap="round" />}
+                                    </svg>
+                                </button>
+                                <span className="text-xs text-[var(--text-secondary)]">{copy.session.camera}</span>
+                            </div>
+                        )}
+
+                        <div className="flex flex-col items-center gap-1">
+                            <button
+                                onClick={toggleAudioOnly}
+                                className={`flex h-14 w-14 items-center justify-center rounded-full transition-all ${
+                                    audioOnly
+                                        ? "bg-[var(--gold)] text-[var(--ink)]"
+                                        : "bg-white/10 text-[var(--text-muted)] hover:bg-white/20"
+                                }`}
+                                aria-label={audioOnly ? copy.session.turnVideoOn : copy.session.switchToAudioOnly}
+                                aria-pressed={audioOnly}
+                            >
+                                <svg className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 19V6l7-3v13M9 19a3 3 0 11-6 0 3 3 0 016 0zm7-3a3 3 0 11-6 0 3 3 0 016 0z" />
+                                </svg>
+                            </button>
+                            <span className="text-xs text-[var(--text-secondary)]">{copy.session.audioOnly}</span>
+                        </div>
+
+                    </div>
+                    {cameraSwitchError && (
+                        <p className="mx-auto mt-3 max-w-md text-center text-sm text-[var(--danger)]" role="alert">
+                            {cameraSwitchError}
+                        </p>
+                    )}
+                    {canControlStageDevices && <details className="hb-room-call-settings">
+                        <summary>{locale === 'es' ? 'Ajustes de audio' : 'Audio settings'}</summary>
+                        <div>                                <button type="button" role="switch" aria-checked={echoEnabled === true}
+                                    disabled={echoBusy || !isConnected} onClick={toggleEcho}
+                                    className="min-h-11 rounded border border-[var(--gold)]/40 px-3 py-2 text-xs disabled:opacity-50">
+                                    {locale === 'es' ? 'Cancelar eco' : 'Echo cancellation'}: {echoBusy ? '…' : echoEnabled === undefined ? '?' : echoEnabled ? 'ON' : 'OFF'}
+                                </button>
+                                <p className="max-w-48 text-center text-xs text-[var(--text-muted)]">
+                                    {locale === 'es' ? 'Sólo tu micrófono. Reduce el retorno de otras voces; puede modificar el sonido musical.' : 'Your microphone only. Reduces returning voices; may affect musical sound.'}
+                                </p>
+                                {echoMessage && <p role="status" className="max-w-48 text-center text-xs">{echoMessage}</p>}</div>
+                    </details>}
+                    <div className="hb-room-leave">
+                        <button
+                            type="button"
+                            onClick={event => { event.currentTarget.focus(); requestExit(leaveSession); }}
+                            className="min-h-11 px-3 text-sm text-[var(--text-muted)] underline decoration-white/20 underline-offset-4 hover:text-[var(--cream)]"
+                        >
+                            {copy.session.leaveSession}
+                        </button>
+                    </div>
+                </div>
+
+                <div className="hb-room-scene">
+                    {/* Volume + Mix controls */}
+                    <div className="hb-room-mixer">
+                        <div>
+                            <label htmlFor="room-master-volume" className="mb-2 flex items-center justify-between gap-3 text-sm text-[var(--cream)]">
+                                <span>{copy.session.masterVolume}</span>
+                                <span className="font-mono text-xs text-[var(--gold)]">{Math.round(volume * 100)}%</span>
+                            </label>
+                            <div className="crossfader">
+                            <svg className="h-4 w-4 shrink-0 text-[var(--text-muted)]" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M15.536 8.464a5 5 0 010 7.072M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                            </svg>
+                            <input
+                                id="room-master-volume"
+                                type="range"
+                                min="0"
+                                max="1"
+                                step="0.01"
+                                value={volume}
+                                onChange={(e) => setVolume(parseFloat(e.target.value))}
+                                className="flex-1 accent-[var(--gold)]"
+                                aria-label={copy.session.masterVolume}
+                            />
+                            </div>
+                        </div>
+                        <div>
+                            <label htmlFor="room-audio-balance" className="mb-2 block text-sm text-[var(--cream)]">
+                                {copy.session.mix}
+                            </label>
+                            <div className="flex items-center gap-2">
+                                <span className="w-14 text-right font-mono text-xs text-[var(--gold)]">Beacon</span>
+                                <input
+                                    id="room-audio-balance"
+                                    type="range"
+                                    min="0"
+                                    max="1"
+                                    step="0.01"
+                                    value={mix}
+                                    onChange={(e) => setMix(parseFloat(e.target.value))}
+                                    className="flex-1 accent-[var(--cyan)]"
+                                    aria-label={copy.session.mix}
+                                />
+                                <span className="w-14 font-mono text-xs text-[var(--cyan)]">{copy.session.sessionChannel}</span>
+                            </div>
+                        </div>
+                    </div>
+                {principalKind === 'staff' ? (
+                    <details className="hb-room-audio-settings w-full"><summary>{locale === 'es' ? 'Ajustes de audio y conexión' : 'Audio and connection settings'}</summary>
+                        <FacilitatorAudioQuality
+                            key={`${viewerInfo?.identity ?? 'staff'}:${retryToken}`}
+                            room={activeRoom}
+                            isStaff
+                            isAssignedFacilitator={viewerInfo?.isAssignedFacilitator === true}
+                        />
+                    </details>
+                ) : null}
+
+                    <StageLayout
+                        publishers={stagePublishers}
+                        activeSpeakerIdentity={activeSpeakerIdentity}
+                        audioOnly={audioOnly}
+                        maxPublishers={sessionInfo?.maxPublishers ?? 6}
+                    />
 
                     {hasPendingStageInvitation && (
                         <div
@@ -1449,55 +1704,9 @@ function SessionRoom() {
                         never remounts the Room or touches audio state. */}
                     <SessionGuidance copy={copy.session.guidance} className="w-full max-w-sm" />
 
-                    {/* Volume + Mix controls */}
-                    <div className="w-full max-w-sm space-y-5">
-                        <div>
-                            <label htmlFor="room-master-volume" className="mb-2 flex items-center justify-between gap-3 text-sm text-[var(--cream)]">
-                                <span>{copy.session.masterVolume}</span>
-                                <span className="font-mono text-xs text-[var(--gold)]">{Math.round(volume * 100)}%</span>
-                            </label>
-                            <div className="crossfader">
-                            <svg className="h-4 w-4 shrink-0 text-[var(--text-muted)]" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M15.536 8.464a5 5 0 010 7.072M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
-                            </svg>
-                            <input
-                                id="room-master-volume"
-                                type="range"
-                                min="0"
-                                max="1"
-                                step="0.01"
-                                value={volume}
-                                onChange={(e) => setVolume(parseFloat(e.target.value))}
-                                className="flex-1 accent-[var(--gold)]"
-                                aria-label={copy.session.masterVolume}
-                            />
-                            </div>
-                        </div>
-                        <div>
-                            <label htmlFor="room-audio-balance" className="mb-2 block text-sm text-[var(--cream)]">
-                                {copy.session.mix}
-                            </label>
-                            <div className="flex items-center gap-2">
-                                <span className="w-14 text-right font-mono text-xs text-[var(--gold)]">Beacon</span>
-                                <input
-                                    id="room-audio-balance"
-                                    type="range"
-                                    min="0"
-                                    max="1"
-                                    step="0.01"
-                                    value={mix}
-                                    onChange={(e) => setMix(parseFloat(e.target.value))}
-                                    className="flex-1 accent-[var(--cyan)]"
-                                    aria-label={copy.session.mix}
-                                />
-                                <span className="w-14 font-mono text-xs text-[var(--cyan)]">{copy.session.sessionChannel}</span>
-                            </div>
-                        </div>
-                    </div>
+
                 </div>
-                {principalKind === 'ticket' && (
-                    <SessionContributions key={id} sessionId={id} />
-                )}
+                {!embeddedInCockpit && <RoomSidebar key={id} sessionId={id} people={roomPeople} staff={principalKind === 'staff'} />}
                 </div>
 
                 {principalKind === 'staff' && (
@@ -1509,197 +1718,7 @@ function SessionRoom() {
                     </div>
                 )}
 
-                {/* Bottom controls */}
-                <div className="border-t border-[var(--border-subtle)] px-4 py-4">
-                    {isConnected && principalKind === "ticket" && (
-                        <div className="mb-4 flex justify-center">
-                            <HandRaiseButton
-                                sessionId={id}
-                                onPublishGrantChange={applyGrantState}
-                                stageInvitationAccepted={stageInvitationAccepted}
-                            />
-                        </div>
-                    )}
-                    {canControlStageDevices && principalKind === 'ticket' ? (
-                        <div className="mx-auto mb-4 w-full max-w-md">
-                            {!stageExitConfirming ? (
-                                <button
-                                    type="button"
-                                    ref={stageExitTriggerRef}
-                                    onClick={() => {
-                                        setStageExitError(null);
-                                        setStageExitConfirming(true);
-                                    }}
-                                    className="event-button event-button--secondary w-full"
-                                >
-                                    {copy.session.leaveStage}
-                                </button>
-                            ) : (
-                                <section
-                                    role="alertdialog"
-                                    aria-modal="true"
-                                    aria-labelledby="leave-stage-heading"
-                                    aria-describedby="leave-stage-body"
-                                    onKeyDown={(event) => keepFocusInsideDialog(
-                                        event,
-                                        () => setStageExitConfirming(false),
-                                        stageExitBusy,
-                                    )}
-                                    className="rounded border border-[var(--gold)]/40 bg-[var(--surface-alt)] p-4 text-center"
-                                >
-                                    <h2 id="leave-stage-heading" className="font-serif text-xl text-[var(--paper)]">
-                                        {copy.session.leaveStageHeading}
-                                    </h2>
-                                    <p id="leave-stage-body" className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">
-                                        {copy.session.leaveStageBody}
-                                    </p>
-                                    <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                                        <button
-                                            type="button"
-                                            onClick={() => void leaveStage()}
-                                            disabled={stageExitBusy || grantVersion === null}
-                                            className="event-button event-button--primary w-full"
-                                        >
-                                            {stageExitBusy
-                                                ? copy.session.leavingStage
-                                                : copy.session.leaveStageConfirm}
-                                        </button>
-                                        <button
-                                            type="button"
-                                            ref={stageExitCancelRef}
-                                            onClick={() => setStageExitConfirming(false)}
-                                            disabled={stageExitBusy}
-                                            className="event-button event-button--secondary w-full"
-                                        >
-                                            {copy.session.leaveStageCancel}
-                                        </button>
-                                    </div>
-                                </section>
-                            )}
-                            {stageExitError ? (
-                                <p role="alert" className="mt-3 text-center text-sm text-[var(--danger)]">
-                                    {stageExitError}
-                                </p>
-                            ) : null}
-                        </div>
-                    ) : null}
-                    <div className="flex flex-wrap items-start justify-center gap-x-4 gap-y-3">
-                        {canControlStageDevices && (
-                            <div className="flex flex-col items-center gap-1">
-                                <button
-                                    onClick={toggleMic}
-                                    className={`flex h-14 w-14 items-center justify-center rounded-full transition-all ${
-                                        isMicOn
-                                            ? "bg-[var(--cyan)] text-[var(--ink)]"
-                                            : "bg-white/10 text-[var(--text-muted)] hover:bg-white/20"
-                                    }`}
-                                    aria-label={isMicOn ? copy.session.muteMicrophone : copy.session.unmuteMicrophone}
-                                    aria-pressed={isMicOn}
-                                >
-                                    {isMicOn ? (
-                                        <svg className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                                        </svg>
-                                    ) : (
-                                        <svg className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                                            <line x1="2" y1="2" x2="22" y2="22" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                                        </svg>
-                                    )}
-                                </button>
-                                <span className="text-xs text-[var(--text-secondary)]">{copy.session.mic}</span>
-                                <button type="button" role="switch" aria-checked={echoEnabled === true}
-                                    disabled={echoBusy || !isConnected} onClick={toggleEcho}
-                                    className="min-h-11 rounded border border-[var(--gold)]/40 px-3 py-2 text-xs disabled:opacity-50">
-                                    {locale === 'es' ? 'Cancelar eco' : 'Echo cancellation'}: {echoBusy ? '…' : echoEnabled === undefined ? '?' : echoEnabled ? 'ON' : 'OFF'}
-                                </button>
-                                <p className="max-w-48 text-center text-xs text-[var(--text-muted)]">
-                                    {locale === 'es' ? 'Sólo tu micrófono. Reduce el retorno de otras voces; puede modificar el sonido musical.' : 'Your microphone only. Reduces returning voices; may affect musical sound.'}
-                                </p>
-                                {echoMessage && <p role="status" className="max-w-48 text-center text-xs">{echoMessage}</p>}
-                            </div>
-                        )}
 
-                        {canControlStageDevices && isCameraOn && (
-                            <div className="flex flex-col items-center gap-1">
-                                <button
-                                    type="button"
-                                    onClick={() => void switchCamera()}
-                                    disabled={cameraSwitchBusy}
-                                    className="flex h-14 w-14 items-center justify-center rounded-full bg-white/10 text-[var(--cream)] transition-all hover:bg-white/20 disabled:cursor-wait disabled:opacity-60"
-                                    aria-label={cameraFacingMode === "user"
-                                        ? copy.session.switchToRearCamera
-                                        : copy.session.switchToFrontCamera}
-                                >
-                                    <svg className={`h-6 w-6 ${cameraSwitchBusy ? "animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden="true">
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M20 7h-4V3M4 17h4v4m11.5-9a7.5 7.5 0 00-12.8-5.3L4 9m16 6-2.7 2.3A7.5 7.5 0 014.5 12" />
-                                    </svg>
-                                </button>
-                                <span className="text-xs text-[var(--text-secondary)]">
-                                    {cameraSwitchBusy
-                                        ? copy.session.switchingCamera
-                                        : cameraFacingMode === "user"
-                                            ? copy.session.frontCamera
-                                            : copy.session.rearCamera}
-                                </span>
-                            </div>
-                        )}
-
-                        {canControlStageDevices && (
-                            <div className="flex flex-col items-center gap-1">
-                                <button
-                                    onClick={toggleCamera}
-                                    className={`flex h-14 w-14 items-center justify-center rounded-full transition-all ${
-                                        isCameraOn
-                                            ? "bg-[var(--cyan)] text-[var(--ink)]"
-                                            : "bg-white/10 text-[var(--text-muted)] hover:bg-white/20"
-                                    }`}
-                                    aria-label={isCameraOn ? copy.session.turnCameraOff : copy.session.turnCameraOn}
-                                    aria-pressed={isCameraOn}
-                                >
-                                    <svg className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                                        {!isCameraOn && <line x1="3" y1="3" x2="21" y2="21" strokeLinecap="round" />}
-                                    </svg>
-                                </button>
-                                <span className="text-xs text-[var(--text-secondary)]">{copy.session.camera}</span>
-                            </div>
-                        )}
-
-                        <div className="flex flex-col items-center gap-1">
-                            <button
-                                onClick={toggleAudioOnly}
-                                className={`flex h-14 w-14 items-center justify-center rounded-full transition-all ${
-                                    audioOnly
-                                        ? "bg-[var(--gold)] text-[var(--ink)]"
-                                        : "bg-white/10 text-[var(--text-muted)] hover:bg-white/20"
-                                }`}
-                                aria-label={audioOnly ? copy.session.turnVideoOn : copy.session.switchToAudioOnly}
-                                aria-pressed={audioOnly}
-                            >
-                                <svg className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 19V6l7-3v13M9 19a3 3 0 11-6 0 3 3 0 016 0zm7-3a3 3 0 11-6 0 3 3 0 016 0z" />
-                                </svg>
-                            </button>
-                            <span className="text-xs text-[var(--text-secondary)]">{copy.session.audioOnly}</span>
-                        </div>
-
-                    </div>
-                    {cameraSwitchError && (
-                        <p className="mx-auto mt-3 max-w-md text-center text-sm text-[var(--danger)]" role="alert">
-                            {cameraSwitchError}
-                        </p>
-                    )}
-                    <div className="mx-auto mt-5 max-w-md border-t border-[var(--border-subtle)] pt-4 text-center">
-                        <button
-                            type="button"
-                            onClick={event => { event.currentTarget.focus(); requestExit(leaveSession); }}
-                            className="min-h-11 px-3 text-sm text-[var(--text-muted)] underline decoration-white/20 underline-offset-4 hover:text-[var(--cream)]"
-                        >
-                            {copy.session.leaveSession}
-                        </button>
-                    </div>
-                </div>
             </div>
         </main>
     );

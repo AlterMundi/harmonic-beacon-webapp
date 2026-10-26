@@ -16,7 +16,7 @@ export const ACCOUNT_STATE_COOKIE = '__Host-hb_account_state';
 export const ACCOUNT_LOGIN_TTL_SECONDS = 10 * 60;
 export const ACCOUNT_REVALIDATION_SECONDS = 15 * 60;
 
-const LOCAL_RETURN = /^\/(?:$|session(?:\/[A-Za-z0-9_-]+)*$|ops(?:\/[A-Za-z0-9_-]+)*$|staff\/login$)/;
+const LOCAL_RETURN = /^\/(?:$|profile$|session(?:\/[A-Za-z0-9_-]+)*$|ops(?:\/[A-Za-z0-9_-]+)*$|staff\/login$)/;
 const OPAQUE_CLAIM = /^[\x21-\x7e]{1,512}$/;
 const OAUTH_CREDENTIAL = /^[\x21-\x7e]{1,16384}$/;
 
@@ -187,6 +187,7 @@ export async function discoverAccountIssuer(
 
 export function safeAccountReturnTo(raw: string | null | undefined, flow: AccountFlow): string {
     const fallback = flow === 'staff' ? '/ops/events' : '/';
+    if (raw === null || raw === undefined || raw === '') return flow === 'staff' ? '/ops/events' : '/profile';
     if (!raw || raw.length > 512 || !LOCAL_RETURN.test(raw) || raw.startsWith('//')) return fallback;
     if (flow === 'staff' && !raw.startsWith('/ops') && raw !== '/staff/login') return fallback;
     if (flow === 'attendee' && raw.startsWith('/ops')) return fallback;
@@ -243,6 +244,22 @@ export function trustedLiveRequestOrigin(
     const publicHost = host === 'live.harmonicbeacon.com' || host === 'live-staging.harmonicbeacon.com';
     const protocol = publicHost ? 'https:' : request.nextUrl.protocol;
     return trustedLiveOrigin(`${protocol}//${host}`);
+}
+
+/** Same-origin writes use the public edge origin. The isolated browser fixture
+ * also runs a production build over loopback HTTP with test login enabled. */
+export function isSameOriginLiveRequest(
+    request: Pick<Request, 'headers'> & { nextUrl: URL },
+): boolean {
+    const origin = request.headers.get('origin');
+    if (!origin) return false;
+    try {
+        if (origin === trustedLiveRequestOrigin(request)) return true;
+    } catch { /* The supervised fixture may use loopback HTTP below. */ }
+    if (process.env.E2E_DASHBOARD_ENABLED !== '1') return false;
+    const host = request.headers.get('host') ?? '';
+    if (!/^(localhost|127\.0\.0\.1)(:\d+)?$/.test(host)) return false;
+    return request.nextUrl.protocol === 'http:' && origin === `http://${host}`;
 }
 
 function digest(value: string): string {

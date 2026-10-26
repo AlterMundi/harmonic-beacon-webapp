@@ -60,7 +60,7 @@ export default function SessionLifecycleControl({
         const start = new Date(scheduledAt).getTime();
         return nowMs < start - EARLY_MS || nowMs > start + LATE_MS;
     }, [scheduledAt, nowMs]);
-    const canOverrideWindow = hasStaffCapability(role, 'administer_system');
+    const canOverrideWindow = hasStaffCapability(role, 'manage_events');
 
     function connectionOutcome(template: string, stage: number, beacon: number): string {
         return template

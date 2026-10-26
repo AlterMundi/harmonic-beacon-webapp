@@ -211,7 +211,7 @@ describe('Live navigation Account menu', () => {
             accountHref={ACCOUNT} accountIssuer={ISSUER} locale="es"
         /></LocaleProvider>);
         expect(screen.getByRole('menuitem', { name: 'Editar nombre en la sala' })).toBeVisible();
-        expect(screen.getAllByRole('menuitem')).toHaveLength(3);
+        expect(screen.getAllByRole('menuitem')).toHaveLength(4);
     });
 
     it.each([

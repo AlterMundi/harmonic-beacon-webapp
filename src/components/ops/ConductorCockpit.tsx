@@ -14,6 +14,7 @@ import type { HealthLevel } from '@/lib/ops-health';
 import AdmissionConsole from './AdmissionConsole';
 import OpsTapestry from './OpsTapestry';
 import SessionContributionsStaff from './SessionContributionsStaff';
+import SessionContributions from '../session/SessionContributions';
 import SessionLifecycleControl from './SessionLifecycleControl';
 import SpotlightConsole, { type SpotlightSummary } from './SpotlightConsole';
 import TapestryArrange from './TapestryArrange';
@@ -77,7 +78,8 @@ export default function ConductorCockpit({
         contributionsPanel: contributionsCopy, tapestryArrange: tapestryCopy,
         opsTapestry: opsTapestryCopy } = messages.ops;
     const staffRoleLabels = messages.staffRoles;
-    const [drawer, setDrawer] = useState<Drawer | null>(null);
+    const [drawer, setDrawer] = useState<Drawer | null>('scene');
+    const [roomHeight, setRoomHeight] = useState(700);
     const [status, setStatus] = useState<LifecycleStatus>(session.status);
     const roomFrameRef = useRef<HTMLIFrameElement>(null);
     useStaffRoomExitBridge(roomFrameRef, session.id, status === 'LIVE');
@@ -85,12 +87,14 @@ export default function ConductorCockpit({
     const [stageLoaded, setStageLoaded] = useState(false);
     const [health, setHealth] = useState<HealthLevel>('yellow');
     const returnFocusRef = useRef<HTMLButtonElement | null>(null);
-    const closeButtonRef = useRef<HTMLButtonElement | null>(null);
-    const drawerRef = useRef<HTMLElement | null>(null);
+    const panelHeadingRef = useRef<HTMLHeadingElement | null>(null);
+
+
 
     const openDrawer = useCallback((next: Drawer, trigger: HTMLButtonElement) => {
         returnFocusRef.current = trigger;
         setDrawer(next);
+        window.requestAnimationFrame(() => panelHeadingRef.current?.focus());
     }, []);
 
     const closeDrawer = useCallback(() => {
@@ -99,32 +103,16 @@ export default function ConductorCockpit({
     }, []);
 
     useEffect(() => {
-        if (!drawer) return;
-        closeButtonRef.current?.focus();
-        const onKeyDown = (event: KeyboardEvent) => {
-            if (event.key === 'Escape') {
-                event.preventDefault();
-                closeDrawer();
-                return;
-            }
-            if (event.key !== 'Tab' || !drawerRef.current) return;
-            const focusable = [...drawerRef.current.querySelectorAll<HTMLElement>(
-                'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-            )].filter((element) => !element.closest('[hidden]'));
-            if (focusable.length === 0) return;
-            const first = focusable[0];
-            const last = focusable[focusable.length - 1];
-            if (event.shiftKey && document.activeElement === first) {
-                event.preventDefault();
-                last.focus();
-            } else if (!event.shiftKey && document.activeElement === last) {
-                event.preventDefault();
-                first.focus();
-            }
+        const onMessage = (event: MessageEvent) => {
+            if (event.origin !== window.location.origin || event.source !== roomFrameRef.current?.contentWindow) return;
+            const data = event.data;
+            if (data?.type !== 'hb-room-height' || data.sessionId !== session.id ||
+                !Number.isFinite(data.height) || data.height < 1 || data.height > 20_000) return;
+            setRoomHeight(Math.ceil(data.height));
         };
-        window.addEventListener('keydown', onKeyDown);
-        return () => window.removeEventListener('keydown', onKeyDown);
-    }, [closeDrawer, drawer]);
+        window.addEventListener('message', onMessage);
+        return () => window.removeEventListener('message', onMessage);
+    }, [session.id]);
 
     const onStageSummary = useCallback((next: SpotlightSummary) => {
         setStage(next);
@@ -169,7 +157,7 @@ export default function ConductorCockpit({
                 : copy.healthPanel;
 
     return (
-        <div className="space-y-4" data-testid="conductor-cockpit">
+        <div className="hb-staff-workspace space-y-4" data-testid="conductor-cockpit">
             <nav
                 aria-label={copy.tools}
                 className="sticky top-0 z-30 grid grid-cols-3 gap-1 rounded-2xl border border-[var(--border-subtle)] bg-[var(--forest)]/95 p-1 shadow-xl backdrop-blur sm:gap-2 sm:p-2 md:grid-cols-5"
@@ -277,43 +265,23 @@ export default function ConductorCockpit({
                 </div>
             </header>
 
-            <div className="overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-black/30 shadow-2xl shadow-black/20">
+            <div className="hb-staff-room-layout">
                 <iframe
                     src={`/session/${session.id}?surface=cockpit`}
                     title={`${copy.roomTitle}: ${session.title}`}
                     allow="camera; microphone; autoplay; fullscreen"
-                    className="block h-[min(68vh,760px)] min-h-[520px] w-full bg-[var(--night)] max-[420px]:min-h-[440px]"
+                    className="hb-staff-room-frame"
+                    style={{ height: roomHeight }}
                     ref={roomFrameRef}
                     data-testid="persistent-room"
                 />
-            </div>
 
-            <div aria-hidden={!drawer}>
-                <button
-                    type="button"
-                    tabIndex={drawer ? 0 : -1}
-                    aria-label={`${copy.closePanel}: ${drawerTitle}`}
-                    onClick={closeDrawer}
-                    className={`${drawer ? 'fixed' : 'hidden'} inset-0 z-40 cursor-default bg-black/55 backdrop-blur-sm`}
-                />
-                <aside
-                    ref={drawerRef}
-                    role="dialog"
-                    aria-modal="true"
-                    aria-labelledby="cockpit-drawer-title"
-                    className={`${drawer ? 'fixed' : 'hidden'} inset-y-0 right-0 z-50 w-full max-w-2xl overflow-y-auto border-l border-[var(--border-subtle)] bg-[var(--night)] p-4 shadow-2xl sm:p-6`}
-                >
-                    <div className="mb-5 flex items-center justify-between gap-4 border-b border-[var(--border-subtle)] pb-4">
-                        <h2 id="cockpit-drawer-title" className="font-serif text-2xl text-[var(--paper)]">
-                            {drawerTitle}
-                        </h2>
-                        <button
-                            ref={closeButtonRef}
-                            type="button"
-                            onClick={closeDrawer}
-                            className="event-button event-button--secondary"
-                        >
-                            ← {copy.returnToRoom}
+            <div className="hb-staff-tools" hidden={!drawer}>
+                <aside role="region" aria-labelledby="cockpit-drawer-title" onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); closeDrawer(); } }}>
+                    <div className="hb-staff-tools-heading">
+                        <h2 id="cockpit-drawer-title" tabIndex={-1} ref={panelHeadingRef}>{drawerTitle}</h2>
+                        <button type="button" onClick={closeDrawer} className="event-button event-button--secondary">
+                            {copy.returnToRoom}
                         </button>
                     </div>
                     <div hidden={drawer !== 'doors'}>
@@ -356,12 +324,15 @@ export default function ConductorCockpit({
                         />
                     </div>
                     <div hidden={drawer !== 'contributions'}>
+                        <SessionContributions sessionId={session.id} staff panelActive={drawer === 'contributions'} />
+                        <details><summary>{locale === 'es' ? 'Vista del equipo' : 'Staff view'}</summary>
                         <SessionContributionsStaff
                             sessionId={session.id}
                             copy={contributionsCopy}
                             active={drawer === 'contributions'}
                             locale={locale}
                         />
+                        </details>
                     </div>
                     <div hidden={drawer !== 'health'}>
                         <OpsHealthClient
@@ -375,6 +346,7 @@ export default function ConductorCockpit({
                         />
                     </div>
                 </aside>
+            </div>
             </div>
         </div>
     );

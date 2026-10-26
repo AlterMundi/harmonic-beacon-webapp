@@ -210,7 +210,7 @@ stackTest.describe('responsive live surfaces', () => {
             '[data-signal="health"]',
         ]) {
             await page.locator(selector).click();
-            const dialog = page.getByRole('dialog');
+            const dialog = page.locator('.hb-staff-tools > aside');
             await expect(dialog).toBeVisible();
             const box = await dialog.boundingBox();
             expect(box, `${selector} drawer has no layout box`).not.toBeNull();

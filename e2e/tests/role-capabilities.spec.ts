@@ -55,6 +55,9 @@ async function expectOperationsNavigation(
     // menu. The ops strip must not recreate the removed second user circle.
     await expect(operationsNavigation.locator('details')).toHaveCount(0);
     await expect(page.locator('body')).not.toContainText(role);
+    await expect(page.getByRole('link', {
+        name: locale === 'es' ? 'Crear y administrar eventos' : 'Create and manage events',
+    })).toBeVisible();
 
     for (const label of locale === 'es'
         ? ['Eventos', 'Estado técnico', 'Entradas']
@@ -109,39 +112,16 @@ stackTest.describe('role capability contract', () => {
         });
     });
 
-    stackTest('keeps an unassigned facilitator out while FACILITATOR_OP operates subscribe-only', async ({
-        browser,
-    }, testInfo) => {
+    stackTest('lets facilitators and composite staff operate unassigned events without implicit media capture', async ({ browser }, testInfo) => {
         const db = requireDirectDb(testInfo);
-        const syntheticOperatorEmail = 'e2e-operator@altermundi.net';
-
         for (const role of ['FACILITATOR', 'FACILITATOR_OP'] as const) {
-            await withPage(browser, async (page) => {
+            await withPage(browser, async page => {
                 await loginViaDashboard(page, 'OPERATOR', 'E2E Unassigned Staff', ROUTES.opsEvents);
-                await withFixtureStaffRole(db, syntheticOperatorEmail, role, async () => {
-                    const entry = await page.request.get(
-                        `/api/scheduled-sessions/${SESSION_EN.id}/entry`,
-                    );
-                    expect(entry.status()).toBe(role === 'FACILITATOR' ? 403 : 200);
-
-                    const token = await page.request.get(
-                        `/api/scheduled-sessions/${SESSION_EN.id}/token`,
-                    );
-                    if (role === 'FACILITATOR') {
-                        expect(token.status()).toBe(403);
-                        await page.goto(ROUTES.opsSession(SESSION_EN.id));
-                        await expect(page.getByRole('heading', {
-                            name: /This event is unavailable|Este evento no está disponible/i,
-                        })).toBeVisible();
-                    } else {
-                        expect(token.status()).toBe(200);
-                        expect(await token.json()).toMatchObject({
-                            role: 'FACILITATOR_OP',
-                            isAssignedFacilitator: false,
-                            canPublish: false,
-                            principalKind: 'staff',
-                        });
-                    }
+                await withFixtureStaffRole(db, 'e2e-operator@altermundi.net', role, async () => {
+                    expect((await page.request.get(`/api/scheduled-sessions/${SESSION_EN.id}/entry`)).status()).toBe(200);
+                    const token = await page.request.get(`/api/scheduled-sessions/${SESSION_EN.id}/token`);
+                    expect(token.status()).toBe(200);
+                    expect(await token.json()).toMatchObject({ role, isAssignedFacilitator: false, canPublish: false, principalKind: 'staff' });
                 });
             });
         }
@@ -173,7 +153,7 @@ stackTest.describe('role capability contract', () => {
             },
         ] as const;
 
-        for (const { session, credentials, capability } of cases) {
+        for (const { session, credentials } of cases) {
             await withSessionStatus(db, session.id, 'LIVE', async () => {
                 await withPage(browser, async (page) => {
                     await loginAttendeeWithTicket(page, credentials);
@@ -181,7 +161,8 @@ stackTest.describe('role capability contract', () => {
                     await expect(page.getByTestId('viewer-identity')).toContainText(credentials.name, {
                         timeout: 30_000,
                     });
-                    await expect(page.getByTestId('viewer-role-guidance')).toHaveText(capability);
+                    await expect(page.getByTestId('viewer-role-guidance')).toHaveCount(0);
+                    await expect(page.getByRole('button', { name: /Raise hand|Levantar la mano/i })).toBeVisible();
                     await expect(page.getByTestId('viewer-identity')).not.toContainText('ATTENDEE');
                 });
             });

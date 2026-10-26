@@ -482,7 +482,7 @@ export default function SpotlightConsole({ sessionId, role, copy, staffRoles, on
                     {fill(copy.handsRaised, { count: queue.length })}
                 </span>
                 <div className="flex flex-wrap items-center gap-2">
-                    {(role === 'ADMIN' || role === 'FACILITATOR_OP') && snapshot ? (
+                    {snapshot ? (
                         <label className="flex items-center gap-2 text-xs text-[var(--text-secondary)]">
                             <span>{copy.capacityLabel}</span>
                             <select
