@@ -124,10 +124,10 @@ Responses:
 - `201` — created; body is the canonical PublicContribution.
 - `200` — idempotent replay; same body, the pre-existing canonical row.
 - `400` — `invalid_request` (malformed/non-object JSON), `invalid_body`,
-  `empty_body`, `body_too_long`, `invalid_visibility`,
+  `empty_body`, `body_too_long`, `invalid_visibility`, `staff_must_be_named`,
   `invalid_idempotency_key`.
 - `401` — unauthenticated. `403` — cross-session, unauthorized, cross-origin,
-  anonymous staff contribution, or non-LIVE session.
+  or non-LIVE session.
 - `404` — unknown session (nothing else leaks).
 - `409` — `idempotency_key_conflict` (same key, different payload),
   `participant_not_joined`.
