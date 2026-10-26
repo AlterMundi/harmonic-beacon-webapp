@@ -27,6 +27,13 @@ stackTest('participant and operator share chat while panels preserve media and m
                 expect(staffToken.ok()).toBe(true);
                 const { displayName: staffName } = await staffToken.json();
                 expect(staffName).toEqual(expect.stringMatching(/\S/));
+                // Every tool has one entry, in the sidebar. Tab changes retain
+                // the existing room and the user's in-progress message.
+                for (const signal of ['hands', 'stage', 'door', 'health']) {
+                    await expect(staff.locator(`[data-signal="${signal}"]`)).toHaveCount(1);
+                    await expect(staff.locator(`.hb-staff-tools [data-signal="${signal}"]`)).toHaveCount(1);
+                }
+                await expect(staff.locator('[data-signal="primary"]')).toHaveCount(0);
                 await staff.locator('[data-tool="contributions"]').click();
                 await expect(staff.getByRole('tab', { name: 'Chat', exact: true })).toHaveAttribute('aria-selected', 'true');
                 await staff.getByRole('textbox').fill('Borrador que conservo');
@@ -63,6 +70,30 @@ stackTest('participant and operator share chat while panels preserve media and m
                     await expect(audience.getByRole('button', { name: /^(?:Salir de la sala|Leave room)$/ })).toBeEnabled();
                     await expect(audience.getByRole('button', { name: /Activar micrófono|Unmute microphone/ })).toBeDisabled();
                 }
+                await staff.setViewportSize({ width: 320, height: 844 });
+                const beforeStaffJump = await room.getByTestId('connection-state').getAttribute('data-state');
+                const staffFrame = await staff.locator('[data-testid="persistent-room"]').boundingBox();
+                const staffTools = await staff.locator('.hb-staff-tools').boundingBox();
+                expect(staffFrame!.y).toBeLessThan(staffTools!.y);
+                await staff.getByRole('link', { name: /Ir al panel del equipo|Go to the staff panel/ }).click();
+                await expect(staff.getByRole('tab', { name: 'Chat', exact: true })).toBeInViewport();
+                await expect(staff.getByRole('alertdialog')).toHaveCount(0);
+                await expect(room.getByTestId('connection-state')).toHaveAttribute('data-state', beforeStaffJump!);
+                expect(await staff.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(321);
+                await staff.getByRole('link', { name: /Volver a mis controles|Back to my controls/ }).click();
+                await expect(staff.locator('[data-testid="persistent-room"]')).toBeInViewport();
+                await staff.setViewportSize({ width: 1440, height: 1000 });
+                await audience.getByRole('button', { name: /Levantar la mano|Raise hand/ }).click();
+                await staff.getByRole('tab', { name: /Manos|Hands/ }).click();
+                await expect(staff.locator('.hb-spotlight')).toContainText('Ana de prueba', { timeout: 15_000 });
+                await testInfo.attach('operator-hands', { body: await staff.screenshot({ fullPage: true }), contentType: 'image/png' });
+                await staff.getByRole('tab', { name: /^(?:Escena|Stage)$/ }).click();
+                await testInfo.attach('operator-stage', { body: await staff.screenshot({ fullPage: true }), contentType: 'image/png' });
+                await staff.setViewportSize({ width: 320, height: 844 });
+                await staff.getByRole('link', { name: /Ir al panel del equipo|Go to the staff panel/ }).click();
+                await testInfo.attach('operator-mobile-tools', { body: await staff.screenshot(), contentType: 'image/png' });
+                await staff.setViewportSize({ width: 1440, height: 1000 });
+                await staff.getByRole('tab', { name: 'Chat', exact: true }).click();
                 await audience.setViewportSize({ width: 390, height: 844 });
                 await audience.evaluate(() => window.scrollTo({ top: 0, left: 0, behavior: 'instant' }));
                 await staff.evaluate(() => window.scrollTo({ top: 0, left: 0, behavior: 'instant' }));

@@ -266,11 +266,11 @@ stackTest.describe('media continuity', () => {
             expect(before.livekitSocketsOpened).toBeGreaterThan(0);
             expect(before.peerConnectionsCreated).toBeGreaterThan(0);
 
-            for (const signal of ['door', 'hands', 'stage', 'primary', 'health']) {
+            for (const signal of ['door', 'hands', 'stage', 'health']) {
                 await page.locator(`[data-signal="${signal}"]`).click();
                 const dialog = page.locator('.hb-staff-tools > aside');
                 await expect(dialog).toBeVisible();
-                await dialog.getByRole('button', { name: /Return to the live room|Volver a la sala en vivo/i }).click();
+                await dialog.getByRole('button', { name: /Close tool|Cerrar herramienta/i }).click();
                 await expect(dialog).toBeHidden();
                 await expect(page.getByTestId('persistent-room')).toHaveCount(1);
             }

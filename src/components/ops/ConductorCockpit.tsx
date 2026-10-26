@@ -87,7 +87,7 @@ export default function ConductorCockpit({
     useStaffRoomExitBridge(roomFrameRef, session.id, status === 'LIVE');
     const [stage, setStage] = useState<SpotlightSummary>(EMPTY_STAGE);
     const [stageLoaded, setStageLoaded] = useState(false);
-    const [health, setHealth] = useState<HealthLevel>('yellow');
+    const [health, setHealth] = useState<HealthLevel | null>(null);
     const returnFocusRef = useRef<HTMLButtonElement | null>(null);
     const panelHeadingRef = useRef<HTMLHeadingElement | null>(null);
 
@@ -101,8 +101,8 @@ export default function ConductorCockpit({
 
     const closeDrawer = useCallback(() => {
         setDrawer(null);
-        window.requestAnimationFrame(() => returnFocusRef.current?.focus());
-    }, []);
+        window.requestAnimationFrame(() => (returnFocusRef.current ?? document.getElementById(`${tabsId}-hands`))?.focus());
+    }, [tabsId]);
 
     useEffect(() => {
         const onMessage = (event: MessageEvent) => {
@@ -126,25 +126,12 @@ export default function ConductorCockpit({
     }, []);
     const onHealthChange = useCallback((next: HealthLevel) => setHealth(next), []);
     const doorOpen = status === 'LIVE';
+    const loadingLabel = locale === 'es' ? 'Cargando…' : 'Loading…';
+    const healthLabel = health === null ? loadingLabel
+        : health === 'green' ? 'Normal'
+        : health === 'yellow' ? (locale === 'es' ? 'Atención' : 'Attention')
+        : (locale === 'es' ? 'Revisar' : 'Check');
     const needsReconciliation = stage.reconcileCount > 0 || (stageLoaded && !stage.liveStateAvailable);
-    const primaryDrawer: Drawer = needsReconciliation
-        ? 'scene'
-        : health === 'red'
-          ? 'health'
-          : !doorOpen
-            ? 'doors'
-            : 'scene';
-    const primaryAction = stage.reconcileCount > 0
-        ? copy.reconcileStage
-        : stageLoaded && !stage.liveStateAvailable
-          ? copy.inspectStageConnection
-          : health === 'red'
-            ? copy.inspectHealth
-            : !doorOpen
-              ? copy.openDoors
-              : stage.handCount > 0
-                ? copy.manageHands
-                : copy.inspectStage;
 
     const drawerTitle = drawer === 'doors'
         ? copy.doorsPanel
@@ -162,115 +149,12 @@ export default function ConductorCockpit({
 
     return (
         <div className="hb-staff-workspace space-y-4" data-testid="conductor-cockpit">
-            <nav
-                aria-label={copy.tools}
-                className="sticky top-0 z-30 grid grid-cols-3 gap-1 rounded-2xl border border-[var(--border-subtle)] bg-[var(--forest)]/95 p-1 shadow-xl backdrop-blur sm:gap-2 sm:p-2 md:grid-cols-5"
-            >
-                <button
-                    type="button"
-                    className="operational-panel min-h-16 text-left"
-                    onClick={(event) => openDrawer('doors', event.currentTarget)}
-                    data-signal="door"
-                >
-                    <span className="block text-xs text-[var(--text-secondary)]">{copy.door}</span>
-                    <strong className={doorOpen ? 'text-[var(--lime)]' : 'text-[var(--gold)]'}>
-                        {doorOpen ? copy.open : copy.closed}
-                    </strong>
-                </button>
-                <button
-                    type="button"
-                    className="operational-panel min-h-16 text-left"
-                    onClick={(event) => openDrawer('hands', event.currentTarget)}
-                    data-signal="hands"
-                >
-                    <span className="block text-xs text-[var(--text-secondary)]">{copy.hands}</span>
-                    <strong className={stage.handCount > 0 ? 'text-[var(--pink)]' : 'text-[var(--cream)]'}>
-                        {stage.handCount}
-                    </strong>
-                    <span className="mt-1 block break-words text-xs leading-4 text-[var(--text-secondary)]">
-                        {stage.nextName ? `${copy.next}: ${stage.nextName}` : copy.noHands}
-                    </span>
-                </button>
-                <button
-                    type="button"
-                    className="operational-panel min-h-16 text-left"
-                    onClick={(event) => openDrawer('scene', event.currentTarget)}
-                    data-signal="stage"
-                    data-loaded={stageLoaded}
-                >
-                    <span className="block text-xs text-[var(--text-secondary)]">{copy.stage}</span>
-                    <strong className={needsReconciliation ? 'text-[var(--danger)]' : 'text-[var(--cream)]'}>
-                        {stage.activePublishers}/{stage.maxPublishers}
-                    </strong>
-                    <span className="mt-1 flex gap-1" aria-hidden="true" data-testid="stage-occupancy">
-                        {Array.from({ length: stage.maxPublishers }, (_, index) => (
-                            <span
-                                key={index}
-                                className={`h-1.5 flex-1 rounded-full ${index < stage.activePublishers ? 'bg-[var(--cyan)]' : 'bg-white/10'}`}
-                            />
-                        ))}
-                    </span>
-                </button>
-                <button
-                    type="button"
-                    className="operational-panel col-span-2 min-h-16 text-left md:col-span-1"
-                    onClick={(event) => openDrawer(primaryDrawer === 'scene' && !needsReconciliation && stage.handCount > 0 ? 'hands' : primaryDrawer, event.currentTarget)}
-                    data-signal="primary"
-                >
-                    <span className="block text-xs text-[var(--text-secondary)]">{copy.primary}</span>
-                    <strong className="text-sm text-[var(--paper)]">
-                        {primaryAction}
-                    </strong>
-                </button>
-                <button
-                    type="button"
-                    className="operational-panel min-h-16 text-left"
-                    onClick={(event) => openDrawer('health', event.currentTarget)}
-                    data-signal="health"
-                >
-                    <span className="block text-xs text-[var(--text-secondary)]">{copy.healthSignal}</span>
-                    <span className={`mt-1 inline-block h-3 w-3 rounded-full ${HEALTH_DOT[health]}`} />
-                    <strong className="ml-2 uppercase text-[var(--cream)]">{health}</strong>
-                </button>
-            </nav>
-
-            <header className="flex flex-wrap items-end justify-between gap-3">
-                <div>
-                    <p className="text-xs font-mono uppercase tracking-[0.12em] text-[var(--gold)]">
-                        {copy.roomTitle}
-                    </p>
-                    <p className="mt-1 text-xs text-[var(--text-secondary)]">{copy.roomHint}</p>
-                </div>
-                <div className="flex flex-wrap gap-2" aria-label={copy.tools}>
-                    <button
-                        type="button"
-                        className="event-button event-button--secondary"
-                        data-tool="tapestry"
-                        onClick={(event) => openDrawer('tapestry', event.currentTarget)}
-                    >
-                        {copy.tapestryPanel}
-                    </button>
-                    <button
-                        type="button"
-                        className="event-button event-button--secondary"
-                        data-tool="admission"
-                        onClick={(event) => openDrawer('admission', event.currentTarget)}
-                    >
-                        {copy.admissionPanel}
-                    </button>
-                    <button
-                        type="button"
-                        className="event-button event-button--secondary"
-                        data-tool="contributions"
-                        onClick={(event) => openDrawer('contributions', event.currentTarget)}
-                    >
-                        {copy.contributionsPanel}
-                    </button>
-                </div>
-            </header>
-
+            <a className="hb-staff-jump" href={`#${tabsId}-tools`}>
+                {locale === 'es' ? 'Ir al panel del equipo ↓' : 'Go to the staff panel ↓'}
+            </a>
             <div className="hb-staff-room-layout">
                 <iframe
+                    id={`${tabsId}-room`}
                     src={`/session/${session.id}?surface=cockpit`}
                     title={`${copy.roomTitle}: ${session.title}`}
                     allow="camera; microphone; autoplay; fullscreen"
@@ -280,12 +164,26 @@ export default function ConductorCockpit({
                     data-testid="persistent-room"
                 />
 
-            <div className="hb-staff-tools">
+            <div className="hb-staff-tools" id={`${tabsId}-tools`} tabIndex={-1} onKeyDown={event => {
+                if (event.key === 'Escape' && drawer && !event.defaultPrevented) {
+                    event.preventDefault();
+                    closeDrawer();
+                }
+            }}>
+                <a className="hb-staff-jump" href={`#${tabsId}-room`}>
+                    {locale === 'es' ? 'Volver a mis controles ↑' : 'Back to my controls ↑'}
+                </a>
+                <div className="hb-staff-tool-menu">
                 <div className="hb-room-tabs hb-staff-tabs" role="tablist" aria-label={locale === 'es' ? 'Panel de la sala' : 'Room panel'}>
                     {ROOM_TABS.map((tab, index) => <button key={tab} type="button" role="tab"
                         id={`${tabsId}-${tab}`} aria-controls={`${tabsId}-${tab === 'contributions' ? 'chat' : 'stage'}-panel`}
                         aria-selected={drawer === tab} tabIndex={drawer === tab || (!ROOM_TABS.some(key => key === drawer) && index === 0) ? 0 : -1}
                         data-room-tab={tab}
+                        data-tool={tab === 'contributions' ? 'contributions' : undefined}
+                        data-signal={tab === 'hands' ? 'hands' : tab === 'scene' ? 'stage' : undefined}
+                        data-loaded={tab === 'scene' ? stageLoaded : undefined}
+                        data-attention={tab === 'scene' && needsReconciliation ? 'true' : undefined}
+                        aria-describedby={tab === 'scene' ? `${tabsId}-stage-status` : undefined}
                         onClick={event => { returnFocusRef.current = event.currentTarget; setDrawer(tab); }}
                         onKeyDown={event => {
                             if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
@@ -295,17 +193,41 @@ export default function ConductorCockpit({
                             // Tab navigation keeps focus in the tablist. The room
                             // and both tool trees retain their existing instances.
                             setDrawer(ROOM_TABS[next]);
-                            document.getElementById(`${tabsId}-${ROOM_TABS[next]}`)?.focus();
+                            const trigger = document.getElementById(`${tabsId}-${ROOM_TABS[next]}`) as HTMLButtonElement | null;
+                            returnFocusRef.current = trigger;
+                            trigger?.focus();
                         }}>
-                        {tab === 'hands' ? <><span aria-hidden="true">✋</span> {copy.hands} <span>{stage.handCount}</span></>
-                            : tab === 'scene' ? (locale === 'es' ? 'Escena' : 'Stage') : 'Chat'}
+                        {tab === 'hands' ? <><span className="hb-staff-tab-label"><span aria-hidden="true">✋</span> {copy.hands}</span><span>{stage.handCount}</span></>
+                            : tab === 'scene' ? <><span className="hb-staff-tab-label">{locale === 'es' ? 'Escena' : 'Stage'}</span><span aria-hidden="true">{needsReconciliation ? '! ' : ''}{stageLoaded ? `${stage.activePublishers}/${stage.maxPublishers}` : '…'}</span></> : 'Chat'}
                     </button>)}
                 </div>
-                <aside role="region" aria-labelledby="cockpit-drawer-title" hidden={!drawer} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); closeDrawer(); } }}>
-                    <div className="hb-staff-tools-heading">
-                        <h2 id="cockpit-drawer-title" tabIndex={-1} ref={panelHeadingRef}>{drawerTitle}</h2>
+                <p id={`${tabsId}-stage-status`} className="sr-only">
+                    {copy.stage}: {stageLoaded ? `${stage.activePublishers}/${stage.maxPublishers}` : loadingLabel}.
+                    {needsReconciliation ? ` ${stage.reconcileCount > 0 ? copy.reconcileStage : copy.inspectStageConnection}` : ''}
+                </p>
+                <nav className="hb-staff-event-tools" aria-label={copy.tools}>
+                    <button type="button" data-signal="door" aria-expanded={drawer === 'doors'} aria-controls={`${tabsId}-tools-panel`}
+                        onClick={event => openDrawer('doors', event.currentTarget)}>
+                        <span>{copy.doorsPanel}</span>
+                        <span className="hb-staff-tool-status" data-state={doorOpen ? 'open' : 'closed'}>{doorOpen ? copy.open : copy.closed}</span>
+                    </button>
+                    <button type="button" data-signal="health" data-level={health ?? 'loading'} aria-expanded={drawer === 'health'} aria-controls={`${tabsId}-tools-panel`}
+                        onClick={event => openDrawer('health', event.currentTarget)}>
+                        <span>{copy.healthPanel}</span>
+                        <span className="hb-staff-tool-status"><i aria-hidden="true" className={health ? HEALTH_DOT[health] : 'bg-white/30'} />{healthLabel}</span>
+                    </button>
+                    <button type="button" data-tool="tapestry" aria-expanded={drawer === 'tapestry'} aria-controls={`${tabsId}-tools-panel`}
+                        onClick={event => openDrawer('tapestry', event.currentTarget)}>{copy.tapestryPanel}</button>
+                    <button type="button" data-tool="admission" aria-expanded={drawer === 'admission'} aria-controls={`${tabsId}-tools-panel`}
+                        onClick={event => openDrawer('admission', event.currentTarget)}>{copy.admissionPanel}</button>
+                </nav>
+                </div>
+                <aside id={`${tabsId}-tools-panel`} role="region" aria-labelledby="cockpit-drawer-title" hidden={!drawer}>
+                    <div className={`hb-staff-tools-heading ${ROOM_TABS.some(tab => tab === drawer) ? 'hb-staff-tools-heading--compact' : ''}`}>
+                        <h2 id="cockpit-drawer-title" className={ROOM_TABS.some(tab => tab === drawer) ? 'sr-only' : undefined} tabIndex={-1} ref={panelHeadingRef}>{drawerTitle}</h2>
                         <button type="button" onClick={closeDrawer} className="event-button event-button--secondary">
-                            {copy.returnToRoom}
+                            <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m6 6 12 12M18 6 6 18" /></svg>
+                            {copy.closePanel}
                         </button>
                     </div>
                     <div hidden={drawer !== 'doors'}>

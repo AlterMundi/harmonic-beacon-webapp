@@ -1558,14 +1558,14 @@ function SessionRoom() {
                             disabled={!isConnected || !canControlStageDevices || grantVersion === null || stageExitBusy}
                             aria-describedby={!canControlStageDevices ? 'room-stage-exit-help' : undefined}
                             onClick={() => { setStageExitError(null); setStageExitConfirming(true); }}
-                            className="event-button event-button--secondary">
+                            className="event-button event-button--secondary hb-room-leave-stage">
                             {copy.session.leaveStage}
                         </button>
                         <button
                             type="button"
                             ref={roomExitTriggerRef}
                             onClick={event => { event.currentTarget.focus(); requestExit(leaveSession); }}
-                            className="min-h-11 px-3 text-sm text-[var(--text-muted)] underline decoration-white/20 underline-offset-4 hover:text-[var(--cream)]"
+                            className="hb-room-leave-room min-h-11 px-3 text-sm"
                         >
                             {copy.session.leaveSession}
                         </button>

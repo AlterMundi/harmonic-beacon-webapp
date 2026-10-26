@@ -12,7 +12,7 @@ import { ROUTES, SESSION_EN, SESSION_ES, STAFF, TICKETS } from '../fixtures/test
 async function closeCockpitDrawer(staff: Page): Promise<void> {
     const drawer = staff.locator('.hb-staff-tools > aside');
     await drawer.getByRole('button', {
-        name: /Return to the live room|Volver a la sala en vivo/i,
+        name: /Close tool|Cerrar herramienta/i,
     }).click();
     await expect(drawer).toBeHidden();
 }
@@ -132,12 +132,13 @@ stackTest('FACILITATOR_OP completes two consecutive event lifecycles without swi
                         await expect(healthSummary).toContainText(session.title);
                         await closeCockpitDrawer(staff);
 
-                        await staff.locator('[data-signal="hands"]').click();
+                        await staff.locator('[data-signal="stage"]').click();
                         const scene = staff.locator('.hb-staff-tools > aside');
                         await scene.getByRole('button', { name: /Reconcile grants|Reconciliar permisos/i }).click();
                         await expect(scene.getByRole('status')).toContainText(
                             /Reconciliation finished|Reconciliación terminada/i,
                         );
+                        await staff.getByRole('tab', { name: /Hands|Manos/i }).click();
 
                         await attendee.getByRole('button', {
                             name: /Raise hand|Levantar la mano/i,

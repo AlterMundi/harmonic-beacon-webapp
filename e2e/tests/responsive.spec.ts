@@ -179,7 +179,7 @@ stackTest.describe('responsive live surfaces', () => {
         });
     });
 
-    stackTest('conductor cockpit keeps all five signals in-bounds and touchable', async ({ page }) => {
+    stackTest('conductor cockpit keeps the single tool menu in-bounds and touchable', async ({ page }) => {
         await loginViaDashboard(
             page,
             'FACILITATOR',
@@ -189,16 +189,21 @@ stackTest.describe('responsive live surfaces', () => {
         await expect(page.getByTestId('conductor-cockpit')).toBeVisible();
         await expectNoHorizontalScroll(page);
 
-        for (const signal of ['door', 'hands', 'stage', 'primary', 'health']) {
+        for (const signal of ['door', 'hands', 'stage', 'health']) {
             const control = page.locator(`[data-signal="${signal}"]`);
-            await control.scrollIntoViewIfNeeded();
-            const box = await control.boundingBox();
-            expect(box, `${signal} has no layout box`).not.toBeNull();
-            expect(box!.height).toBeGreaterThanOrEqual(44);
-            expect(box!.x).toBeGreaterThanOrEqual(0);
-            expect(box!.x + box!.width).toBeLessThanOrEqual(page.viewportSize()!.width + 1);
-            expect(box!.y).toBeGreaterThanOrEqual(0);
-            expect(box!.y + box!.height).toBeLessThanOrEqual(page.viewportSize()!.height + 1);
+            // The connected room reports its intrinsic height asynchronously.
+            // A resize between scroll and sample can move the sidebar. Repeat
+            // that ordinary reach action until the same strict geometry holds.
+            await expect(async () => {
+                await control.scrollIntoViewIfNeeded();
+                const box = await control.boundingBox();
+                expect(box, `${signal} has no layout box`).not.toBeNull();
+                expect(box!.height).toBeGreaterThanOrEqual(44);
+                expect(box!.x).toBeGreaterThanOrEqual(0);
+                expect(box!.x + box!.width).toBeLessThanOrEqual(page.viewportSize()!.width + 1);
+                expect(box!.y).toBeGreaterThanOrEqual(0);
+                expect(box!.y + box!.height).toBeLessThanOrEqual(page.viewportSize()!.height + 1);
+            }).toPass({ timeout: 10_000 });
         }
 
         for (const selector of [

@@ -149,10 +149,29 @@ describe('SpotlightConsole', () => {
             attendee('audience'),
         ]));
         vi.stubGlobal('fetch', fetcher);
-        const { container } = render(<SpotlightConsole sessionId="event-1" role={role} />);
+        render(<SpotlightConsole sessionId="event-1" role={role} />);
         await screen.findByText('#1 — Attendee · ID ue-queue');
-        expect(container.querySelectorAll('details')).toHaveLength(role === 'ADMIN' ? 4 : 0);
+        expect(screen.queryAllByText('Identity', { selector: 'summary' })).toHaveLength(role === 'ADMIN' ? 4 : 0);
         expect(fetcher.mock.calls.some(([url]) => String(url).endsWith('/identity'))).toBe(false);
+    });
+
+    it('keeps queue work separate from stage administration without replacing the queue', async () => {
+        vi.stubGlobal('fetch', mockFetch(snapshot([
+            attendee('queue', { raisedAt: '2026-08-01T15:10:00.000Z', queuePosition: 1 }),
+        ])));
+        const { rerender } = render(<SpotlightConsole sessionId="event-1" role="OPERATOR" view="hands" />);
+        const person = await screen.findByText('#1 — Attendee · ID ue-queue');
+        expect(screen.getByRole('button', { name: 'Give floor' })).toBeVisible();
+        expect(screen.queryByRole('combobox', { name: 'Scene capacity' })).toBeNull();
+        expect(screen.getByText(/Raised hands appear automatically/)).not.toBeVisible();
+
+        rerender(<SpotlightConsole sessionId="event-1" role="OPERATOR" view="scene" />);
+        expect(screen.getByRole('combobox', { name: 'Scene capacity' })).toBeVisible();
+        expect(screen.queryByRole('button', { name: 'Give floor' })).toBeNull();
+        rerender(<SpotlightConsole sessionId="event-1" role="OPERATOR" view="hands" />);
+        expect(screen.getByText('#1 — Attendee · ID ue-queue')).toBe(person);
+        fireEvent.click(screen.getByText('How the hand queue works', { selector: 'summary' }));
+        expect(screen.getByText(/Raised hands appear automatically/)).toBeVisible();
     });
 
     it('lets system administrators select exactly 6, 9, or 12 scene publishers', async () => {

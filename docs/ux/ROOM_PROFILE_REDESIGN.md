@@ -158,3 +158,32 @@ at 1440/390/320px. Ten affected visual cases rendered at all five reference
 widths. The broad local unit suite passed 1,796 cases; the added staff-version
 regression and the final 101-case authority/room group also passed. Hosted
 qualification and image delivery remain separate requirements.
+
+## Follow-up: one place for each room tool (2026-10-27)
+
+Sai's review identified duplicated information between the five top signal cards,
+the extra header buttons and the staff sidebar. The room also started too far
+down the page; on narrow screens the entire staff tool panel preceded personal
+media controls.
+
+| Finding | Resulting interaction |
+| --- | --- |
+| Repeated counts and tool entry points | Remove the top signal strip and extra tool header. Hands, Stage and Chat each have one tab in the sidebar. Counts live in those tabs. |
+| Event tools mixed with frequent queue work | Doors, system health, tapestry composition and admission support have one compact menu beside the room. Capacity and manual synchronization belong in Stage. |
+| Long instructions before the waiting queue | Keep the queue and invitations first; disclose the existing privacy and queue explanation on demand. |
+| Ambiguous state and close controls | Translate health levels, distinguish loading from a confirmed warning, and name panel closure accurately. Escape works from both the panel and its tabs and restores the relevant trigger. |
+| Staff controls follow a long tool panel on phones | Show the room first below 900px, with same-document shortcuts between personal controls and staff tools. Keep both columns at 1024px. |
+| Both exits share the same warning treatment | Use a neutral secondary action for leaving the scene and a distinct danger treatment for leaving the room. Keep confirmations and grant/device boundaries intact. |
+
+The same iframe, chat composer and Spotlight tree survive navigation, locale
+changes and mobile shortcuts. Utility buttons expose their expanded state and
+controlled region. Stage attention uses a visible marker and an accessible
+description as well as color. The default hands view retains every queued
+person; moving administration into Stage removes no action or authorization.
+
+Verification targets: one entry per tool; readable 16px controls and 14px support;
+44px or larger interaction targets; no horizontal overflow at 320, 390, 768,
+1024 and 1440px; reachable long labels; keyboard focus/closure; accessible room
+panels; preserved chat drafts and real LiveKit continuity. Screenshots and browser
+emulation provide review evidence. Physical-device and human acceptance remain
+separate, and source qualification does not establish production delivery.

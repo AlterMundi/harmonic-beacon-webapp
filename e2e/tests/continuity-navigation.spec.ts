@@ -19,11 +19,11 @@ test('live continuity without capture: Staff open drawer survives a cancelled br
             await expectSamePlayingMedia(surface);
             await setLiveLocale(page, 'en');
             await expectSamePlayingMedia(surface);
-            await page.getByRole('button', { name: /Hands/ }).first().click();
+            await page.getByRole('tab', { name: /Hands/ }).first().click();
             const drawer = page.locator('.hb-staff-tools > aside');
             await expect(drawer).toBeVisible();
             const before = await settledContinuity(surface);
-            // Hands was a real top-level pointer gesture, not a forced click
+            // The Hands tab was a real top-level pointer gesture, not a forced click
             // through the backdrop. Firefox needs sticky activation for unload.
             expect(await page.evaluate(() => navigator.userActivation.hasBeenActive)).toBe(true);
             const documentHandle = await page.evaluateHandle(() => document);
@@ -39,7 +39,7 @@ test('live continuity without capture: Staff open drawer survives a cancelled br
             await expectSamePlayingMedia(surface);
             expectMediaContinuity(before, await settledContinuity(surface));
             expect(warnings).toEqual(['beforeunload']);
-            await drawer.getByRole('button', { name: /Return to the live room/ }).click();
+            await drawer.getByRole('button', { name: /Close tool/ }).click();
             await expectSamePlayingMedia(surface);
         } finally { await stopPublisher(); }
     });
@@ -92,9 +92,9 @@ for (const role of ['ATTENDEE', 'OPERATOR'] as const) {
                     await expect(surface.locator('html')).toHaveAttribute('lang', locale.toLowerCase());
                     await expectSamePlayingMedia(surface);
                     if (role === 'OPERATOR') {
-                        await page.getByRole('button', { name: /Hands|Manos/i }).first().click();
+                        await page.getByRole('tab', { name: /Hands|Manos/i }).first().click();
                         await expectSamePlayingMedia(surface);
-                        await page.getByRole('button', { name: /Return to the live room|Volver a la sala en vivo/ }).click();
+                        await page.getByRole('button', { name: /Close tool|Cerrar herramienta/ }).click();
                         await expectSamePlayingMedia(surface);
                     }
                 }
@@ -102,9 +102,9 @@ for (const role of ['ATTENDEE', 'OPERATOR'] as const) {
                     await expectSamePlayingMedia(surface);
                     await setLiveLocale(page, 'es');
                     await expectSamePlayingMedia(surface);
-                    await page.getByRole('button', { name: /Hands|Manos/i }).first().click();
+                    await page.getByRole('tab', { name: /Hands|Manos/i }).first().click();
                     await expect(page.locator('html')).toHaveAttribute('lang', 'es');
-                    await expect(page.getByRole('button', { name: /Volver a la sala en vivo/ })).toBeVisible();
+                    await expect(page.getByRole('button', { name: /Cerrar herramienta/ })).toBeVisible();
                     await expectSamePlayingMedia(surface);
                 }
                 const after = await settledContinuity(surface);
@@ -177,11 +177,11 @@ for (const role of ['ATTENDEE', 'OPERATOR'] as const) {
                     await expect(menuToggle).toHaveAttribute('aria-expanded', 'false');
                 }
                 if (role === 'OPERATOR') {
-                    const hands = page.getByRole('button', { name: /Hands/ }).first();
+                    const hands = page.getByRole('tab', { name: /Hands/ }).first();
                     await hands.click();
                     // The real drawer backdrop covers outer navigation. Close
                     // through its reachable control before testing that exit.
-                    await page.getByRole('button', { name: /Return to the live room/ }).click();
+                    await page.getByRole('button', { name: /Close tool/ }).click();
                     const staffExit = page.getByRole('navigation', { name: 'Event operations' })
                         .getByRole('link', { name: 'Events', exact: true });
                     await staffExit.click();
@@ -505,12 +505,12 @@ test.describe('live continuity without capture', () => {
         await room.getByLabel('Room draft').fill('staff retained');
         const native: string[] = [];
         page.on('dialog', async dialog => { native.push(dialog.type()); await dialog.dismiss(); });
-        await page.getByRole('button', { name: /Hands/ }).click();
+        await page.getByRole('tab', { name: /Hands/ }).click();
         await page.getByRole('link', { name: 'Global exit', exact: true }).click();
         await expect(page.getByRole('alertdialog')).toBeVisible();
         await page.keyboard.press('Escape');
-        await expect(page.getByRole('button', { name: /Return to the live room/ })).toBeVisible();
-        await page.getByRole('button', { name: /Return to the live room/ }).click();
+        await expect(page.getByRole('button', { name: /Close tool/ })).toBeVisible();
+        await page.getByRole('button', { name: /Close tool/ }).click();
         await room.getByRole('button', { name: 'Exit room', exact: true }).click();
         await expect(page.getByRole('alertdialog')).toBeVisible();
         await expect(room.getByRole('alertdialog')).toHaveCount(0);
@@ -593,6 +593,6 @@ test.describe('live continuity without capture', () => {
         expect(await page.evaluate(() => (window as unknown as { __refreshes?: number }).__refreshes ?? 0)).toBe(0);
         await room.getByRole('button', { name: 'ES', exact: true }).click();
         await expect(page.locator('html')).toHaveAttribute('lang', 'es');
-        await expect(page.getByRole('button', { name: /Volver a la sala en vivo/ })).toBeVisible();
+        await expect(page.getByRole('button', { name: /Cerrar herramienta/ })).toBeVisible();
     });
 });

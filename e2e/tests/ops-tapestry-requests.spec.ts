@@ -230,7 +230,7 @@ stackTest('hidden health preview spends 0/N/0 requests while the rail stays live
     expect(openSpend, 'open health drawer').toBeGreaterThanOrEqual(1);
     expect(openSpend, 'one coordinator while open').toBeLessThanOrEqual(3);
 
-    await drawer.getByRole('button', { name: /Return to the live room|Volver a la sala/i }).click();
+    await drawer.getByRole('button', { name: /Close tool|Cerrar herramienta/i }).click();
     const compositeAtClose = counters.composite;
     const healthAtClose = counters.health;
     await expect.poll(() => counters.health, { timeout: 12_000 }).toBeGreaterThan(healthAtClose);
@@ -239,7 +239,7 @@ stackTest('hidden health preview spends 0/N/0 requests while the rail stays live
 
     await page.locator('[data-signal="health"]').click();
     await expect.poll(() => counters.composite).toBeGreaterThan(compositeAtClose);
-    await drawer.getByRole('button', { name: /Return to the live room|Volver a la sala/i }).click();
+    await drawer.getByRole('button', { name: /Close tool|Cerrar herramienta/i }).click();
     const compositeAtSecondClose = counters.composite;
     await page.waitForTimeout(2_500);
     expect(counters.composite, 'second close leaves no accumulated timer').toBe(compositeAtSecondClose);

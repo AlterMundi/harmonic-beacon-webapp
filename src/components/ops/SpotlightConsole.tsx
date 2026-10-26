@@ -468,9 +468,9 @@ export default function SpotlightConsole({ sessionId, role, copy, staffRoles, on
                 </div>
             ) : null}
 
-            <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+            <div hidden={view === 'hands'} className="flex flex-wrap items-center justify-between gap-3 text-sm">
                 <span className="text-[var(--text-secondary)]">
-                    {fill(copy.stageSummary, {
+                    {view === 'all' ? <>{fill(copy.stageSummary, {
                         active: snapshot?.activePublishers ?? '…',
                         max: snapshot?.maxPublishers ?? '…',
                     })}
@@ -480,7 +480,8 @@ export default function SpotlightConsole({ sessionId, role, copy, staffRoles, on
                             max: snapshot.maxPublishers,
                         })}`
                         : ''} ·{' '}
-                    {fill(copy.handsRaised, { count: queue.length })}
+                    {fill(copy.handsRaised, { count: queue.length })}</> : snapshot?.grantedPublishers !== undefined
+                        ? fill(copy.slotsReserved, { granted: snapshot.grantedPublishers, max: snapshot.maxPublishers }) : null}
                 </span>
                 <div className="flex flex-wrap items-center gap-2">
                     {snapshot ? (
@@ -515,9 +516,10 @@ export default function SpotlightConsole({ sessionId, role, copy, staffRoles, on
             {/* Hand queue comes first so a facilitator never has to hunt below the stage. */}
             <div hidden={view === 'scene'}>
                 <h2 className="mb-1 text-lg font-semibold text-[var(--cream)]"><span aria-hidden="true">✋ </span>{copy.handQueue}</h2>
-                <p className="mb-2 text-xs text-[var(--text-muted)]">
-                    {fill(copy.handQueueHelp, { seconds: thumbnailFreshForSeconds })}
-                </p>
+                <details className="hb-queue-help mb-2 text-xs text-[var(--text-muted)]">
+                    <summary>{copy.handQueueHelpLabel}</summary>
+                    <p>{fill(copy.handQueueHelp, { seconds: thumbnailFreshForSeconds })}</p>
+                </details>
                 {queue.length === 0 ? (
                     <p className="text-sm text-[var(--text-secondary)]">{copy.noHands}</p>
                 ) : (
