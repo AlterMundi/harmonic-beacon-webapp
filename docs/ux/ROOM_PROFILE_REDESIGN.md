@@ -94,6 +94,11 @@ without capture, role isolation in both languages and room/cockpit accessibility
 passed. Final journeys cover two-way identified staff chat, participant search,
 explicit staff self-publication without automatic capture, profile event creation
 and sharing, profile accessibility, and 320/390/1440px layouts.
+The blocked-audio action now precedes the scene and stays inside the first
+viewport at every reference width. Fifteen intentional visual baselines cover
+that room, the persistent tools and the staff event hub at five widths. The
+tools-only visual fixture pins its hidden iframe height so connection timing
+cannot change the reference image.
 
 The Listener summary is maintained separately in PR #643 on `early-birds`.
 Its local 20-case suite, type check and lint passed; its nine PR checks passed
@@ -104,3 +109,12 @@ Production delivery remains a separate acceptance: selected hosted gates,
 exact images, staging apply/rollback/forward, schedule checks and behavior
 readback through the existing service helpers. Eko's Staff API broker does not
 admit images. Physical phone audio/camera acceptance remains outstanding.
+
+The conservative impact report retains its full selected verification matrix.
+A local esbuild input inventory of the commerce worker found eight source
+modules, all byte-unchanged from the observed Live source
+`ac21c51df9f9ff32a21505c327928d38253a30b0`; the dependency manifests and Prisma
+schema/migrations are unchanged too. This supports worker compatibility review
+for the admitted owner-operated app delivery path; current host/image custody
+and its actual permit still need readback. Existing Mona sudo grants expose only
+the staging and production Staff API brokers, with no image-admission command.

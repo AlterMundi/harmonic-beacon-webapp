@@ -55,6 +55,9 @@ async function expectOperationsNavigation(
     // menu. The ops strip must not recreate the removed second user circle.
     await expect(operationsNavigation.locator('details')).toHaveCount(0);
     await expect(page.locator('body')).not.toContainText(role);
+    await expect(page.getByRole('link', {
+        name: locale === 'es' ? 'Crear y administrar eventos' : 'Create and manage events',
+    })).toBeVisible();
 
     for (const label of locale === 'es'
         ? ['Eventos', 'Estado técnico', 'Entradas']

@@ -114,6 +114,8 @@ stackTest.describe('visual baselines', () => {
                 })).toBeVisible();
                 await expect(page.getByText(/No pudimos actualizar tu imagen/)).toBeVisible();
                 await expect(page.getByText(/No pudimos obtener el tapiz/)).toBeVisible();
+                const activation = await page.getByRole('button', { name: /Start audio|Iniciar audio/i }).boundingBox();
+                expect(activation!.y + activation!.height).toBeLessThanOrEqual(page.viewportSize()!.height + 1);
                 await expect(page).toHaveScreenshot('attendee-audio-prompt.png', {
                     mask: [page.getByTestId('connection-state').locator('..')],
                     maskColor: '#16120d',
@@ -153,10 +155,10 @@ stackTest.describe('visual baselines', () => {
         const persistentRoom = page.locator('iframe[data-testid="persistent-room"]');
         await expect(persistentRoom).toBeVisible();
         // The embedded room has its own connected-state visual baseline. Hide
-        // it here so LiveKit timing cannot switch this cockpit snapshot between
-        // the frame's loading overlay and its loaded room UI.
+        // it here and pin its placeholder height so LiveKit timing and intrinsic
+        // iframe resizing cannot change this tools-only snapshot.
         await page.addStyleTag({
-            content: 'iframe[data-testid="persistent-room"] { visibility: hidden !important; }',
+            content: 'iframe[data-testid="persistent-room"] { visibility: hidden !important; height: 400px !important; }',
         });
         await expect(page).toHaveScreenshot('conductor-cockpit.png', {
             fullPage: true,

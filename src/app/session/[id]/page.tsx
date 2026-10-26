@@ -1345,6 +1345,26 @@ function SessionRoom() {
                 <div className="hb-room-workspace">
                 {/* Bottom controls */}
                 <div className="hb-room-controls">
+                    {(!isBeaconPlaying || !isStageAudioPlaying) && (
+                        <div className="hb-room-activation event-card w-full text-center" role="group" aria-label={copy.session.audioActivationLabel}>
+                            <p className="mb-3 text-sm text-[var(--text-secondary)]">
+                                {copy.session.audioPrompt}
+                            </p>
+                            <button
+                                onClick={startListening}
+                                disabled={awaitingInitialBeaconConnection}
+                                className="event-button event-button--primary w-full"
+                            >
+                                {copy.session.startAudio}
+                            </button>
+                            {(audioActivationError || beaconAudioError) && (
+                                <p className="mt-3 text-sm text-[var(--danger)]" role="alert">
+                                    {audioActivationError || beaconAudioError}
+                                </p>
+                            )}
+                        </div>
+                    )}
+
                     {principalKind === 'staff' && isConnected && !canPublish && <StaffPublicationAccess sessionId={id} />}
 
                     {isConnected && principalKind === "ticket" && (
@@ -1604,26 +1624,6 @@ function SessionRoom() {
                         audioOnly={audioOnly}
                         maxPublishers={sessionInfo?.maxPublishers ?? 6}
                     />
-
-                    {(!isBeaconPlaying || !isStageAudioPlaying) && (
-                        <div className="event-card w-full max-w-md text-center" role="group" aria-label={copy.session.audioActivationLabel}>
-                            <p className="mb-3 text-sm text-[var(--text-secondary)]">
-                                {copy.session.audioPrompt}
-                            </p>
-                            <button
-                                onClick={startListening}
-                                disabled={awaitingInitialBeaconConnection}
-                                className="event-button event-button--primary w-full"
-                            >
-                                {copy.session.startAudio}
-                            </button>
-                            {(audioActivationError || beaconAudioError) && (
-                                <p className="mt-3 text-sm text-[var(--danger)]" role="alert">
-                                    {audioActivationError || beaconAudioError}
-                                </p>
-                            )}
-                        </div>
-                    )}
 
                     {hasPendingStageInvitation && (
                         <div

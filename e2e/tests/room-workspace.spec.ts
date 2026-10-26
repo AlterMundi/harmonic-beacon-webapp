@@ -40,7 +40,9 @@ stackTest('participant and operator share chat while panels preserve media and m
                 await audience.getByRole('tab', { name: /Personas|People/ }).click();
                 await audience.getByRole('searchbox').fill(staffName);
                 await expect(audience.getByRole('tabpanel', { name: /Personas|People/ })).toContainText(staffName);
-                await audience.getByRole('tab', { name: 'Chat', exact: true }).click();
+                await audience.getByRole('tab', { name: /Personas|People/ }).press('Home');
+                await expect(audience.getByRole('tab', { name: 'Chat', exact: true })).toBeFocused();
+                await expect(audience.getByRole('tab', { name: 'Chat', exact: true })).toHaveAttribute('aria-selected', 'true');
                 expectMediaContinuity(before, await mediaProbeSnapshot(audience));
                 for (const width of [390, 320]) {
                     await audience.setViewportSize({ width, height: 844 });

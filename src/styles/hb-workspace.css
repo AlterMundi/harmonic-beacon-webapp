@@ -25,6 +25,7 @@
 .hb-room-controls { grid-area: 1 / 1; position: sticky; top: 80px; z-index: 20; padding: 16px 12px max(16px, env(safe-area-inset-bottom)); border: 1px solid var(--border-subtle); border-radius: 18px; background: #211b14; box-shadow: 0 -8px 32px #0003; }
 .hb-room-controls > .mb-4 { margin-bottom: 12px; }
 .hb-room-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; }
+.hb-room-activation { flex-basis: 100%; padding: 16px; margin: 0; }
 .hb-room-device-controls { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 16px; }
 .hb-room-device-controls > div { display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .hb-room-leave { margin-left: auto; }
@@ -58,6 +59,7 @@
 .hb-share-event { min-width: 0; }.hb-share-event__fallback { display: grid; gap: 8px; font-size: 14px; max-width: 100%; }
 .hb-share-event__fallback input { width: 100%; max-width: 360px; background: var(--night); border: 1px solid var(--border-subtle); padding: 10px; }
 .hb-staff-workspace > nav { position: relative; top: auto; background: #211b14; }
+.hb-ops-content:has(.hb-staff-workspace) { max-width: 1680px; }
 .hb-staff-room-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 390px); align-items: start; gap: 20px; }
 .hb-staff-room-layout:has(> [hidden]) { grid-template-columns: minmax(0, 1fr); }
 .hb-staff-room-frame { display: block; width: 100%; min-width: 0; border: 1px solid var(--border-subtle); border-radius: 18px; background: var(--night); }
@@ -70,7 +72,7 @@ html[data-hb-embedded-surface="cockpit"] .hb-room-workspace { display: flex; fle
 html[data-hb-embedded-surface="cockpit"] .hb-room-workspace > * { width: 100%; }
 html[data-hb-embedded-surface="cockpit"] .hb-room-header { flex-wrap: wrap; }
 html[data-hb-embedded-surface="cockpit"] .hb-room-header h1 { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-html[data-hb-embedded-surface="cockpit"] .hb-room-controls { position: relative; }
+html[data-hb-embedded-surface="cockpit"] .hb-room-controls { position: relative; top: auto; }
 .hb-profile { max-width: 1180px; margin: auto; padding: clamp(24px, 5vw, 60px) clamp(16px, 4vw, 40px); }
 .hb-profile-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 24px; padding-bottom: 32px; }
 .hb-profile h1 { font: 500 clamp(2.5rem, 5vw, 4rem)/1.1 var(--font-cormorant), Georgia, serif; overflow-wrap: anywhere; }
@@ -91,7 +93,7 @@ html[data-hb-embedded-surface="cockpit"] .hb-room-controls { position: relative;
 @media (max-width: 1100px) { .hb-staff-room-layout { grid-template-columns: minmax(0, 1fr); }.hb-staff-tools { order: -1; } }
 @media (max-width: 900px) {
   .hb-room-workspace { grid-template-columns: minmax(0, 1fr); }.hb-room-scene { grid-area: 2 / 1; padding: 12px; }
-  .hb-room-controls { grid-area: 1 / 1; position: relative; }.hb-room-sidebar { grid-area: 3 / 1; }
+  .hb-room-controls { grid-area: 1 / 1; position: relative; top: auto; }.hb-room-sidebar { grid-area: 3 / 1; }
   .hb-room-header { align-items: flex-start; flex-wrap: wrap; }.hb-room-header > div:last-child { margin-left: 0; justify-content: flex-start; }
   .hb-room-header > div:first-child { flex: 1 1 100%; width: 100%; }
   .hb-room-header > div:last-child { width: 100%; flex: 1 1 100%; }

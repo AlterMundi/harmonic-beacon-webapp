@@ -63,7 +63,7 @@ export default async function EventsHubPage() {
             <header className="mb-7 max-w-2xl">
                 <h1 className="font-serif text-3xl text-[var(--paper)]">{copy.hubTitle}</h1>
                 <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">{copy.hubIntro}</p>
-                {hasStaffCapability(staff.role, 'administer_system') && <Link href="/ops/events/manage" className="mt-4 inline-block text-[var(--gold)]">{locale==='en'?'Create and manage events':'Crear y administrar eventos'} →</Link>}
+                {hasStaffCapability(staff.role, 'manage_events') && <Link href="/ops/events/manage" className="mt-4 inline-block text-[var(--gold)]">{locale==='en'?'Create and manage events':'Crear y administrar eventos'} →</Link>}
             </header>
 
             {programme.length > 0 ? (

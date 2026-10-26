@@ -74,7 +74,7 @@ export function decideSessionTransition(input: {
         throw new SessionLifecycleError(
             403,
             'forbidden',
-            'Only an administrator may cancel an event',
+            'Only authorized event staff may cancel an event',
         );
     }
 
@@ -120,7 +120,7 @@ export function decideSessionTransition(input: {
                 throw new SessionLifecycleError(
                     400,
                     'reason_required',
-                    'A non-PII reason is required for an administrator to open outside the event window',
+                    'A non-PII reason is required to open outside the event window',
                 );
             }
             adminOverride = true;
