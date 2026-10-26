@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { listeningSeconds } from '@/lib/listener/profile-summary';
 import { closeListeningIntervals, observeListeningInterval } from '../listening-intervals';
 
 describe('durable Listener intervals', () => {
@@ -26,7 +27,16 @@ describe('durable Listener intervals', () => {
         });
         expect(updateMany).toHaveBeenCalledWith({
             where: { leaseId: { in: ['one', 'two'] }, endedAt: null },
-            data: { endedAt: now, lastHeartbeatAt: now, endReason: 'evicted' },
+            data: { endedAt: now, endReason: 'evicted' },
         });
     });
+    it('does not turn a delayed eviction into two hours of recorded listening', async () => {
+        const interval = { startedAt: new Date('2026-10-26T10:00:00Z'), lastHeartbeatAt: new Date('2026-10-26T10:05:00Z'), endedAt: null as Date | null };
+        const updateMany = vi.fn().mockImplementation(async ({ data }) => { Object.assign(interval, data); return { count: 1 }; });
+        const now = new Date('2026-10-26T12:00:00Z');
+        await closeListeningIntervals({ tx: { earlyBirdListeningInterval: { upsert: vi.fn(), updateMany } }, leaseIds: ['own-lease'], now, reason: 'evicted' });
+        expect(interval.lastHeartbeatAt).toEqual(new Date('2026-10-26T10:05:00Z'));
+        expect(listeningSeconds([interval], now)).toBe(345);
+    });
+
 });
