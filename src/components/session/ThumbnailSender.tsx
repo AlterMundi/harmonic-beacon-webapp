@@ -10,9 +10,9 @@ const CAPTURE_INTERVAL_MS = 1_000;
 type CaptureStatus = 'off' | 'requesting' | 'uploading' | 'received' | 'composing' | 'published' | 'failed' | 'paused';
 type CameraFacingMode = 'user' | 'environment';
 
-type Props = { sessionId: string; connected: boolean; isPublishing: boolean };
+type Props = { sessionId: string; connected: boolean; isPublishing: boolean; compact?: boolean; cameraOffSignal?: number };
 
-export default function ThumbnailSender({ sessionId, connected, isPublishing }: Props) {
+export default function ThumbnailSender({ sessionId, connected, isPublishing, compact = false, cameraOffSignal = 0 }: Props) {
     const { copy } = useLocale();
     const streamRef = useRef<MediaStream | null>(null);
     const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -107,6 +107,11 @@ export default function ThumbnailSender({ sessionId, connected, isPublishing }: 
     }, [stop]);
 
     useEffect(() => { if (isPublishing || !connected) stop(); }, [connected, isPublishing, stop]);
+    useEffect(() => {
+        // Explicitly leaving the stage turns this camera off too. Returning
+        // to the audience must not restart capture behind the person's click.
+        if (cameraOffSignal > 0) { optedOutRef.current = true; stop(); }
+    }, [cameraOffSignal, stop]);
     useEffect(() => () => stop(), [sessionId, stop]);
 
     const acquireCamera = useCallback(async (requestedFacingMode: CameraFacingMode) => {
@@ -196,6 +201,35 @@ export default function ThumbnailSender({ sessionId, connected, isPublishing }: 
     }, [enable]);
 
     if (isPublishing) return null;
+    if (compact) return <section className="hb-room-tapestry-camera" aria-label={copy.session.cameraTapestry}>
+        <video ref={videoRef} muted playsInline className="hidden" />
+        <div className="hb-room-tapestry-buttons">
+            <div>
+                <button type="button" className={`hb-device-button ${enabled ? 'is-on' : ''}`}
+                    disabled={!connected || switchingCamera}
+                    aria-label={`${enabled || captureStatus === 'requesting' ? copy.session.turnCameraOff : copy.session.turnCameraOn} · ${copy.session.cameraTapestry}`}
+                    aria-pressed={enabled} aria-busy={captureStatus === 'requesting'}
+                    onClick={enabled || captureStatus === 'requesting' ? optOut : optIn}>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                        <path d="M15 10l5-2v8l-5-2M5 6h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z" />
+                        {!enabled && <path d="m3 3 18 18" />}
+                    </svg>
+                </button>
+                <span>{copy.session.cameraTapestry}</span>
+            </div>
+            <div>
+                <button type="button" className="hb-device-button" onClick={() => void switchCamera()}
+                    disabled={!connected || !enabled || switchingCamera}
+                    aria-label={facingMode === 'user' ? copy.session.switchToRearCamera : copy.session.switchToFrontCamera}>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                        <path d="M20 7h-4V3M4 17h4v4m11.5-9A7.5 7.5 0 0 0 6.7 6.7L4 9m16 6-2.7 2.3A7.5 7.5 0 0 1 4.5 12" />
+                    </svg>
+                </button>
+                <span>{switchingCamera ? copy.session.switchingCamera : facingMode === 'user' ? copy.session.frontCamera : copy.session.rearCamera}</span>
+            </div>
+        </div>
+        <p role="status">{message ? (message === 'permissionDenied' ? copy.tapestry.permissionDenied : copy.session.cameraSwitchError) : copy.tapestry.captureStatus[captureStatus]}</p>
+    </section>;
     return <section className="w-full max-w-xs text-center" aria-live="polite">
         <video ref={videoRef} muted playsInline className="hidden" />
         {enabled ? <div className="flex flex-wrap justify-center gap-x-4 gap-y-2">

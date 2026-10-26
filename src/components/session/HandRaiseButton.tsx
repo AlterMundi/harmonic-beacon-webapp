@@ -177,13 +177,14 @@ export default function HandRaiseButton({
                     type="button"
                     onClick={() => void setHand(!(state?.raised ?? false))}
                     disabled={busy || authorizationBlocked}
+                    aria-pressed={state?.raised ?? false}
                     className={`rounded-full px-5 py-2.5 text-sm font-medium transition-all ${
                         state?.raised
                             ? 'bg-[var(--pink)] text-[var(--ink)] shadow-[0_0_16px_rgba(255,113,189,0.3)]'
                             : 'bg-white/10 text-[var(--text-muted)] hover:bg-white/20'
                     } disabled:opacity-50`}
                 >
-                    {state?.raised ? copy.hand.lower : copy.hand.raise}
+                    <span aria-hidden="true">✋ </span>{state?.raised ? copy.hand.lower : copy.hand.raise}
                 </button>
             ) : null}
             {!state?.canPublish ? (

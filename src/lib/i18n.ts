@@ -178,6 +178,10 @@ export type Messages = {
         muteMicrophone: string;
         unmuteMicrophone: string;
         camera: string;
+        stageControlsLocked: string;
+        stageExitLocked: string;
+        cameraTapestry: string;
+        cameraStage: string;
         turnCameraOff: string;
         turnCameraOn: string;
         frontCamera: string;
@@ -739,10 +743,14 @@ export const messages: Record<UiLocale, Messages> = {
             active: 'activo',
             none: 'ninguno',
             error: 'error',
-            mic: 'Micrófono',
+            mic: 'Mic.',
             muteMicrophone: 'Silenciar micrófono',
             unmuteMicrophone: 'Activar micrófono',
             camera: 'Cámara',
+            stageControlsLocked: 'El micrófono se habilita al aceptar la invitación a la escena. Mientras esperás, tu cámara comparte sólo una imagen con el mosaico.',
+            stageExitLocked: 'Disponible cuando estés en la escena.',
+            cameraTapestry: 'Cámara del mosaico',
+            cameraStage: 'Cámara de escena',
             turnCameraOff: 'Apagar cámara',
             turnCameraOn: 'Encender cámara',
             frontCamera: 'Cámara frontal',
@@ -755,13 +763,13 @@ export const messages: Record<UiLocale, Messages> = {
             turnVideoOn: 'Volver a encender el video',
             switchToAudioOnly: 'Cambiar a solo audio',
             leave: 'Salir',
-            leaveSession: 'Salir de la sesión',
+            leaveSession: 'Salir de la sala',
             leaveSessionBody: 'Esto desconecta esta página de la sesión y del Beacon. Para volver, vas a tener que ingresar otra vez.',
             leaveSessionConfirm: 'Sí, salir de la sesión',
             leaveSessionCancel: 'Seguir en la sesión',
-            leaveStage: 'Dejar la escena',
+            leaveStage: 'Salir de la escena',
             leaveStageHeading: '¿Querés volver al público?',
-            leaveStageBody: 'Tu cámara y micrófono dejarán de publicarse. Vas a seguir escuchando la sesión y el Beacon sin reconectarte.',
+            leaveStageBody: 'Tu cámara y micrófono dejarán de publicarse. Vas a seguir en la sala; la conexión se renovará automáticamente y puede haber una pausa breve en el audio.',
             leaveStageConfirm: 'Sí, dejar la escena',
             leaveStageCancel: 'Seguir en escena',
             leavingStage: 'Volviendo al público…',
@@ -1365,6 +1373,10 @@ export const messages: Record<UiLocale, Messages> = {
             muteMicrophone: 'Mute microphone',
             unmuteMicrophone: 'Unmute microphone',
             camera: 'Camera',
+            stageControlsLocked: 'The microphone becomes available after you accept a stage invitation. While you wait, your camera shares only an image with the tapestry.',
+            stageExitLocked: 'Available when you are on stage.',
+            cameraTapestry: 'Tapestry camera',
+            cameraStage: 'Stage camera',
             turnCameraOff: 'Turn camera off',
             turnCameraOn: 'Turn camera on',
             frontCamera: 'Front camera',
@@ -1377,13 +1389,13 @@ export const messages: Record<UiLocale, Messages> = {
             turnVideoOn: 'Turn video back on',
             switchToAudioOnly: 'Switch to audio only',
             leave: 'Leave',
-            leaveSession: 'Leave session',
+            leaveSession: 'Leave room',
             leaveSessionBody: 'This disconnects this page from the session and Beacon. To return, you will need to join again.',
             leaveSessionConfirm: 'Yes, leave the session',
             leaveSessionCancel: 'Stay in the session',
             leaveStage: 'Leave the scene',
             leaveStageHeading: 'Return to the audience?',
-            leaveStageBody: 'Your camera and microphone will stop publishing. You will keep hearing the session and Beacon without reconnecting.',
+            leaveStageBody: 'Your camera and microphone will stop publishing. You will stay in the room; the connection renews automatically and audio may pause briefly.',
             leaveStageConfirm: 'Yes, leave the scene',
             leaveStageCancel: 'Stay on stage',
             leavingStage: 'Returning to the audience…',

@@ -285,4 +285,54 @@ describe('POST /api/ops/sessions/[id]/stage', () => {
         expect(response.status).toBe(403); expect(mocks.participantFindFirst).not.toHaveBeenCalled(); expect(mocks.promoteParticipant).not.toHaveBeenCalled();
     });
 
+    it('returns only the authenticated staff member’s current grant without writing or exposing identities', async () => {
+        mocks.participantFindFirst.mockResolvedValue({ grantVersion: 4, publishGrantedAt: new Date(), publishRevokedAt: null, grantReconcileNeeded: false });
+        const { GET } = await import('../route');
+        const response = await GET(createRequest('/api/ops/sessions/event-1/stage?participantId=someone-else'), mockParams({ id: 'event-1' }));
+        expect(await response.json()).toEqual({ canPublish: true, grantVersion: 4 });
+        expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+        expect(mocks.participantFindFirst).toHaveBeenCalledWith({
+            where: { scheduledSessionId: 'event-1', staffUserId: 'operator-1' },
+            select: { grantVersion: true, publishGrantedAt: true, publishRevokedAt: true, grantReconcileNeeded: true },
+        });
+        expect(mocks.promoteParticipant).not.toHaveBeenCalled();
+        expect(mocks.demoteParticipant).not.toHaveBeenCalled();
+    });
+
+    it('requires staff authentication for the own-grant snapshot', async () => {
+        mocks.requireStaff.mockResolvedValue([null, NextResponse.json({ error: 'Not authorized' }, { status: 403 })]);
+        const { GET } = await import('../route');
+        expect((await GET(stageRequest({}), mockParams({ id: 'event-1' }))).status).toBe(403);
+        expect(mocks.participantFindFirst).not.toHaveBeenCalled();
+    });
+
+    it('releases only the caller’s own stage slot through versioned self-leave', async () => {
+        mocks.participantFindFirst.mockResolvedValue({ id: 'own-participant' });
+        mocks.demoteParticipant.mockResolvedValue({ canPublish: false, grantVersion: 8 });
+        const { POST } = await import('../route');
+        const response = await POST(createRequest('/api/ops/sessions/event-1/stage', {
+            method: 'POST', headers: { host: 'localhost:3000', origin: 'http://localhost:3000' },
+            body: { action: 'self_leave', expectedGrantVersion: 7, participantId: 'forged-other', staffUserId: 'someone-else' },
+        }), mockParams({ id: 'event-1' }));
+        expect(response.status).toBe(200);
+        expect(mocks.demoteParticipant).toHaveBeenCalledWith({
+            scheduledSessionId: 'event-1', participantId: 'own-participant', actorUserId: 'operator-1',
+            auditAction: 'stage.staff.leave', reason: 'Staff voluntarily left the stage', clearHand: true, expectedGrantVersion: 7,
+        });
+    });
+
+    it('rejects cross-origin or unversioned self-leave before releasing any slot', async () => {
+        mocks.participantFindFirst.mockResolvedValue({ id: 'own-participant' });
+        const { POST } = await import('../route');
+        for (const [origin, expectedGrantVersion, expectedStatus] of [
+            ['https://elsewhere.invalid', 4, 403], ['http://localhost:3000', undefined, 400],
+        ] as const) {
+            const response = await POST(createRequest('/api/ops/sessions/event-1/stage', {
+                method: 'POST', headers: { host: 'localhost:3000', origin }, body: { action: 'self_leave', expectedGrantVersion },
+            }), mockParams({ id: 'event-1' }));
+            expect(response.status).toBe(expectedStatus);
+        }
+        expect(mocks.demoteParticipant).not.toHaveBeenCalled();
+    });
+
 });

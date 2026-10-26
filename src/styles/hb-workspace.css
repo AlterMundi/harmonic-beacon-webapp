@@ -26,9 +26,21 @@
 .hb-room-controls > .mb-4 { margin-bottom: 12px; }
 .hb-room-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; }
 .hb-room-activation { flex-basis: 100%; padding: 16px; margin: 0; }
-.hb-room-device-controls { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 16px; }
+.hb-room-device-controls { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: start; gap: 8px; width: 100%; max-width: 440px; }
 .hb-room-device-controls > div { display: flex; flex-direction: column; align-items: center; gap: 4px; }
-.hb-room-leave { margin-left: auto; }
+.hb-room-device-controls > div > span { text-align: center; }
+.hb-room-controls button:disabled { cursor: not-allowed; opacity: .5; box-shadow: none; }
+.hb-room-controls-help { flex-basis: 100%; margin: 0; font-size: 14px; line-height: 1.5; color: var(--text-secondary); }
+.hb-room-stage-confirm { flex-basis: 100%; }
+.hb-room-tapestry-camera { grid-column: span 2; min-width: 0; text-align: center; }
+.hb-room-tapestry-camera p { font-size: 14px; line-height: 1.5; color: var(--text-secondary); margin: 8px 0 0; }
+.hb-room-tapestry-buttons { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; align-items: start; }
+.hb-room-tapestry-buttons > div { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: 1; }
+.hb-room-tapestry-buttons span { font-size: 14px; line-height: 1.5; }
+.hb-device-button { display: grid; width: 56px; height: 56px; place-items: center; border-radius: 50%; background: #ffffff1a; color: var(--text-muted); }
+.hb-device-button.is-on { background: var(--cyan); color: var(--ink); }
+.hb-device-button:hover:enabled { box-shadow: inset 0 0 0 2px var(--gold); }
+.hb-room-leave { margin-left: auto; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; max-width: 360px; gap: 8px; align-items: stretch; }
 .hb-room-leave button { color: #f5b6a9; border: 1px solid #bd786677; border-radius: 10px; text-decoration: none; }
 .hb-hand-help { font-size: 14px; color: var(--text-secondary); max-width: 280px; }
 .hb-hand-help summary { cursor: pointer; display: grid; align-items: center; }
@@ -61,9 +73,17 @@
 .hb-staff-workspace > nav { position: relative; top: auto; background: #211b14; }
 .hb-ops-content:has(.hb-staff-workspace) { max-width: 1680px; }
 .hb-staff-room-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 390px); align-items: start; gap: 20px; }
-.hb-staff-room-layout:has(> [hidden]) { grid-template-columns: minmax(0, 1fr); }
 .hb-staff-room-frame { display: block; width: 100%; min-width: 0; border: 1px solid var(--border-subtle); border-radius: 18px; background: var(--night); }
 .hb-staff-tools { min-width: 0; padding: 20px; border: 1px solid var(--border-subtle); border-radius: 18px; background: #211b14; }
+.hb-staff-tabs { margin: -12px -12px 20px; flex-wrap: wrap; }
+.hb-staff-tabs button { flex: 1 1 auto; }
+.hb-staff-tools > aside { max-height: 72svh; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: 4px; }
+.hb-staff-tools .hb-spotlight li, .hb-staff-tools .hb-spotlight li > .flex { flex-wrap: wrap; }
+.hb-staff-tools .hb-spotlight li, .hb-staff-tools .hb-spotlight li .flex { min-width: 0; max-width: 100%; }
+.hb-staff-tools .hb-spotlight li .shrink-0 { flex-wrap: wrap; flex-shrink: 1; }
+.hb-staff-tools .hb-spotlight li .min-w-0 { overflow-wrap: anywhere; }
+.hb-staff-tools .hb-spotlight label { flex-wrap: wrap; max-width: 100%; }
+.hb-staff-tools .hb-spotlight :is(button, select) { max-width: 100%; min-width: 0; white-space: normal; }
 .hb-staff-tools[hidden], .hb-room [hidden], .hb-staff-workspace [hidden] { display: none !important; }
 .hb-staff-tools-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid var(--border-subtle); }
 .hb-staff-tools-heading h2 { font: 500 1.75rem/1.1 var(--font-cormorant), Georgia, serif; }
@@ -105,3 +125,4 @@ html[data-hb-embedded-surface="cockpit"] .hb-room-controls { position: relative;
 .hb-room-mixer > div { min-width: 0; }
 .hb-room-mixer input[type="range"] { width: 100%; min-width: 0; min-height: 44px; }
 @media (max-width: 600px) { .hb-room-mixer { grid-template-columns: 1fr; gap: 12px; } }
+@media (max-width: 360px) { .hb-room-device-controls, .hb-room-tapestry-buttons { gap: 4px; } }

@@ -155,7 +155,7 @@ for (const role of ['ATTENDEE', 'OPERATOR'] as const) {
                 const before = await settledContinuity(surface);
                 const native: string[] = [];
                 page.on('dialog', async dialog => { native.push(dialog.type()); await dialog.dismiss(); });
-                const exit = surface.getByRole('button', { name: 'Leave session', exact: true });
+                const exit = surface.getByRole('button', { name: 'Leave room', exact: true });
                 await exit.click();
                 await expect(page.getByRole('alertdialog')).toBeVisible();
                 if (role === 'OPERATOR') await expect(surface.getByRole('alertdialog')).toHaveCount(0);
@@ -282,7 +282,7 @@ for (const role of ['ATTENDEE', 'OPERATOR'] as const) {
                 const tokenResponse = await page.request.get(`/api/scheduled-sessions/${SESSION_ES.id}/token`);
                 expect(tokenResponse.ok()).toBe(true);
                 const { identity, room } = await tokenResponse.json();
-                await surface.getByRole('button', { name: 'Leave session', exact: true }).click();
+                await surface.getByRole('button', { name: 'Leave room', exact: true }).click();
                 await expect(page.getByRole('alertdialog')).toBeVisible();
                 await installReconnectObservation(surface);
                 const { RoomServiceClient } = await import('livekit-server-sdk');
@@ -381,7 +381,7 @@ test('live continuity without capture: full-stack ended Staff event releases par
                 await expectSamePlayingMedia(surface);
                 const admin = await adminContext.newPage();
                 await loginForContinuity(admin, 'ADMIN', 'Terminal controller', '/');
-                await surface.getByRole('button', { name: 'Leave session', exact: true }).click();
+                await surface.getByRole('button', { name: 'Leave room', exact: true }).click();
                 await expect(page.getByRole('alertdialog')).toBeVisible();
                 const ended = await admin.request.post(`/api/ops/sessions/${SESSION_ES.id}/lifecycle`, { data: { status: 'ENDED' } });
                 expect(ended.ok()).toBe(true);

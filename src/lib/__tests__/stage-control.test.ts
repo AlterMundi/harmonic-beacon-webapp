@@ -761,6 +761,37 @@ describe('stage control', () => {
         expect(mocks.mutePublishedTrack).not.toHaveBeenCalled();
     });
 
+    it('lets the assigned facilitator voluntarily leave with an exact grant version and audited identity', async () => {
+        participants = [facilitator(true)];
+        const { demoteParticipant } = await import('../stage-control');
+        const input = { scheduledSessionId: event.id, participantId: 'facilitator',
+            actorUserId: event.facilitatorId, auditAction: 'stage.staff.leave' as const,
+            expectedGrantVersion: 1, clearHand: true };
+        const [first, duplicate] = await Promise.all([demoteParticipant(input), demoteParticipant(input)]);
+        expect(first).toMatchObject({ canPublish: false, grantVersion: 2 });
+        expect(duplicate).toMatchObject({ canPublish: false, grantVersion: 2 });
+        expect(mocks.auditCreate).toHaveBeenCalledTimes(1);
+        expect(mocks.auditCreate).toHaveBeenCalledWith({ data: expect.objectContaining({
+            actorUserId: event.facilitatorId, action: 'stage.staff.leave', targetId: 'facilitator',
+        }) });
+    });
+
+    it('does not turn a self-leave audit action into authority over another facilitator or an unversioned grant', async () => {
+        participants = [facilitator(true)];
+        const { demoteParticipant } = await import('../stage-control');
+        for (const extra of [
+            { actorUserId: 'other-staff', expectedGrantVersion: 1 },
+            { actorUserId: event.facilitatorId },
+        ]) {
+            await expect(demoteParticipant({ scheduledSessionId: event.id, participantId: 'facilitator',
+                auditAction: 'stage.staff.leave', ...extra })).rejects.toMatchObject({ code: 'facilitator_required' });
+        }
+        await expect(demoteParticipant({ scheduledSessionId: event.id, participantId: 'facilitator',
+            auditAction: 'stage.staff.leave', actorUserId: event.facilitatorId, expectedGrantVersion: 0,
+        })).rejects.toMatchObject({ code: 'stale_grant_version' });
+        expect(mocks.transitionGrant).not.toHaveBeenCalled();
+    });
+
     it('allows a disabled assigned facilitator to be revoked safely', async () => {
         participants = [{
             ...attendee('facilitator', true),

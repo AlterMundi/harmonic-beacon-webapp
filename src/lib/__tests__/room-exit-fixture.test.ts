@@ -17,8 +17,8 @@ vi.mock('@playwright/test', () => ({
 }));
 
 const labels = [
-    { locale: 'current en', leave: 'Leave session', heading: 'Leave the room?', confirm: 'Leave the room' },
-    { locale: 'current es', leave: 'Salir de la sesión', heading: '¿Salir de la sala?', confirm: 'Salir de la sala' },
+    { locale: 'current en', leave: 'Leave room', heading: 'Leave the room?', confirm: 'Leave the room' },
+    { locale: 'current es', leave: 'Salir de la sala', heading: '¿Salir de la sala?', confirm: 'Salir de la sala' },
     { locale: 'legacy en', leave: 'Leave session', heading: 'Leave session', confirm: 'Yes, leave the session' },
     { locale: 'legacy es', leave: 'Salir de la sesión', heading: 'Salir de la sesión', confirm: 'Sí, salir de la sesión' },
 ];
