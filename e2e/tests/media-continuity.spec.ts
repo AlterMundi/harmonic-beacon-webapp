@@ -302,7 +302,7 @@ stackTest.describe('media continuity', () => {
 
             await page.getByRole('button', { name: /Stage and hands|Escena y manos/i }).click();
             await expect(page.getByRole('alertdialog')).toBeVisible();
-            await page.getByRole('button', { name: /Leave the room|Salir de la sala/i }).click();
+            await page.getByRole('alertdialog').getByRole('button', { name: /Leave the room|Salir de la sala/i }).click();
             await expect(page).toHaveURL(new RegExp(`/ops/events/${SESSION_ES.id}$`));
 
             const iframe = page.locator('iframe[data-testid="persistent-room"]');

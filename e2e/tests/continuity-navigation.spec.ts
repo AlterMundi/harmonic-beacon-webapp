@@ -211,7 +211,7 @@ for (const role of ['ATTENDEE', 'OPERATOR'] as const) {
                     departures++; return route.fulfill({ contentType: 'text/html', body: '<h1>Confirmed exit destination</h1>' });
                 });
                 await (await globalListenLink(page)).click();
-                await page.getByRole('button', { name: 'Salir de la sala', exact: true }).click();
+                await page.getByRole('alertdialog').getByRole('button', { name: 'Salir de la sala', exact: true }).click();
                 await expect(page.getByRole('heading', { name: 'Confirmed exit destination' })).toBeVisible();
                 expect(departures).toBe(1);
                 expect(native).toEqual([]);
@@ -252,7 +252,7 @@ for (const role of ['ATTENDEE', 'OPERATOR'] as const) {
                 expectMediaContinuity(before, await settledContinuity(surface));
                 await signout.click();
                 const logout = page.waitForResponse(response => new URL(response.url()).pathname === '/api/auth/logout' && response.request().method() === 'POST');
-                await page.getByRole('button', { name: 'Leave the room', exact: true }).click();
+                await page.getByRole('alertdialog').getByRole('button', { name: 'Leave the room', exact: true }).click();
                 const logoutResponse = await logout;
                 expect(logoutResponse.ok()).toBe(true);
                 await expect(page.getByRole('heading', { name: 'External identity simulation' })).toBeVisible();
@@ -303,7 +303,7 @@ for (const role of ['ATTENDEE', 'OPERATOR'] as const) {
                 await page.route('https://listen.harmonicbeacon.com/**', route => route.fulfill({ contentType: 'text/html', body: '<h1>Confirmed guarded exit</h1>' }));
                 await (await globalListenLink(page)).click();
                 await expect(page.getByRole('alertdialog')).toBeVisible();
-                await page.getByRole('button', { name: 'Leave the room', exact: true }).click();
+                await page.getByRole('alertdialog').getByRole('button', { name: 'Leave the room', exact: true }).click();
                 await expect(page.getByRole('heading', { name: 'Confirmed guarded exit' })).toBeVisible();
                 expect(native).toBe(0);
             } finally { await stopPublisher(); }
@@ -359,7 +359,7 @@ for (const role of ['ATTENDEE', 'OPERATOR'] as const) {
                 expect(after.peerConnectionsCreated).toBe(before.peerConnectionsCreated);
                 await testInfo.attach('history-native-real-media', { body: JSON.stringify({ before, after, native, mobileNativeExcluded: isMobile }, null, 2), contentType: 'application/json' });
                 await page.evaluate(() => history.back());
-                await page.getByRole('button', { name: 'Leave the room', exact: true }).click();
+                await page.getByRole('alertdialog').getByRole('button', { name: 'Leave the room', exact: true }).click();
                 await expect(page).toHaveURL(new RegExp('/\\?continuity-prior$'));
             } finally { await stopPublisher(); }
         });
@@ -419,7 +419,7 @@ test.describe('live continuity without capture', () => {
         await page.keyboard.press('Escape');
         await expect(signout).toBeFocused();
         await signout.click();
-        await page.getByRole('button', { name: 'Leave the room', exact: true }).click();
+        await page.getByRole('alertdialog').getByRole('button', { name: 'Leave the room', exact: true }).click();
         await expect(page).toHaveURL(`${fixture.origin}/`);
         expect(logouts).toBe(1);
     });
@@ -495,7 +495,7 @@ test.describe('live continuity without capture', () => {
             await expect(page.getByLabel('Room draft')).toHaveValue('history retained');
             await expect(page.getByLabel('Room draft')).toBeFocused();
             await page.evaluate(direction => history[direction](), direction);
-            await page.getByRole('button', { name: 'Leave the room', exact: true }).click();
+            await page.getByRole('alertdialog').getByRole('button', { name: 'Leave the room', exact: true }).click();
             await expect(page).toHaveURL(new RegExp(`/away\\?${direction === 'back' ? 'prior' : 'next'}$`));
         });
     }
@@ -524,7 +524,7 @@ test.describe('live continuity without capture', () => {
             window.dispatchEvent(new MessageEvent('message', { origin: location.origin, source: window, data }));
         });
         await page.getByRole('link', { name: 'Shadow exit', exact: true }).click();
-        await page.getByRole('button', { name: 'Leave the room', exact: true }).click();
+        await page.getByRole('alertdialog').getByRole('button', { name: 'Leave the room', exact: true }).click();
         await expect(page.getByRole('heading', { name: 'Away' })).toBeVisible();
         expect(native).toEqual([]);
     });
@@ -567,7 +567,7 @@ test.describe('live continuity without capture', () => {
         await (await popupPromise).close();
         await expect(page.getByRole('alertdialog')).toHaveCount(0);
         await page.getByRole('link', { name: 'Global exit', exact: true }).click();
-        await page.getByRole('button', { name: 'Leave the room', exact: true }).click();
+        await page.getByRole('alertdialog').getByRole('button', { name: 'Leave the room', exact: true }).click();
         await expect(page.getByRole('heading', { name: 'Away' })).toBeVisible();
         expect(native).toEqual([]);
     });
