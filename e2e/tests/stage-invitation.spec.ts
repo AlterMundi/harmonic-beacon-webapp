@@ -41,7 +41,7 @@ stackTest('a fresh connection stays invited until the attendee accepts the stage
                 ROUTES.opsSession(SESSION_ES.id),
             );
             await staff.locator('[data-signal="hands"]').click();
-            const drawer = staff.getByRole('dialog');
+            const drawer = staff.locator('.hb-staff-tools > aside');
 
             const raiseHand = attendee.getByRole('button', { name: /Raise hand|Levantar la mano/i });
             await raiseHand.click();

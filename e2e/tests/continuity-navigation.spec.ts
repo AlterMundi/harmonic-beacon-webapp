@@ -20,7 +20,7 @@ test('live continuity without capture: Staff open drawer survives a cancelled br
             await setLiveLocale(page, 'en');
             await expectSamePlayingMedia(surface);
             await page.getByRole('button', { name: /Hands/ }).first().click();
-            const drawer = page.getByRole('dialog');
+            const drawer = page.locator('.hb-staff-tools > aside');
             await expect(drawer).toBeVisible();
             const before = await settledContinuity(surface);
             // Hands was a real top-level pointer gesture, not a forced click
@@ -188,7 +188,7 @@ for (const role of ['ATTENDEE', 'OPERATOR'] as const) {
                     await expect(page.getByRole('alertdialog')).toBeVisible();
                     await page.keyboard.press('Escape');
                     await expect(staffExit).toBeFocused();
-                    await expect(page.getByRole('dialog')).not.toBeVisible();
+                    await expect(page.locator('.hb-staff-tools > aside')).not.toBeVisible();
                     await expectSamePlayingMedia(surface);
                 }
                 await expectSamePlayingMedia(surface);

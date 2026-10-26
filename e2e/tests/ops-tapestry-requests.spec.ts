@@ -95,7 +95,7 @@ stackTest('operational tapestry stays O(1) at 0/1/50/150 participants', async ({
     expect(counters).toEqual({ manifest: 0, composite: 0, tiles: 0 });
 
     await page.locator('[data-tool="tapestry"]').click();
-    const drawer = page.getByRole('dialog');
+    const drawer = page.locator('.hb-staff-tools > aside');
     const section = drawer.getByRole('region', { name: /Operational tapestry|Tapiz operativo/i });
     await expect(section).toBeVisible();
 
@@ -213,7 +213,7 @@ stackTest('hidden health preview spends 0/N/0 requests while the rail stays live
     expect(counters.composite, 'closed health drawer').toBe(0);
 
     await page.locator('[data-signal="health"]').click();
-    const drawer = page.getByRole('dialog');
+    const drawer = page.locator('.hb-staff-tools > aside');
     await expect(drawer.getByRole('region', { name: /Tapestry|Tapiz/i })).toBeVisible();
     await expect.poll(() => counters.composite).toBeGreaterThanOrEqual(1);
     await page.waitForTimeout(2_500);

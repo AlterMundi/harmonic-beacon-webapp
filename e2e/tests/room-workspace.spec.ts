@@ -54,8 +54,8 @@ stackTest('participant and operator share chat while panels preserve media and m
                     expect(controls!.y).toBeLessThan(chat!.y);
                 }
                 await audience.setViewportSize({ width: 390, height: 844 });
-                await audience.evaluate(() => window.scrollTo(0, 0));
-                await staff.evaluate(() => window.scrollTo(0, 0));
+                await audience.evaluate(() => window.scrollTo({ top: 0, left: 0, behavior: 'instant' }));
+                await staff.evaluate(() => window.scrollTo({ top: 0, left: 0, behavior: 'instant' }));
                 await testInfo.attach('participant-mobile', { body: await audience.screenshot({ fullPage: true }), contentType: 'image/png' });
                 await testInfo.attach('operator-desktop', { body: await staff.screenshot({ fullPage: true }), contentType: 'image/png' });
                 await audience.setViewportSize({ width: 1440, height: 1000 });

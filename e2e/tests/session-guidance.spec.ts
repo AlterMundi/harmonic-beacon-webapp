@@ -135,13 +135,14 @@ stackTest.describe('session listening guidance (#142)', () => {
                 const guidance = page.getByTestId('session-guidance');
                 const toggle = guidance.getByRole('button');
 
-                // The disclosure sits right above the volume controls it
-                // explains, without overlapping them or the scene.
+                // Mixing remains directly available before its optional
+                // explanation, without overlapping either surface.
                 const toggleBox = await toggle.boundingBox();
                 const volumeBox = await page.locator('#room-master-volume').boundingBox();
                 expect(toggleBox, 'guidance toggle has no layout box').not.toBeNull();
                 expect(volumeBox, 'master volume has no layout box').not.toBeNull();
-                expect(toggleBox!.y + toggleBox!.height).toBeLessThanOrEqual(volumeBox!.y + 2);
+                // Essential mixing controls precede the optional explanation.
+                expect(volumeBox!.y + volumeBox!.height).toBeLessThanOrEqual(toggleBox!.y + 2);
                 expect(toggleBox!.x).toBeGreaterThanOrEqual(0);
                 expect(toggleBox!.x + toggleBox!.width).toBeLessThanOrEqual(
                     page.viewportSize()!.width + 1,

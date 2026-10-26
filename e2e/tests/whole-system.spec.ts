@@ -10,7 +10,7 @@ import { expect, stackTest } from '../fixtures/stack';
 import { ROUTES, SESSION_EN, SESSION_ES, STAFF, TICKETS } from '../fixtures/test-data';
 
 async function closeCockpitDrawer(staff: Page): Promise<void> {
-    const drawer = staff.getByRole('dialog');
+    const drawer = staff.locator('.hb-staff-tools > aside');
     await drawer.getByRole('button', {
         name: /Return to the live room|Volver a la sala en vivo/i,
     }).click();
@@ -91,7 +91,7 @@ stackTest('FACILITATOR_OP completes two consecutive event lifecycles without swi
                         )).toBeVisible({ timeout: 10_000 });
 
                         await staff.locator('[data-signal="door"]').click();
-                        const doors = staff.getByRole('dialog');
+                        const doors = staff.locator('.hb-staff-tools > aside');
                         const reason = doors.getByLabel(/Operational reason|Motivo operativo/i);
                         if (await reason.isVisible()) {
                             await reason.fill(`E2E lifecycle ${index + 1}`);
@@ -110,7 +110,7 @@ stackTest('FACILITATOR_OP completes two consecutive event lifecycles without swi
                         // the same authenticated cockpit, without a mode or
                         // account switch.
                         await staff.locator('[data-tool="admission"]').click();
-                        const admission = staff.getByRole('dialog');
+                        const admission = staff.locator('.hb-staff-tools > aside');
                         await admission.getByPlaceholder(
                             /Attendee email, code last four, or entitlement ID|Email, últimos cuatro caracteres del código o ID de acceso/i,
                         ).fill(session.id === SESSION_ES.id ? 'TESD' : 'TEND');
@@ -123,7 +123,7 @@ stackTest('FACILITATOR_OP completes two consecutive event lifecycles without swi
                         await closeCockpitDrawer(staff);
 
                         await staff.locator('[data-signal="health"]').click();
-                        const health = staff.getByRole('dialog');
+                        const health = staff.locator('.hb-staff-tools > aside');
                         await health.getByRole('button', { name: /Refresh now|Actualizar ahora/i }).click();
                         const healthSummary = health.locator('p').filter({
                             hasText: /Watching session.*Facilitator and operations|Observando la sesión.*Facilitación y operaciones/i,
@@ -133,7 +133,7 @@ stackTest('FACILITATOR_OP completes two consecutive event lifecycles without swi
                         await closeCockpitDrawer(staff);
 
                         await staff.locator('[data-signal="hands"]').click();
-                        const scene = staff.getByRole('dialog');
+                        const scene = staff.locator('.hb-staff-tools > aside');
                         await scene.getByRole('button', { name: /Reconcile grants|Reconciliar permisos/i }).click();
                         await expect(scene.getByRole('status')).toContainText(
                             /Reconciliation finished|Reconciliación terminada/i,
@@ -177,7 +177,7 @@ stackTest('FACILITATOR_OP completes two consecutive event lifecycles without swi
 
                         await closeCockpitDrawer(staff);
                         await staff.locator('[data-signal="door"]').click();
-                        const closePanel = staff.getByRole('dialog');
+                        const closePanel = staff.locator('.hb-staff-tools > aside');
                         await closePanel.getByRole('button', { name: /Close event|Cerrar evento/i }).click();
                         await closePanel.getByRole('button', {
                             name: /End & disconnect everyone|Finalizar y desconectar/i,
