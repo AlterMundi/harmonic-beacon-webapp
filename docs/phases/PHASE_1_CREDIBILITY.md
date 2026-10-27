@@ -1,6 +1,14 @@
 # Phase 1 — Credibility
 
-*Draft · 2026-04-12 · author: product design, pending validation*
+*Historical draft · 2026-04-12 · author: product design, pending validation*
+
+This is the original April planning snapshot, not the current delivery state.
+Its old `beacon.altermundi.net` login destination and unchecked acceptance list
+are historical. Current identity is `account.harmonicbeacon.com`, Live is
+`live.harmonicbeacon.com`, and continuous listening is
+`listen.harmonicbeacon.com`. Use the [operating contract](../ops/OPERATING_CONTRACT.md)
+and [#590](https://github.com/AlterMundi/harmonic-beacon-webapp/issues/590) for
+verified operation and remaining acceptance.
 
 **Duration**: ~8 weeks
 **North star**: *we could let strangers in tomorrow and be proud, not embarrassed.*
