@@ -7,7 +7,7 @@ services:
     volumes:
       - ./alertmanager/alertmanager.yml.tmpl:/template/alertmanager.yml.tmpl:ro
       - alertmanager-runtime:/runtime
-    command: [/bin/sh, -ec, "cp /template/alertmanager.yml.tmpl /runtime/alertmanager.yml"]
+    command: [/bin/sh, -ec, "cp /template/alertmanager.yml.tmpl /runtime/alertmanager.yml; chmod 0644 /runtime/alertmanager.yml"]
 
   prometheus:
     image: prom/prometheus:v3.4.2

@@ -32,6 +32,7 @@ test('keeps canary credentials private and delegates notifications to CompAII', 
   assert.match(compose, /chown 1000:1000 \/runtime\/signing_secret/);
   assert.match(compose, /canary-secret-init: \{ condition: service_completed_successfully \}/);
   assert.match(alertmanager, /receiver: compaii-durable-alerts/);
+  assert.match(compose, /chmod 0644 \/runtime\/alertmanager\.yml/);
   assert.doesNotMatch(alertmanager, /telegram_configs|bot_token_file|chat_id/);
   assert.doesNotMatch(compose, /TELEGRAM_BOT_TOKEN_FILE|TELEGRAM_CHAT_ID_FILE|alertmanager-secret-init/);
 });
