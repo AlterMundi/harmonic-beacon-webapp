@@ -352,7 +352,10 @@ Before replacing legacy Telegram delivery, verify complete source observation,
 authenticated acceptance and actual receiving delivery in Telegram/Sessions.
 Then retain the previous private Alertmanager configuration and select a receiver
 without direct Telegram integrations. Keep rule evaluation, Alertmanager history
-and secrets; validate configuration and reload only Alertmanager. Do not disable
+and retained legacy secrets; validate configuration and reload only Alertmanager. The maintained Compose
+default no longer reads Telegram credentials. For a private validation staging
+directory, bind the individual public YAML file read-only with mode0644, rather
+than making the directory accessible or overriding the validator user. Do not disable
 the platform, backup, stream or storage observers. Hermes cron is not this source:
 inspect its actual selected profile before attributing or pausing jobs.
 

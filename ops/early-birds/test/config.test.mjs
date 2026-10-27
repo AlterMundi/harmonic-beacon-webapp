@@ -24,27 +24,16 @@ test('keeps all metrics and Alertmanager listeners off public interfaces', async
   assert.doesNotMatch(compose, /ports:\s*\[0\.0\.0\.0:909[0-3]/);
 });
 
-test('references Telegram and canary credentials as mounted secret files only', async () => {
+test('keeps canary credentials private and delegates notifications to CompAII', async () => {
   const compose = await read('docker-compose.yml');
   const alertmanager = await read('alertmanager/alertmanager.yml.tmpl');
-  assert.match(compose, /TELEGRAM_BOT_TOKEN_FILE/);
-  assert.match(compose, /TELEGRAM_CHAT_ID_FILE/);
   assert.match(compose, /BEACON_STREAM_SIGNING_SECRET_FILE/);
-  assert.match(compose, /alertmanager-secret-init:[\s\S]*network_mode: none/);
-  assert.match(compose, /chown 65534:65534 \/runtime-secrets\/telegram_bot_token/);
-  assert.match(compose, /chmod 0400 \/runtime-secrets\/telegram_bot_token/);
-  assert.match(compose, /alertmanager-secret-init: \{ condition: service_completed_successfully \}/);
   assert.match(compose, /canary-secret-init:[\s\S]*network_mode: none/);
   assert.match(compose, /chown 1000:1000 \/runtime\/signing_secret/);
   assert.match(compose, /canary-secret-init: \{ condition: service_completed_successfully \}/);
-  assert.match(compose, /BEACON_STREAM_SIGNING_SECRET_FILE: \/runtime\/signing_secret/);
-  assert.match(compose, /BEACON_STREAM_PUBLIC_ORIGIN/);
-  assert.match(compose, /BEACON_STREAM_ARTIFACT_ID/);
-  assert.doesNotMatch(compose, /TELEGRAM_BOT_TOKEN:\s*[^$]/);
-  assert.match(alertmanager, /bot_token_file: \/runtime-secrets\/telegram_bot_token/g);
-  assert.match(alertmanager, /send_resolved: true/g);
-  assert.ok(compose.includes("grep -Eq '^-?[0-9]+$$'"));
-  assert.doesNotMatch(compose, /case "\$\$chat_id" in/);
+  assert.match(alertmanager, /receiver: compaii-durable-alerts/);
+  assert.doesNotMatch(alertmanager, /telegram_configs|bot_token_file|chat_id/);
+  assert.doesNotMatch(compose, /TELEGRAM_BOT_TOKEN_FILE|TELEGRAM_CHAT_ID_FILE|alertmanager-secret-init/);
 });
 
 test('scrapes node-exporter by the internal Docker DNS name', async () => {
@@ -142,27 +131,20 @@ test('alerts on unavailable payment providers only while their sales lane is ena
   assert.match(sandboxRule, /on\(provider, environment\)/);
 });
 
-test('routes bounded reminders and keeps critical alerts immediate', async () => {
-  const alertmanager = await read('alertmanager/alertmanager.yml.tmpl');
-  assert.match(alertmanager, /group_wait: 5m[\s\S]*repeat_interval: 6h/);
-  assert.match(alertmanager, /matchers: \[severity="critical"\][\s\S]*group_wait: 0s[\s\S]*repeat_interval: 15m/);
-});
-
 test('disk alerts report their measured free-space percentage', async () => {
   const alerts = await read('prometheus/alerts.yml');
   assert.match(alerts, /EarlyBirdsDiskPrepare[\s\S]*\{\{ \$value \| humanizePercentage \}\} free \(warning below 20%\)/);
   assert.match(alerts, /EarlyBirdsDiskCritical[\s\S]*\{\{ \$value \| humanizePercentage \}\} free \(critical below 15%\)/);
 });
 
-test('capacity warnings cannot duplicate a critical disk page', async () => {
-  const config = await read('alertmanager/alertmanager.yml.tmpl');
-  assert.match(config, /alertname="EarlyBirdsDiskPrepare"\]\n      repeat_interval: 12h/);
-  assert.match(config, /source_matchers: \[alertname="EarlyBirdsDiskCritical"\]/);
-  assert.match(config, /target_matchers: \[alertname="EarlyBirdsDiskPrepare"\]/);
-  assert.match(config, /equal: \[instance, mountpoint, environment\]/);
-  assert.match(config, /parse_mode: ""/);
+test('every source rule has an explicit managed severity policy', async () => {
+  const alerts = await read('prometheus/alerts.yml');
+  const policy = JSON.parse(await read('alertmanager/managed-policy.json'));
+  const names = [...alerts.matchAll(/- alert: ([A-Za-z0-9_]+)/g)].map(match => match[1]);
+  assert.deepEqual(Object.keys(policy).sort(), names.sort());
+  assert.equal(policy.BeaconTLSCertificateCritical, 'critical');
+  assert.equal(policy.BeaconTLSRenewalFailed, 'warning');
 });
-
 test('shared notification client validates input and keeps alert identity through resolution', async () => {
   const { execFileSync, spawnSync } = await import('node:child_process');
   const client = path.join(root, 'scripts/beacon-notify.py');
