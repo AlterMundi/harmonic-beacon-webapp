@@ -4,6 +4,7 @@ import datetime as dt
 import json
 import math
 import os
+import re
 from pathlib import Path
 import subprocess
 import tempfile
@@ -141,6 +142,29 @@ def collect():
             metric('events_' + key, 'live', value)
     except Exception:
         metric('event_probe_up', 'live', 0)
+    try:
+        certificates = list(Path('/etc/letsencrypt/live').glob('*/cert.pem'))
+        if not 1 <= len(certificates) <= 64:
+            raise ValueError('bounded nonempty certificate inventory required')
+        certificate_values = []
+        for certificate in certificates:
+            domain = certificate.parent.name
+            if not re.fullmatch(r'[a-z0-9.-]{1,253}', domain):
+                raise ValueError('safe certificate name required')
+            expiry = command(['/usr/bin/openssl', 'x509', '-in', str(certificate),
+                              '-noout', '-enddate']).strip().removeprefix('notAfter=')
+            stamp = dt.datetime.strptime(expiry, '%b %d %H:%M:%S %Y %Z').replace(tzinfo=dt.timezone.utc).timestamp()
+            certificate_values.append(f'beacon_platform_tls_not_after_seconds{{domain="{domain}"}} {stamp}')
+        values.extend(certificate_values)
+        metric('tls_probe_up', 'tls', 1)
+    except Exception:
+        metric('tls_probe_up', 'tls', 0)
+    try:
+        healthy, observed = unit_health('certbot.service')
+    except Exception:
+        healthy, observed = 0, 0
+    metric('tls_renewal_up', 'tls', healthy)
+    metric('tls_renewal_timestamp_seconds', 'tls', observed)
     values.append(f'beacon_platform_observer_timestamp_seconds {time.time()}')
     return '\n'.join(values) + '\n'
 

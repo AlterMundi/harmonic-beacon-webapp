@@ -1,0 +1,14 @@
+[Unit]
+Description=Finite Beacon observation through the CompAII receiving Alerts route
+After=network-online.target daimon-alerts.service
+
+[Service]
+Type=oneshot
+# Receiving operator selects a pinned bridge and existing Daimon Alerts client.
+ExecStart=/usr/bin/python3 %h/.local/libexec/beacon-alerts/current/alerts-bridge.py --config %h/.config/daimon-alerts/beacon.json
+EnvironmentFile=%h/.config/daimon-alerts/beacon-client.env
+TimeoutStartSec=45
+MemoryMax=128M
+UMask=0077
+NoNewPrivileges=yes
+

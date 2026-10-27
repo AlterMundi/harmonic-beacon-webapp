@@ -328,6 +328,69 @@ entry feature flag is owned by the application lane and must be disabled there
 for a truthful public unavailable state; this ops slice never changes event
 routes or data.
 
+### Attended alert delivery and recovery
+
+CompAII owns the receiving alert route. Prometheus on Mona remains the source of
+qualified rules; `alerts-bridge.py` observes it once per minute through the existing
+operator SSH route and projects only allowlisted rule names and safe service names
+to the receiving Daimon Alerts service. It uses a separate producer credential,
+private immutable binding, SQLite outbox and stable incident/revision semantics.
+Repeats do not create new notices. A source failure or unknown rule preserves open
+incidents and reports observation failure; silence and acknowledgment are not
+recovery. No model wakeup, task replay or automatic service restart is installed.
+
+Install a pinned bridge and `managed-policy.json` in an owner-controlled directory,
+with the existing maintained Daimon Alerts `client.py` selected through a private
+PYTHONPATH environment file. The private config selects `ssh_target`, `base_url`,
+`token_file`, `state_dir`, `producer_id`, `observer_id`, `receiving_scope` and
+`policy_file`. Its dedicated actor grants only publish/observe/status for that
+producer/observer and the existing human receiving scope. Retain previous service
+configuration and the durable database when changing software or grants.
+
+The supplied `daimon-beacon-alerts` user service/timer is finite and model-free.
+Before replacing legacy Telegram delivery, verify complete source observation,
+authenticated acceptance and actual receiving delivery in Telegram/Sessions.
+Then retain the previous private Alertmanager configuration and select a receiver
+without direct Telegram integrations. Keep rule evaluation, Alertmanager history
+and secrets; validate configuration and reload only Alertmanager. Do not disable
+the platform, backup, stream or storage observers. Hermes cron is not this source:
+inspect its actual selected profile before attributing or pausing jobs.
+
+Recovery channel: open **Operational alerts** in CompAII Sessions and return to
+**Beacon Operation** with the incident. CompAII inspects its source rule, current
+service state and the named runbook, performs the authorized scoped repair and
+verifies the same incident resolves at a higher revision. Notification delivery,
+human acknowledgment and producer recovery remain separate. Acknowledging an
+incident does not repair it. No unattended model is implied by operator ownership.
+
+`BeaconServiceMonitorFailed` says the monitor failed, not necessarily that the
+application is down. For example, the analytics and commerce monitors refuse root
+disk usage at 85%; their bounded diagnostics can identify the same capacity cause.
+Inspect the corresponding systemd journal and the storage-maintenance result.
+Never clear the condition by deleting recovery images or business data.
+
+### Automatic TLS renewal
+
+Every Mona Certbot lineage must use its actual HTTP challenge route. Live uses
+`webroot` at `/var/www/html`, matching its existing Nginx ACME location. Do not use
+`standalone` while Nginx owns port80. The historical Live standalone lineage failed
+renewal with a port-binding error until expiry; an active timer did not imply a
+successful job. Other established webroot/nginx lineages retain their own routes.
+
+Install `systemd/renew-nginx-certificates` as an executable Certbot deploy hook.
+It validates and gracefully reloads Nginx after successful renewal; it never
+stops applications. Verify all lineages using `certbot renew --dry-run
+--run-deploy-hooks --no-random-sleep-on-renew` in a named persistent target session,
+retain its log/exit and check actual HTTPS afterward. Normal renewal remains owned
+by the existing Certbot timer/service, including meaningful service result.
+
+The platform observer inventories public certificate expiry and the last Certbot
+result/completion. Rules warn21days before expiry, escalate at7days, and detect
+renewal failure, missing inventory or no completed check in48hours. These metrics
+do not expose keys or certify actual restore behavior. Caddy-managed domains on
+other hosts use their own automatic HTTPS lifecycle; do not copy Certbot policy
+onto those hosts or infer fleet health from Mona alone.
+
 ### Periodic Live and Account backups
 
 `harmonic-beacon-periodic-backups.timer` runs at 00:15, 06:15, 12:15 and

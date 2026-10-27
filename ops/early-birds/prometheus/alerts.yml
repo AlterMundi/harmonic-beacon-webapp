@@ -191,6 +191,31 @@ groups:
 
   - name: harmonic-beacon-platform
     rules:
+      - alert: BeaconTLSCertificateExpiring
+        expr: beacon_platform_tls_not_after_seconds - time() < 1814400
+        for: 10m
+        labels: { severity: warning, service: tls, environment: production, host: mona }
+        annotations: { summary: "TLS certificate expires within 21 days; inspect automatic renewal", runbook: "ops/early-birds/runbook/README.md" }
+      - alert: BeaconTLSCertificateCritical
+        expr: beacon_platform_tls_not_after_seconds - time() < 604800
+        for: 2m
+        labels: { severity: critical, service: tls, environment: production, host: mona }
+        annotations: { summary: "TLS certificate expires within seven days or has expired", runbook: "ops/early-birds/runbook/README.md" }
+      - alert: BeaconTLSRenewalFailed
+        expr: beacon_platform_tls_renewal_up == 0
+        for: 10m
+        labels: { severity: warning, service: tls, environment: production, host: mona }
+        annotations: { summary: "Certbot last execution failed; inspect the exact certificate failure", runbook: "ops/early-birds/runbook/README.md" }
+      - alert: BeaconTLSRenewalStale
+        expr: time() - beacon_platform_tls_renewal_timestamp_seconds > 172800
+        for: 10m
+        labels: { severity: warning, service: tls, environment: production, host: mona }
+        annotations: { summary: "No completed automatic TLS renewal check in 48 hours", runbook: "ops/early-birds/runbook/README.md" }
+      - alert: BeaconTLSObservationFailed
+        expr: beacon_platform_tls_probe_up == 0 or absent(beacon_platform_tls_probe_up)
+        for: 5m
+        labels: { severity: critical, service: tls, environment: production, host: mona }
+        annotations: { summary: "TLS certificate inventory cannot be checked", runbook: "ops/early-birds/runbook/README.md" }
       - alert: BeaconServiceUnavailable
         expr: beacon_platform_health_up == 0
         for: 2m

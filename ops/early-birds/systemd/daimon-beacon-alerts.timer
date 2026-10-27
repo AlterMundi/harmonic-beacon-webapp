@@ -1,0 +1,10 @@
+[Unit]
+Description=Observe Beacon once per minute without models or automatic repair
+
+[Timer]
+OnBootSec=1min
+OnUnitInactiveSec=60s
+Unit=daimon-beacon-alerts.service
+
+[Install]
+WantedBy=timers.target

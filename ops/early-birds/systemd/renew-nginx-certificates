@@ -1,0 +1,5 @@
+#!/bin/sh
+# Certbot deploy hook: load renewed certificates without interrupting applications.
+set -eu
+/usr/sbin/nginx -t
+/usr/bin/systemctl reload nginx
