@@ -12,7 +12,7 @@ import { ROUTES, SESSION_EN, SESSION_ES, STAFF, TICKETS } from '../fixtures/test
 async function closeCockpitDrawer(staff: Page): Promise<void> {
     const drawer = staff.locator('.hb-staff-tools > aside');
     await drawer.getByRole('button', {
-        name: /Return to the live room|Volver a la sala en vivo/i,
+        name: /Close tool|Cerrar herramienta/i,
     }).click();
     await expect(drawer).toBeHidden();
 }
@@ -132,12 +132,13 @@ stackTest('FACILITATOR_OP completes two consecutive event lifecycles without swi
                         await expect(healthSummary).toContainText(session.title);
                         await closeCockpitDrawer(staff);
 
-                        await staff.locator('[data-signal="hands"]').click();
+                        await staff.locator('[data-signal="stage"]').click();
                         const scene = staff.locator('.hb-staff-tools > aside');
                         await scene.getByRole('button', { name: /Reconcile grants|Reconciliar permisos/i }).click();
                         await expect(scene.getByRole('status')).toContainText(
                             /Reconciliation finished|Reconciliación terminada/i,
                         );
+                        await staff.getByRole('tab', { name: /Hands|Manos/i }).click();
 
                         await attendee.getByRole('button', {
                             name: /Raise hand|Levantar la mano/i,
@@ -180,9 +181,17 @@ stackTest('FACILITATOR_OP completes two consecutive event lifecycles without swi
                         await staff.locator('[data-signal="door"]').click();
                         const closePanel = staff.locator('.hb-staff-tools > aside');
                         await closePanel.getByRole('button', { name: /Close event|Cerrar evento/i }).click();
-                        await closePanel.getByRole('button', {
-                            name: /End & disconnect everyone|Finalizar y desconectar/i,
-                        }).click();
+                        const [closed] = await Promise.all([
+                            staff.waitForResponse(response => response.url().endsWith(`/api/ops/sessions/${session.id}/lifecycle`) && response.request().method() === 'POST'),
+                            closePanel.getByRole('button', {
+                                name: /End & disconnect everyone|Finalizar y desconectar/i,
+                            }).click(),
+                        ]);
+                        expect(closed.status()).toBe(200);
+                        const closure = await closed.json();
+                        await testInfo.attach('event-closure-outcome', { body: JSON.stringify(closure), contentType: 'application/json' });
+                        expect(closure.status).toBe('ENDED');
+                        expect(closure.termination.complete).toBe(true);
                         await expect(closePanel.getByRole('status')).toContainText(/Event ended now|Evento finalizado/i);
                         await expect(attendee.getByRole('heading', {
                             name: /Session ended|La sesión terminó/i,

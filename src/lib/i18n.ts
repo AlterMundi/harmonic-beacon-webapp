@@ -367,6 +367,7 @@ export type Messages = {
             reconcile: string;
             handQueue: string;
             handQueueHelp: string;
+            handQueueHelpLabel: string;
             noHands: string;
             waiting: string;
             connected: string;
@@ -394,6 +395,7 @@ export type Messages = {
             muteTrack: string;
             takeFloor: string;
             audience: string;
+            departedAudience: string;
             noAudience: string;
             inviteToStage: string;
             recentSnapshotAlt: string;
@@ -951,6 +953,7 @@ export const messages: Record<UiLocale, Messages> = {
                 reconcile: 'Reconciliar permisos',
                 handQueue: 'Fila de manos',
                 handQueueHelp: 'Las manos aparecen automáticamente. Dar la palabra invita a una persona conectada; Quitar mano limpia la solicitud. Las miniaturas son privadas, se actualizan juntas y desaparecen después de {seconds}s sin una nueva imagen consentida.',
+                handQueueHelpLabel: 'Cómo funcionan las manos',
                 noHands: 'No hay manos levantadas.',
                 waiting: 'espera',
                 connected: 'conectada',
@@ -978,6 +981,7 @@ export const messages: Record<UiLocale, Messages> = {
                 muteTrack: 'Silenciar {track}',
                 takeFloor: 'Quitar la palabra',
                 audience: 'Público ({count})',
+                departedAudience: 'Fuera de la sala ({count})',
                 noAudience: 'No hay otras personas.',
                 inviteToStage: 'Invitar a la escena',
                 recentSnapshotAlt: 'Imagen reciente del tapiz de {name}',
@@ -1577,6 +1581,7 @@ export const messages: Record<UiLocale, Messages> = {
                 reconcile: 'Reconcile grants',
                 handQueue: 'Hand queue',
                 handQueueHelp: 'Raised hands appear automatically. Give floor invites a connected person; Remove hand clears the request. Snapshots are private, refresh together and disappear after {seconds}s without a new consented frame.',
+                handQueueHelpLabel: 'How the hand queue works',
                 noHands: 'No hands raised.',
                 waiting: 'waiting',
                 connected: 'connected',
@@ -1604,6 +1609,7 @@ export const messages: Record<UiLocale, Messages> = {
                 muteTrack: 'Mute {track}',
                 takeFloor: 'Take floor',
                 audience: 'Audience ({count})',
+                departedAudience: 'Outside the room ({count})',
                 noAudience: 'No other participants.',
                 inviteToStage: 'Invite to stage',
                 recentSnapshotAlt: 'Recent tapestry snapshot of {name}',

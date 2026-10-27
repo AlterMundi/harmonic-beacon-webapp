@@ -425,8 +425,44 @@ export default function SpotlightConsole({ sessionId, role, copy, staffRoles, on
     const audience = all.filter(
         (participant) => !participant.canPublish && participant.queuePosition === null,
     );
+    // Unknown connection state remains visible. Only an observed departure
+    // moves to history; queue and pending invitation rows retain their places.
+    const currentAudience = audience.filter((participant) => participant.connected !== false);
+    const departedAudience = audience.filter((participant) => participant.connected === false);
     const reconcilePending = all.filter((participant) => participant.reconcileNeeded);
     const thumbnailFreshForSeconds = snapshot?.thumbnailFreshForSeconds ?? 10;
+
+    const audienceList = (participants: ConsoleParticipant[]) => (
+        <ul className="space-y-1 text-sm">
+            {participants.map((participant) => (
+                <li key={participant.id} className="flex flex-col items-start justify-between gap-2 rounded px-2 py-1 sm:flex-row sm:items-center">
+                    <span className="text-[var(--cream)]">
+                        {participantLabel(participant)}
+                        {participant.staffRole ? (
+                            <span className="ml-2 text-xs uppercase text-[var(--text-muted)]">{roleLabel(participant.staffRole, staffRoles)}</span>
+                        ) : null}
+                    </span>
+                    {role === 'ADMIN' ? <ParticipantIdentity key={`${sessionId}:${participant.id}`} sessionId={sessionId} participantId={participant.id} /> : null}
+                    <span className="flex items-center gap-2 text-xs text-[var(--text-secondary)]">
+                        <span>
+                            {connectionBadge(participant, copy)}
+                            {participant.connectionQuality ? ` · ${participant.connectionQuality.toLowerCase()}` : ''}
+                        </span>
+                        {participant.connected === true ? (
+                            <button
+                                type="button"
+                                disabled={busyKey !== null}
+                                onClick={() => void inviteToStage(participant)}
+                                className="min-h-11 rounded border border-[var(--lime)] px-3 py-2 text-xs text-[var(--lime)] hover:bg-[var(--lime)]/10 disabled:opacity-50"
+                            >
+                                {copy.inviteToStage}
+                            </button>
+                        ) : null}
+                    </span>
+                </li>
+            ))}
+        </ul>
+    );
 
     return (
         <section className="hb-spotlight space-y-6" aria-live="polite">
@@ -468,9 +504,9 @@ export default function SpotlightConsole({ sessionId, role, copy, staffRoles, on
                 </div>
             ) : null}
 
-            <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+            <div hidden={view === 'hands'} className="flex flex-wrap items-center justify-between gap-3 text-sm">
                 <span className="text-[var(--text-secondary)]">
-                    {fill(copy.stageSummary, {
+                    {view === 'all' ? <>{fill(copy.stageSummary, {
                         active: snapshot?.activePublishers ?? '…',
                         max: snapshot?.maxPublishers ?? '…',
                     })}
@@ -480,7 +516,8 @@ export default function SpotlightConsole({ sessionId, role, copy, staffRoles, on
                             max: snapshot.maxPublishers,
                         })}`
                         : ''} ·{' '}
-                    {fill(copy.handsRaised, { count: queue.length })}
+                    {fill(copy.handsRaised, { count: queue.length })}</> : snapshot?.grantedPublishers !== undefined
+                        ? fill(copy.slotsReserved, { granted: snapshot.grantedPublishers, max: snapshot.maxPublishers }) : null}
                 </span>
                 <div className="flex flex-wrap items-center gap-2">
                     {snapshot ? (
@@ -515,9 +552,10 @@ export default function SpotlightConsole({ sessionId, role, copy, staffRoles, on
             {/* Hand queue comes first so a facilitator never has to hunt below the stage. */}
             <div hidden={view === 'scene'}>
                 <h2 className="mb-1 text-lg font-semibold text-[var(--cream)]"><span aria-hidden="true">✋ </span>{copy.handQueue}</h2>
-                <p className="mb-2 text-xs text-[var(--text-muted)]">
-                    {fill(copy.handQueueHelp, { seconds: thumbnailFreshForSeconds })}
-                </p>
+                <details className="hb-queue-help mb-2 text-xs text-[var(--text-muted)]">
+                    <summary>{copy.handQueueHelpLabel}</summary>
+                    <p>{fill(copy.handQueueHelp, { seconds: thumbnailFreshForSeconds })}</p>
+                </details>
                 {queue.length === 0 ? (
                     <p className="text-sm text-[var(--text-secondary)]">{copy.noHands}</p>
                 ) : (
@@ -667,41 +705,15 @@ export default function SpotlightConsole({ sessionId, role, copy, staffRoles, on
             {/* Audience */}
             <div hidden={view === 'hands'}>
                 <h2 className="mb-2 text-lg font-semibold text-[var(--cream)]">
-                    {fill(copy.audience, { count: audience.length })}
+                    {fill(copy.audience, { count: currentAudience.length })}
                 </h2>
-                {audience.length === 0 ? (
+                {currentAudience.length === 0 ? (
                     <p className="text-sm text-[var(--text-secondary)]">{copy.noAudience}</p>
-                ) : (
-                    <ul className="space-y-1 text-sm">
-                        {audience.map((participant) => (
-                            <li key={participant.id} className="flex flex-col items-start justify-between gap-2 rounded px-2 py-1 sm:flex-row sm:items-center">
-                                <span className="text-[var(--cream)]">
-                                    {participantLabel(participant)}
-                                    {participant.staffRole ? (
-                                        <span className="ml-2 text-xs uppercase text-[var(--text-muted)]">{roleLabel(participant.staffRole, staffRoles)}</span>
-                                    ) : null}
-                                </span>
-                                {role === 'ADMIN' ? <ParticipantIdentity key={`${sessionId}:${participant.id}`} sessionId={sessionId} participantId={participant.id} /> : null}
-                                <span className="flex items-center gap-2 text-xs text-[var(--text-secondary)]">
-                                    <span>
-                                        {connectionBadge(participant, copy)}
-                                        {participant.connectionQuality ? ` · ${participant.connectionQuality.toLowerCase()}` : ''}
-                                    </span>
-                                    {participant.connected === true ? (
-                                        <button
-                                            type="button"
-                                            disabled={busyKey !== null}
-                                            onClick={() => void inviteToStage(participant)}
-                                            className="min-h-11 rounded border border-[var(--lime)] px-3 py-2 text-xs text-[var(--lime)] hover:bg-[var(--lime)]/10 disabled:opacity-50"
-                                        >
-                                            {copy.inviteToStage}
-                                        </button>
-                                    ) : null}
-                                </span>
-                            </li>
-                        ))}
-                    </ul>
-                )}
+                ) : audienceList(currentAudience)}
+                {departedAudience.length > 0 ? <details className="hb-departed-people">
+                    <summary>{fill(copy.departedAudience, { count: departedAudience.length })}</summary>
+                    {audienceList(departedAudience)}
+                </details> : null}
             </div>
 
             <p className="text-xs text-[var(--text-muted)]">

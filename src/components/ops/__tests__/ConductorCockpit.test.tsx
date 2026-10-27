@@ -114,12 +114,22 @@ describe('ConductorCockpit', () => {
         expect(screen.getByText('Staff composer')).not.toBeVisible();
         expect(screen.getByTestId('persistent-room')).toBe(room);
     });
+    it('closes from a keyboard-selected tab and restores focus to that tab', async () => {
+        render(<LocaleProvider initialLocale="en"><ConductorCockpit {...props} /></LocaleProvider>);
+        fireEvent.keyDown(screen.getByRole('tab', { name: /Hands/ }), { key: 'End' });
+        const chat = screen.getByRole('tab', { name: 'Chat' });
+        expect(chat).toHaveFocus();
+        fireEvent.keyDown(chat, { key: 'Escape' });
+        await waitFor(() => expect(chat).toHaveFocus());
+        expect(screen.queryByRole('region')).toBeNull();
+    });
+
     it('updates Staff copy and an open drawer in place when language changes', () => {
         render(<LocaleProvider initialLocale="en"><LanguageControl /><ConductorCockpit {...props} /></LocaleProvider>);
         const room = screen.getByTestId('persistent-room');
-        fireEvent.click(screen.getByRole('button', { name: /Hands/i }));
+        fireEvent.click(screen.getByRole('tab', { name: /Hands/i }));
         fireEvent.click(screen.getByRole('button', { name: 'ES' }));
-        expect(screen.getByRole('button', { name: /Volver a la sala en vivo/ })).toBeVisible();
+        expect(screen.getByRole('button', { name: /Cerrar herramienta/ })).toBeVisible();
         expect(screen.getByTestId('persistent-room')).toBe(room);
         expect(room).toHaveAttribute('src', '/session/event-1?surface=cockpit');
     });
@@ -127,21 +137,21 @@ describe('ConductorCockpit', () => {
         render(<LocaleProvider initialLocale="en"><ConductorCockpit {...props} /></LocaleProvider>);
         const room = screen.getByTestId('persistent-room');
         expect(room).toHaveAttribute('src', '/session/event-1?surface=cockpit');
-        expect(document.querySelectorAll('[data-signal]')).toHaveLength(5);
+        expect(document.querySelectorAll('[data-signal]')).toHaveLength(4);
 
-        for (const signal of ['door', 'hands', 'stage', 'primary', 'health']) {
+        for (const signal of ['door', 'hands', 'stage', 'health']) {
             const trigger = document.querySelector<HTMLButtonElement>(`[data-signal="${signal}"]`);
             expect(trigger).not.toBeNull();
             if (!trigger) throw new Error(`Missing ${signal} signal`);
             fireEvent.click(trigger);
             const dialog = screen.getByRole('region');
             expect(dialog).toBeVisible();
-            fireEvent.click(within(dialog).getByRole('button', { name: /Return to the live room/ }));
+            fireEvent.click(within(dialog).getByRole('button', { name: /Close tool/ }));
             expect(screen.queryByRole('region')).toBeNull();
             expect(screen.getByTestId('persistent-room')).toBe(room);
         }
 
-        // The contributions tool lives with the header tools (no live signal);
+        // Chat is reached from its single tab in the staff sidebar;
         // its drawer opens and closes without replacing the room as well.
         const contributionsTool = document.querySelector<HTMLButtonElement>('[data-tool="contributions"]');
         expect(contributionsTool).not.toBeNull();
@@ -149,12 +159,12 @@ describe('ConductorCockpit', () => {
         fireEvent.click(contributionsTool);
         fireEvent.click(screen.getByText('Staff view'));
         expect(screen.getByTestId('contributions-panel')).toBeVisible();
-        fireEvent.click(within(screen.getByRole('region')).getByRole('button', { name: /Return to the live room/ }));
+        fireEvent.click(within(screen.getByRole('region')).getByRole('button', { name: /Close tool/ }));
         expect(screen.queryByRole('region')).toBeNull();
         expect(screen.getByTestId('persistent-room')).toBe(room);
     });
 
-    it('turns live queue and health data into glanceable signals', async () => {
+    it('keeps one entry per tool, with live counts and localized health in the sidebar', async () => {
         render(<LocaleProvider initialLocale="en"><ConductorCockpit {...props} /></LocaleProvider>);
         callbacks.summary?.({
             activePublishers: 3,
@@ -169,11 +179,14 @@ describe('ConductorCockpit', () => {
         callbacks.lifecycle?.('LIVE');
 
         await waitFor(() => {
-            expect(screen.getByRole('button', { name: /Hands.*2.*Alguien/i })).toBeInTheDocument();
-            expect(screen.getByRole('button', { name: /Stage.*3\/6/i })).toBeInTheDocument();
+            expect(screen.getByRole('tab', { name: /Hands.*2/i })).toBeInTheDocument();
+            expect(screen.getByRole('tab', { name: 'Stage' })).toBeInTheDocument();
             expect(screen.getByRole('button', { name: /Door.*Open/i })).toBeInTheDocument();
-            expect(screen.getByRole('button', { name: /Health.*red/i })).toBeInTheDocument();
-            expect(screen.getByTestId('stage-occupancy').children).toHaveLength(6);
+            expect(screen.getByRole('button', { name: /System health.*Check/i })).toBeInTheDocument();
+            expect(screen.getByRole('tab', { name: 'Stage' })).toHaveTextContent('3/6');
+            expect(screen.getAllByRole('tab', { name: /Hands/ })).toHaveLength(1);
+            expect(screen.getAllByRole('button', { name: /System health/ })).toHaveLength(1);
+            expect(document.querySelector('[data-signal="primary"]')).toBeNull();
         });
     });
 
@@ -213,7 +226,7 @@ describe('ConductorCockpit', () => {
         });
     });
 
-    it('prioritizes reconciliation over routine scene work', async () => {
+    it('marks the single stage tab when reconciliation needs attention', async () => {
         render(<LocaleProvider initialLocale="en"><ConductorCockpit {...props} /></LocaleProvider>);
         callbacks.summary?.({
             activePublishers: 2,
@@ -226,14 +239,14 @@ describe('ConductorCockpit', () => {
         });
 
         await waitFor(() => {
-            expect(screen.getByRole('button', { name: /Next action.*Reconcile the stage/i }))
-                .toBeInTheDocument();
+            expect(screen.getByRole('tab', { name: 'Stage' })).toHaveAttribute('data-attention', 'true');
+            expect(screen.getByRole('tab', { name: 'Stage' })).toHaveAccessibleDescription(/Reconcile the stage/);
         });
     });
 
     it('closes the focused tools region with Escape and restores focus to its trigger', async () => {
         render(<LocaleProvider initialLocale="en"><ConductorCockpit {...props} /></LocaleProvider>);
-        const trigger = screen.getByRole('button', { name: /Hands/i });
+        const trigger = screen.getByRole('tab', { name: /Hands/i });
         fireEvent.click(trigger);
         const panel = screen.getByRole('region');
         fireEvent.keyDown(panel, { key: 'Escape' });
@@ -245,15 +258,15 @@ describe('ConductorCockpit', () => {
         render(<LocaleProvider initialLocale="en"><ConductorCockpit {...props} /></LocaleProvider>);
         expect(callbacks.healthVisualActive).toBe(false);
 
-        fireEvent.click(screen.getByRole('button', { name: /Health.*yellow/i }));
+        fireEvent.click(screen.getByRole('button', { name: /System health.*Loading/i }));
         expect(callbacks.healthVisualActive).toBe(true);
 
         fireEvent.click(within(screen.getByRole('region')).getByRole('button', {
-            name: /Return to the live room/,
+            name: /Close tool/,
         }));
         expect(callbacks.healthVisualActive).toBe(false);
 
-        fireEvent.click(screen.getByRole('button', { name: /Hands/i }));
+        fireEvent.click(screen.getByRole('tab', { name: /Hands/i }));
         expect(callbacks.healthVisualActive).toBe(false);
     });
 });

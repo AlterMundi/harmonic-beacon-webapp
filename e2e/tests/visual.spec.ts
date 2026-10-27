@@ -150,8 +150,8 @@ stackTest.describe('visual baselines', () => {
         );
         await expect(page.getByTestId('conductor-cockpit')).toBeVisible();
         await expect(page.locator('[data-signal="stage"]')).toHaveAttribute('data-loaded', 'true');
-        await expect(page.locator('[data-signal="primary"]')).toContainText('Abrir puertas');
-        await expect(page.locator('[data-signal="health"]')).toContainText('green', { timeout: 15_000 });
+        await expect(page.locator('[data-signal="door"]')).toContainText('Cerrada');
+        await expect(page.locator('[data-signal="health"]')).toContainText('Normal', { timeout: 15_000 });
         const persistentRoom = page.locator('iframe[data-testid="persistent-room"]');
         await expect(persistentRoom).toBeVisible();
         // The embedded room has its own connected-state visual baseline. Hide
