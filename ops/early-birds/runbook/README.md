@@ -352,7 +352,10 @@ Before replacing legacy Telegram delivery, verify complete source observation,
 authenticated acceptance and actual receiving delivery in Telegram/Sessions.
 Then retain the previous private Alertmanager configuration and select a receiver
 without direct Telegram integrations. Keep rule evaluation, Alertmanager history
-and secrets; validate configuration and reload only Alertmanager. Do not disable
+and retained legacy secrets; validate configuration and reload only Alertmanager. The maintained Compose
+default no longer reads Telegram credentials. For a private validation staging
+directory, bind the individual public YAML file read-only with mode0644, rather
+than making the directory accessible or overriding the validator user. Do not disable
 the platform, backup, stream or storage observers. Hermes cron is not this source:
 inspect its actual selected profile before attributing or pausing jobs.
 
@@ -368,6 +371,16 @@ application is down. For example, the analytics and commerce monitors refuse roo
 disk usage at 85%; their bounded diagnostics can identify the same capacity cause.
 Inspect the corresponding systemd journal and the storage-maintenance result.
 Never clear the condition by deleting recovery images or business data.
+Once global capacity rules and receiving coverage are verified, install the
+`analytics-central-capacity.conf` and `commerce-central-capacity.conf` drop-ins
+on their respective monitor units. Install the analytics capacity env example at
+the path named in its drop-in, after the original backup EnvironmentFile; systemd
+EnvironmentFile assignments take precedence over Environment assignments.
+Their root85% early exits are replaced by
+the central warning/critical capacity policy; independent service backup-mount,
+data-reserve, source-quality and failed-job checks remain active. The100% guard
+still rejects a completely full root disk. Rerun each monitor and inspect later
+checks: centralization does not assert service recovery or capacity recovery.
 
 ### Automatic TLS renewal
 

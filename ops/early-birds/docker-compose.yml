@@ -3,33 +3,11 @@ services:
   config-init:
     image: alpine:3.21.3
     restart: "no"
-    secrets: [telegram_chat_id]
+    network_mode: none
     volumes:
       - ./alertmanager/alertmanager.yml.tmpl:/template/alertmanager.yml.tmpl:ro
       - alertmanager-runtime:/runtime
-    command:
-      - /bin/sh
-      - -ec
-      - |
-        chat_id="$$(tr -d '\r\n' </run/secrets/telegram_chat_id)"
-        printf '%s\n' "$$chat_id" | grep -Eq '^-?[0-9]+$$' || { echo 'invalid Telegram chat id' >&2; exit 1; }
-        sed "s/__TELEGRAM_CHAT_ID__/$$chat_id/g" /template/alertmanager.yml.tmpl > /runtime/alertmanager.yml
-    networks: [observability]
-
-  alertmanager-secret-init:
-    image: alpine:3.21.3
-    restart: "no"
-    network_mode: none
-    secrets: [telegram_bot_token]
-    volumes: [alertmanager-secrets:/runtime-secrets]
-    command:
-      - /bin/sh
-      - -ec
-      - |
-        umask 077
-        cp /run/secrets/telegram_bot_token /runtime-secrets/telegram_bot_token
-        chown 65534:65534 /runtime-secrets/telegram_bot_token
-        chmod 0400 /runtime-secrets/telegram_bot_token
+    command: [/bin/sh, -ec, "cp /template/alertmanager.yml.tmpl /runtime/alertmanager.yml; chmod 0644 /runtime/alertmanager.yml"]
 
   prometheus:
     image: prom/prometheus:v3.4.2
@@ -54,15 +32,12 @@ services:
     restart: unless-stopped
     depends_on:
       config-init: { condition: service_completed_successfully }
-      alertmanager-secret-init: { condition: service_completed_successfully }
     command:
       - --config.file=/runtime/alertmanager.yml
       - --storage.path=/alertmanager
       - --web.listen-address=0.0.0.0:9093
     volumes:
       - alertmanager-runtime:/runtime:ro
-      - alertmanager-secrets:/runtime-secrets:ro
-      - ./alertmanager/telegram.tmpl:/etc/alertmanager/templates/telegram.tmpl:ro
       - alertmanager-data:/alertmanager
     ports: [127.0.0.1:9093:9093]
     networks: [observability, ops_edge]
@@ -153,13 +128,8 @@ volumes:
   prometheus-data:
   alertmanager-data:
   alertmanager-runtime:
-  alertmanager-secrets:
   canary-runtime:
 
 secrets:
-  telegram_bot_token:
-    file: ${TELEGRAM_BOT_TOKEN_FILE:?set a root-owned secret file outside Git}
-  telegram_chat_id:
-    file: ${TELEGRAM_CHAT_ID_FILE:?set a root-owned secret file outside Git}
   beacon_stream_signing_secret:
     file: ${BEACON_STREAM_SIGNING_SECRET_FILE:?set a root-owned secret file outside Git}
