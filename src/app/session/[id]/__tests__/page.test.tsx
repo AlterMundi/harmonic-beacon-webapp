@@ -709,7 +709,7 @@ describe('SessionRoomPage - staff cockpit handoff', () => {
         installStaffToken(true);
         await renderConnected();
         const room = currentRoom();
-        fireEvent.click(screen.getByText('Audio settings'));
+        fireEvent.click(screen.getByText('Microphone echo'));
         const toggle = screen.getByRole('switch', { name: /Echo cancellation/ });
         expect(toggle).toHaveAttribute('aria-checked', 'true');
         fireEvent.click(toggle);
