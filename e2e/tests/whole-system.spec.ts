@@ -181,9 +181,17 @@ stackTest('FACILITATOR_OP completes two consecutive event lifecycles without swi
                         await staff.locator('[data-signal="door"]').click();
                         const closePanel = staff.locator('.hb-staff-tools > aside');
                         await closePanel.getByRole('button', { name: /Close event|Cerrar evento/i }).click();
-                        await closePanel.getByRole('button', {
-                            name: /End & disconnect everyone|Finalizar y desconectar/i,
-                        }).click();
+                        const [closed] = await Promise.all([
+                            staff.waitForResponse(response => response.url().endsWith(`/api/ops/sessions/${session.id}/lifecycle`) && response.request().method() === 'POST'),
+                            closePanel.getByRole('button', {
+                                name: /End & disconnect everyone|Finalizar y desconectar/i,
+                            }).click(),
+                        ]);
+                        expect(closed.status()).toBe(200);
+                        const closure = await closed.json();
+                        await testInfo.attach('event-closure-outcome', { body: JSON.stringify(closure), contentType: 'application/json' });
+                        expect(closure.status).toBe('ENDED');
+                        expect(closure.termination.complete).toBe(true);
                         await expect(closePanel.getByRole('status')).toContainText(/Event ended now|Evento finalizado/i);
                         await expect(attendee.getByRole('heading', {
                             name: /Session ended|La sesión terminó/i,

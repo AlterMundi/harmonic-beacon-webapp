@@ -129,8 +129,19 @@ stackTest('a fresh connection stays invited until the attendee accepts the stage
                 expect(await staff.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width + 1);
                 const tools = staff.locator('.hb-staff-tools > aside');
                 expect(await tools.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
-                const box = await tools.boundingBox();
-                expect(box!.height).toBeLessThanOrEqual(650);
+                if (width > 900) {
+                    const box = await tools.boundingBox();
+                    expect(box!.height).toBeLessThanOrEqual(650);
+                } else {
+                    // On phones the panel follows the room in one page flow,
+                    // without a second scrolling region. Its stage action must
+                    // remain reachable through ordinary page scrolling.
+                    expect(await tools.evaluate(element => getComputedStyle(element).overflowY)).toBe('visible');
+                    const remove = stageRow.getByRole('button', { name: /Take floor|Quitar la palabra/i });
+                    await remove.scrollIntoViewIfNeeded();
+                    await expect(remove).toBeInViewport({ ratio: 1 });
+                    expect((await remove.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+                }
             }
             await staff.setViewportSize({ width: 1440, height: 900 });
             await stageRow.getByRole('button', { name: /Take floor|Quitar la palabra/i }).scrollIntoViewIfNeeded();

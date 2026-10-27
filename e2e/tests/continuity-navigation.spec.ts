@@ -578,7 +578,7 @@ test.describe('live continuity without capture', () => {
         await room.locator('video').evaluate((video: HTMLVideoElement) => {
             (window as unknown as { originalMedia: unknown }).originalMedia = { video, stream: video.srcObject };
         });
-        await page.getByRole('button', { name: 'Hands', exact: false }).click();
+        await page.getByRole('tab', { name: 'Hands', exact: false }).click();
         for (const locale of ['ES', 'EN']) {
             await page.getByRole('button', { name: locale, exact: true }).click();
             await expect(room.getByLabel('Room locale')).toHaveText(locale.toLowerCase());
