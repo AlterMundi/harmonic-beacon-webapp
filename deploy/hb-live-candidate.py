@@ -139,7 +139,10 @@ def compatible(source, prior, directory):
          'https://github.com/' + REPO + '.git', prior], timeout=300)
     paths = run(['git', '-C', str(directory), 'diff', '--name-only', prior, source]).decode().splitlines()
     allowed = ('src/', 'docs/', 'e2e/', 'deploy/', '.agents/skills/', 'scripts/ops/__tests__/')
-    if not paths or any(not p.startswith(allowed) and p != 'scripts/beacon-staff-api.py' for p in paths):
+    operational = ('scripts/beacon-staff-api.py',
+                   'scripts/live-production/promote-event-manager.ts',
+                   'scripts/live-production/promote-event-manager.test.ts')
+    if not paths or any(not p.startswith(allowed) and p not in operational for p in paths):
         raise RuntimeError('source requires a broader delivery adapter')
 
 
@@ -405,7 +408,8 @@ def main(args):
         save(active, {'sourceSha': source})
         # The marker closes the launcher/worker race. Other launches refuse a
         # nonterminal marker; the worker holds the global lock throughout its job.
-        subprocess.run(['/usr/bin/screen', '-DmS', 'beacon-live-' + source[:12],
+        # GNU screen must fork before this launcher releases the build lock.
+        subprocess.run(['/usr/bin/screen', '-dmS', 'beacon-live-' + source[:12],
                         '/usr/bin/python3', '-I', str(Path(__file__).resolve()), '_worker', source],
                        env=ENV, check=True, timeout=20)
         return {'phase': 'queued', 'sourceSha': source, 'action': 'Read status; preserve the named job after SSH loss.'}

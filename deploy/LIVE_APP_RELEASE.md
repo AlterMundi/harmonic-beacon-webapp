@@ -153,10 +153,16 @@ of the merged source tree with that qualified head. Fixed GitHub HTTPS reads and
 independently verify caller-supplied identities. Neither caller paths, Docker
 arguments, image files, source archives, environments nor arbitrary commands
 are accepted. App-only compatibility rejects changed dependencies, migrations,
-build/Compose definitions and media services. Broader changes use their owning
+build/Compose definitions and media services. The two existing packaged operator
+utilities (Staff API client and exact-account role adjustment, including its
+test) may travel with a qualified app source; this never installs or executes
+them on the host or changes their separate authority. Broader changes use their owning
 reviewed adapters rather than weakening this restriction.
 
-`build` starts a named finite host screen job and returns. `status` reports its
+`build` starts a named finite host screen job and returns. GNU screen must
+fork with `-dmS` before the launcher releases its build lock; the native launcher
+regression exercises a real worker waiting on that lock. A launcher timeout
+leaves pending evidence for inspection, never permission to retry automatically. `status` reports its
 retained result; a pending result does not prove the job is running. An existing
 source never starts another build automatically. The exact image is built from
 a root-owned source, carries the source label and baked SHA, and passes a
