@@ -2,10 +2,10 @@ import assert from 'node:assert/strict';
 import {test} from 'vitest';
 import type pg from 'pg';
 import {parsePromotion,promoteEventManager} from './promote-event-manager';
-const input={staffUserId:'80000000-0000-4000-8000-000000000001',bindingId:'80000000-0000-4000-8000-000000000002',accountSubject:'synthetic-subject'};
+const input={staffUserId:'80000000-0000-4000-8000-000000000001',bindingId:'80000000-0000-4000-8000-000000000002',accountSubject:'synthetic-subject',previousRole:'OPERATOR' as const};
 test('private request rejects missing, extra and malformed identities',()=>{
     assert.deepEqual(parsePromotion(input),input);
-    for(const v of [null,{}, {...input,email:'not-identity'}, {...input,bindingId:'-'.repeat(36)}, {...input,accountSubject:''}]) assert.throws(()=>parsePromotion(v));
+    for(const v of [null,{}, {...input,email:'not-identity'}, {...input,bindingId:'-'.repeat(36)}, {...input,accountSubject:''},{...input,previousRole:'FACILITATOR'},{...input,previousRole:'FACILITATOR_OP'}]) assert.throws(()=>parsePromotion(v));
 });
 function fixture(row:Record<string,unknown>|null){
     const queries:string[]=[];
@@ -35,4 +35,18 @@ test('mismatch and disabled bindings fail without mutation',async()=>{
         assert.equal(f.queries.at(-1),'ROLLBACK');
         assert.ok(!f.queries.some(q=>/UPDATE users|INSERT INTO/.test(q)));
     }
+});
+
+test('explicit ADMIN transition preserves exact binding and audited prior role',async()=>{
+    const adminInput=parsePromotion({...input,previousRole:'ADMIN'});
+    const f=fixture({role:'ADMIN'});
+    assert.equal(await promoteEventManager(f.db,adminInput,true),'enabled');
+    assert.equal(f.queries.filter(q=>q.startsWith('UPDATE')).length,1);
+    assert.ok(f.queries.find(q=>q.startsWith('UPDATE'))?.includes('role=$2::"StaffRole"'));
+    const mismatch=fixture({role:'OPERATOR'});
+    await assert.rejects(promoteEventManager(mismatch.db,adminInput,true));
+    assert.ok(!mismatch.queries.some(q=>/UPDATE users|INSERT INTO/.test(q)));
+    const dry=fixture({role:'ADMIN'});
+    assert.equal(await promoteEventManager(dry.db,adminInput,false),'would-enable');
+    assert.ok(!dry.queries.some(q=>/UPDATE users|INSERT INTO/.test(q)));
 });
