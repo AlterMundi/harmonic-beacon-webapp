@@ -119,7 +119,11 @@ for (const role of ['ATTENDEE', 'OPERATOR'] as const) {
 
 async function globalListenLink(page: Page) {
     const links = page.locator('hb-global-nav a[href*="listen.harmonicbeacon.com"]').filter({ visible: true });
-    if (!await links.count()) await page.locator('hb-global-nav .toggle').click();
+    const toggle = page.locator('hb-global-nav .toggle');
+    // A confirmed cockpit exit reloads the parent document. Wait for either
+    // the desktop links or mobile toggle to render before choosing the path.
+    await expect(links.or(toggle.filter({ visible: true })).first()).toBeVisible();
+    if (!await links.count()) await toggle.click();
     return links.first();
 }
 

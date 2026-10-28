@@ -244,6 +244,21 @@ function participantMetadata(participant: Participant): {
     }
 }
 
+/** Leave the complete same-origin cockpit, rather than rendering the site
+ * inside its persistent frame. Call only through the confirmed exit action,
+ * or from a terminal room whose exit guard has already been released. */
+function navigateToSessions(embeddedInCockpit: boolean, push: (href: string) => void) {
+    if (embeddedInCockpit && window.parent !== window) {
+        try {
+            if (window.parent.location.origin === window.location.origin) {
+                window.parent.location.assign(new URL('/', window.location.origin).href);
+                return;
+            }
+        } catch { /* An unrelated/cross-origin host cannot own our navigation. */ }
+    }
+    push('/');
+}
+
 function SessionRoom() {
     const { copy, locale } = useLocale();
     const { id } = useParams<{ id: string }>();
@@ -461,8 +476,8 @@ function SessionRoom() {
             intentionalDisconnectRef.current = true;
             disconnectRoomOnce(roomRef.current);
         }
-        router.push("/");
-    }, [router]);
+        navigateToSessions(embeddedInCockpit, href => router.push(href));
+    }, [embeddedInCockpit, router]);
 
     const rejoin = useCallback(() => {
         if (autoReconnectTimerRef.current) {
@@ -1210,7 +1225,7 @@ function SessionRoom() {
                             <button onClick={rejoin} className="event-button event-button--primary w-full">
                                 {copy.session.tryAgain}
                             </button>
-                            <button onClick={() => router.push("/")} className="event-button event-button--secondary w-full">
+                            <button onClick={() => navigateToSessions(embeddedInCockpit, href => router.push(href))} className="event-button event-button--secondary w-full">
                                 {copy.session.backToSessions}
                             </button>
                         </div>
@@ -1264,7 +1279,7 @@ function SessionRoom() {
                                     {copy.session.rejoin}
                                 </button>
                             )}
-                            <button onClick={() => router.push("/")} className="event-button event-button--secondary w-full">
+                            <button onClick={() => navigateToSessions(embeddedInCockpit, href => router.push(href))} className="event-button event-button--secondary w-full">
                                 {copy.session.backToSessions}
                             </button>
                         </div>
@@ -1873,7 +1888,7 @@ function SessionEntryGate({ sessionId }: { sessionId: string }) {
                         </p>
                         <button
                             type="button"
-                            onClick={() => router.push('/')}
+                            onClick={() => navigateToSessions(searchParams.get('surface') === 'cockpit', href => router.push(href))}
                             className="event-button event-button--secondary mt-4 w-full"
                         >
                             {copy.session.backToSessions}

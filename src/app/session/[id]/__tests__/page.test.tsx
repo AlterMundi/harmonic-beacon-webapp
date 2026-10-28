@@ -265,6 +265,7 @@ afterEach(() => {
     mockPush.mockClear();
     mockReplace.mockClear();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
 });
 
 async function renderConnected() {
@@ -676,36 +677,36 @@ describe('SessionRoomPage - participant identity', () => {
     });
 });
 
-describe('SessionRoomPage - staff cockpit handoff', () => {
-    function installStaffToken(isAssignedFacilitator = true) {
-        navigationMocks.surface = 'cockpit';
-        vi.mocked(global.fetch).mockImplementation((url: string | URL | Request) => {
-            const target = String(url);
-            if (target.includes('/entry')) {
-                return Promise.resolve({ ok: true, json: async () => ENTRY_RESPONSE } as Response);
-            }
-            if (target.includes('/token')) {
-                return Promise.resolve({
-                    ok: true,
-                    json: async () => ({
-                        ...TOKEN_RESPONSE,
-                        canPublish: isAssignedFacilitator,
-                        principalKind: 'staff',
-                        role: 'FACILITATOR_OP',
-                        isAssignedFacilitator,
-                    }),
-                } as Response);
-            }
-            if (target.includes('/publication')) {
-                const room = currentRoom();
-                room.localParticipant.permissions.canPublish = true;
-                room.emit('participantPermissionsChanged', null, room.localParticipant);
-                return Promise.resolve({ ok: true, json: async () => ({ canPublish: true }) } as Response);
-            }
-            return Promise.resolve({ ok: true, json: async () => ({}) } as Response);
-        });
-    }
+function installStaffToken(isAssignedFacilitator = true) {
+    navigationMocks.surface = 'cockpit';
+    vi.mocked(global.fetch).mockImplementation((url: string | URL | Request) => {
+        const target = String(url);
+        if (target.includes('/entry')) {
+            return Promise.resolve({ ok: true, json: async () => ENTRY_RESPONSE } as Response);
+        }
+        if (target.includes('/token')) {
+            return Promise.resolve({
+                ok: true,
+                json: async () => ({
+                    ...TOKEN_RESPONSE,
+                    canPublish: isAssignedFacilitator,
+                    principalKind: 'staff',
+                    role: 'FACILITATOR_OP',
+                    isAssignedFacilitator,
+                }),
+            } as Response);
+        }
+        if (target.includes('/publication')) {
+            const room = currentRoom();
+            room.localParticipant.permissions.canPublish = true;
+            room.emit('participantPermissionsChanged', null, room.localParticipant);
+            return Promise.resolve({ ok: true, json: async () => ({ canPublish: true }) } as Response);
+        }
+        return Promise.resolve({ ok: true, json: async () => ({}) } as Response);
+    });
+}
 
+describe('SessionRoomPage - staff cockpit handoff', () => {
     it('lets the facilitator toggle echo without turning on the microphone', async () => {
         installStaffToken(true);
         await renderConnected();
@@ -1300,6 +1301,35 @@ describe('SessionRoomPage - deliberate session exit', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Leave the room' }));
 
         expect(room.disconnect).toHaveBeenCalledOnce();
+        expect(mockPush).toHaveBeenCalledWith('/');
+    });
+
+    it('leaves the complete same-origin cockpit only after approval', async () => {
+        installStaffToken(false);
+        await renderConnected();
+        const room = currentRoom();
+        const assign = vi.fn();
+        // The browser suite owns the actual parent/child guard protocol. This
+        // isolates the final approved destination from iframe-local routing.
+        vi.stubGlobal('parent', { location: { origin: window.location.origin, assign } });
+        fireEvent.click(screen.getByRole('button', { name: 'Leave room' }));
+        expect(assign).not.toHaveBeenCalled();
+        expect(room.disconnect).not.toHaveBeenCalled();
+        fireEvent.click(screen.getByRole('button', { name: 'Stay in the room' }));
+        expect(assign).not.toHaveBeenCalled();
+        fireEvent.click(screen.getByRole('button', { name: 'Leave room' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Leave the room' }));
+        expect(assign).toHaveBeenCalledWith(new URL('/', window.location.origin).href);
+        expect(mockPush).not.toHaveBeenCalled();
+        expect(room.disconnect).toHaveBeenCalledOnce();
+    });
+
+    it('keeps navigation local when an unrelated embedding host cannot be verified', async () => {
+        installStaffToken(false);
+        await renderConnected();
+        vi.stubGlobal('parent', { get location() { throw new DOMException('Cross origin', 'SecurityError'); } });
+        fireEvent.click(screen.getByRole('button', { name: 'Leave room' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Leave the room' }));
         expect(mockPush).toHaveBeenCalledWith('/');
     });
 });
