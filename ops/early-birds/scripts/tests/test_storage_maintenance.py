@@ -4,7 +4,7 @@ import unittest
 import tempfile
 import json
 import hashlib
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 
 spec = importlib.util.spec_from_file_location('maintenance', Path(__file__).parents[1]/'storage-maintenance.py')
 m = importlib.util.module_from_spec(spec)
@@ -104,6 +104,49 @@ class RetentionTests(unittest.TestCase):
                 'candidate_image_id': images[-1]['Id'], 'previous_sha': 'a'*40}))
             with self.assertRaisesRegex(RuntimeError, 'rollback image missing'):
                 m.rollback_protection(images, {images[-1]['Id']})
+
+    def app_permit(self, value):
+        permit = Mock()
+        permit.exists.return_value = True
+        permit.is_symlink.return_value = False
+        permit.lstat.return_value = Mock(st_mode=0o100600, st_uid=0, st_nlink=1, st_size=100)
+        permit.read_text.return_value = json.dumps(value)
+        return permit
+
+    def test_app_permit_preserves_both_ids_and_unlocks_only_covered_repo(self):
+        images = self.images()
+        for image in images:
+            image['RepoTags'] = ['harmonic-beacon/live:'+image['RepoTags'][0].split(':')[1]]
+        images[-1]['Running'] = True
+        permit = self.app_permit({'candidateImageId': images[-1]['Id'], 'priorImageId': images[0]['Id']})
+        with tempfile.TemporaryDirectory() as directory, patch.object(m, 'DELIVERY_STATE', Path(directory)), patch.object(m, 'APP_PERMIT', permit):
+            protected = m.rollback_protection(images, {images[-1]['Id']})
+        self.assertIn(images[0]['Id'], protected)
+        self.assertIn(images[-1]['Id'], protected)
+        self.assertNotIn(images[2]['Id'], protected)
+
+    def test_missing_admitted_app_image_stops_collection(self):
+        images = self.images()
+        permit = self.app_permit({'candidateImageId': images[-1]['Id'], 'priorImageId': 'sha256:'+'f'*64})
+        with tempfile.TemporaryDirectory() as directory, patch.object(m, 'DELIVERY_STATE', Path(directory)), patch.object(m, 'APP_PERMIT', permit):
+            with self.assertRaisesRegex(RuntimeError, 'recovery image missing'):
+                m.rollback_protection(images, {images[-1]['Id']})
+
+    def test_incomplete_tapestry_pair_stops_collection(self):
+        images = self.images()
+        permit = self.app_permit({'candidateImageId': images[-1]['Id'], 'priorImageId': images[0]['Id'],
+                                 'candidateTapestryImageId': images[1]['Id']})
+        with tempfile.TemporaryDirectory() as directory, patch.object(m, 'DELIVERY_STATE', Path(directory)), patch.object(m, 'APP_PERMIT', permit):
+            with self.assertRaisesRegex(RuntimeError, 'invalid Live app recovery image pair'):
+                m.rollback_protection(images, {images[-1]['Id']})
+
+    def test_unsafe_permit_stops_collection(self):
+        images = self.images()
+        permit = self.app_permit({})
+        permit.is_symlink.return_value = True
+        with tempfile.TemporaryDirectory() as directory, patch.object(m, 'DELIVERY_STATE', Path(directory)), patch.object(m, 'APP_PERMIT', permit):
+            with self.assertRaisesRegex(RuntimeError, 'unsafe Live app'):
+                m.rollback_protection(images, set())
 
     def test_partial_archive_is_preserved_and_budgeted(self):
         image = self.images()[0]
