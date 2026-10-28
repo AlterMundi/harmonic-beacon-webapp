@@ -13,7 +13,7 @@ it('confirms the newly activated grant version before the next periodic read', a
     ), { status: 200 })));
     render(<LocaleProvider initialLocale="en"><StaffPublicationAccess sessionId="event-1" canPublish={false} onGrantChange={onGrantChange} /></LocaleProvider>);
     await waitFor(() => expect(onGrantChange).toHaveBeenCalledWith(false, 0));
-    fireEvent.click(screen.getByRole('button', { name: 'Join the stage' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Enable my staff controls' }));
     await waitFor(() => expect(onGrantChange).toHaveBeenLastCalledWith(true, 1));
     expect(fetch).toHaveBeenCalledTimes(2);
 });

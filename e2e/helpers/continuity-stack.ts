@@ -81,12 +81,13 @@ export async function syntheticPublisher(browser: Browser, baseURL: string) {
     } catch (error) { try { await context.close(); } finally { await stopBeacon?.(); } throw error; }
 }
 
-/** Drive the control that production actually renders, not the standalone
- * LanguageControl used by component previews. Embedded Staff intentionally
- * hides global navigation; its locale follows the parent's storage event. */
+/** Drive the room's locale control, or the site control outside a room.
+ * Embedded Staff follows the parent's existing storage event. */
 export async function setLiveLocale(surface: Page | Frame, locale: 'en' | 'es') {
     if (await surface.locator('html').getAttribute('lang') !== locale) {
-        await surface.getByRole('button', { name: 'Language / Idioma', exact: true }).click();
+        const roomControl = surface.getByRole('button', { name: /^(?:Cambiar idioma a inglés|Change language to Spanish)$/ });
+        if (await roomControl.count()) await roomControl.click();
+        else await surface.getByRole('button', { name: 'Language / Idioma', exact: true }).click();
     }
     await expect(surface.locator('html')).toHaveAttribute('lang', locale);
 }

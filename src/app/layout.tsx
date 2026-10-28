@@ -7,6 +7,7 @@ import { CohortVisitObserver } from "@/components/brand/CohortVisitObserver";
 import { LiveNavigationAccountMenu } from "@/components/brand/LiveNavigationAccountMenu";
 import { StaffModeAccess } from "@/components/brand/StaffModeAccess";
 import { RoomExitProvider } from "@/components/navigation/RoomExitGuard";
+import { RoomSiteChrome } from "@/components/navigation/RoomSiteChrome";
 import { LocaleProvider } from "@/context/LocaleContext";
 import { beaconAccountEnabled } from "@/lib/account-rp";
 import {
@@ -109,7 +110,7 @@ export default async function RootLayout({
           data-environment={analytics.environment}
         /> : null}
         <LocaleProvider initialLocale={locale}><RoomExitProvider>
-        <GlobalNavigation
+        <RoomSiteChrome><GlobalNavigation
           active={navigationSurface}
           locale={locale}
           accountHref={accountHref}
@@ -127,9 +128,9 @@ export default async function RootLayout({
               locale={locale}
             />
           ) : undefined}
-        />
+        /></RoomSiteChrome>
         {navigationIdentity && <LiveIdentityCacheBoundary />}
-        {navigationIdentity && <StaffModeAccess availableRole={navigationIdentity.availableStaffRole} activeStaffRole={navigationIdentity.staffRole} />}
+        {navigationIdentity && <RoomSiteChrome><StaffModeAccess availableRole={navigationIdentity.availableStaffRole} activeStaffRole={navigationIdentity.staffRole} /></RoomSiteChrome>}
         {accountAvailable && <CohortVisitObserver />}
           {/* Main content */}
           <div className="relative z-10">{children}</div>

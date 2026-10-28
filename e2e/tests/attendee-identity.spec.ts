@@ -32,6 +32,15 @@ stackTest('an unconfirmed attendee alias blocks LiveKit until it is corrected, t
             );
             await expect(page.getByTestId('viewer-identity')).toContainText('Anahí 李');
 
+            // The room's Participants tab preserves alias editing without
+            // exposing the removed site/account navigation during a session.
+            await expect(page.locator('hb-global-nav')).toHaveCount(0);
+            await page.getByRole('tab', { name: /Participantes|Participants/ }).click();
+            await page.getByRole('button', { name: /Editar nombre en la sala|Edit your name in this room/ }).click();
+            await page.getByRole('textbox', { name: /Nombre en esta sala|Name in this room/ }).fill('Anahí corregida 李');
+            await page.getByRole('button', { name: /^(?:Guardar|Save)$/ }).click();
+            await expect(page.getByRole('status').filter({ hasText: /Nombre actualizado|Name updated/ })).toBeVisible();
+
             await page.reload();
             await expect(page.getByTestId('connection-state')).toHaveAttribute(
                 'data-state',
@@ -39,7 +48,7 @@ stackTest('an unconfirmed attendee alias blocks LiveKit until it is corrected, t
                 { timeout: 20_000 },
             );
             await expect(input).toHaveCount(0);
-            await expect(page.getByTestId('viewer-identity')).toContainText('Anahí 李');
+            await expect(page.getByTestId('viewer-identity')).toContainText('Anahí corregida 李');
         } finally {
             await context.close();
         }

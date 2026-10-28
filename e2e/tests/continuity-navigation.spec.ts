@@ -137,7 +137,7 @@ async function liveRoomSurface(page: Page, role: 'ATTENDEE' | 'OPERATOR'): Promi
 }
 
 for (const role of ['ATTENDEE', 'OPERATOR'] as const) {
-    test(`live continuity without capture: full-stack ${role} cancelled exits preserve real media, state and focus`, async ({ page, browser, baseURL, isMobile }, testInfo) => {
+    test(`live continuity without capture: full-stack ${role} cancelled exits preserve real media, state and focus`, async ({ page, browser, baseURL }, testInfo) => {
         test.slow();
         await withSessionStatus(continuityDatabase(), SESSION_ES.id, 'LIVE', async () => {
             const stopPublisher = await syntheticPublisher(browser, baseURL!);
@@ -162,32 +162,19 @@ for (const role of ['ATTENDEE', 'OPERATOR'] as const) {
                 await page.getByRole('button', { name: 'Stay in the room', exact: true }).click();
                 await expect(exit).toBeFocused();
                 await expectSamePlayingMedia(surface);
-                // Exercise the real pinned web component's shadow link (or its
-                // actual fallback), not an injected navigation mock.
-                const globalExit = await globalListenLink(page);
-                await globalExit.click();
+                // Room exits own the confirmation; unrelated site/account
+                // and operations navigation is absent for both presentations.
+                await expect(page.locator('hb-global-nav')).toHaveCount(0);
+                await expect(page.getByRole('navigation', { name: 'Event operations' })).toHaveCount(0);
+                await exit.click();
                 await expect(page.getByRole('alertdialog')).toBeVisible();
                 await page.keyboard.press('Escape');
-                await expect(globalExit).toBeFocused();
+                await expect(exit).toBeFocused();
                 await expectSamePlayingMedia(surface);
-                if (isMobile) {
-                    const menuToggle = page.locator('hb-global-nav .toggle');
-                    await expect(menuToggle).toHaveAttribute('aria-expanded', 'true');
-                    await menuToggle.click();
-                    await expect(menuToggle).toHaveAttribute('aria-expanded', 'false');
-                }
                 if (role === 'OPERATOR') {
                     const hands = page.getByRole('tab', { name: /Hands/ }).first();
                     await hands.click();
-                    // The real drawer backdrop covers outer navigation. Close
-                    // through its reachable control before testing that exit.
                     await page.getByRole('button', { name: /Close tool/ }).click();
-                    const staffExit = page.getByRole('navigation', { name: 'Event operations' })
-                        .getByRole('link', { name: 'Events', exact: true });
-                    await staffExit.click();
-                    await expect(page.getByRole('alertdialog')).toBeVisible();
-                    await page.keyboard.press('Escape');
-                    await expect(staffExit).toBeFocused();
                     await expect(page.locator('.hb-staff-tools > aside')).not.toBeVisible();
                     await expectSamePlayingMedia(surface);
                 }
@@ -203,15 +190,17 @@ for (const role of ['ATTENDEE', 'OPERATOR'] as const) {
                 expect(after.peerConnectionsCreated).toBe(before.peerConnectionsCreated);
                 expect(native).toEqual([]);
                 await testInfo.attach('exit-cancel-real-media', { body: JSON.stringify({ before, after }, null, 2), contentType: 'application/json' });
-                // A confirmed real global exit must navigate once, with no
-                // second native warning. Only the destination is fulfilled;
-                // the running app, auth, room and media APIs stay unmodified.
+                // After a confirmed room exit the real site navigation returns.
+                // Only its external destination is fulfilled; room/media/auth
+                // remain the running production-mode app.
                 let departures = 0;
                 await page.route('https://listen.harmonicbeacon.com/**', route => {
                     departures++; return route.fulfill({ contentType: 'text/html', body: '<h1>Confirmed exit destination</h1>' });
                 });
-                await (await globalListenLink(page)).click();
+                await surface.getByRole('button', { name: 'Salir de la sala', exact: true }).click();
                 await page.getByRole('alertdialog').getByRole('button', { name: 'Salir de la sala', exact: true }).click();
+                await expect(page).toHaveURL(new URL('/', baseURL!).href);
+                await (await globalListenLink(page)).click();
                 await expect(page.getByRole('heading', { name: 'Confirmed exit destination' })).toBeVisible();
                 expect(departures).toBe(1);
                 expect(native).toEqual([]);
@@ -219,7 +208,7 @@ for (const role of ['ATTENDEE', 'OPERATOR'] as const) {
         });
     });
 
-    test(`live continuity without capture: full-stack ${role} sign-out waits for confirmation and revokes once`, async ({ page, browser, baseURL }) => {
+    test(`live continuity without capture: full-stack ${role} sign-out follows confirmed room exit and revokes once`, async ({ page, browser, baseURL }) => {
         test.skip(!accountFixtureEnabled(), 'Separate Account protocol gate; run e2e/account-fixture/playwright.config.ts. Legacy stack intentionally keeps Account disabled.');
         test.slow();
         await withSessionStatus(continuityDatabase(), SESSION_ES.id, 'LIVE', async () => {
@@ -233,26 +222,29 @@ for (const role of ['ATTENDEE', 'OPERATOR'] as const) {
                 await setLiveLocale(page, 'en');
                 await expectSamePlayingMedia(surface);
                 const accountRow = await accountSessionRow(page);
-                await expect(page.locator('hb-global-nav .account-trigger')).toBeVisible();
-                await page.locator('hb-global-nav .account-trigger').click();
-                const signout = page.getByRole('menuitem', { name: 'Sign out', exact: true });
+                await expect(page.locator('hb-global-nav')).toHaveCount(0);
+                const exit = surface.getByRole('button', { name: 'Leave room', exact: true });
                 let logouts = 0;
                 const native: string[] = [];
                 page.on('request', request => { if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/auth/logout') logouts++; });
                 page.on('dialog', async dialog => { native.push(dialog.type()); await dialog.dismiss(); });
                 const before = await settledContinuity(surface);
-                await signout.click();
+                await exit.click();
                 await page.getByRole('button', { name: 'Stay in the room', exact: true }).click();
-                await expect(signout).toBeFocused();
+                await expect(exit).toBeFocused();
                 await expectSamePlayingMedia(surface);
                 expect(logouts).toBe(0);
-                await signout.click(); await page.keyboard.press('Escape');
-                await expect(signout).toBeFocused();
+                await exit.click(); await page.keyboard.press('Escape');
+                await expect(exit).toBeFocused();
                 await expectSamePlayingMedia(surface);
                 expectMediaContinuity(before, await settledContinuity(surface));
-                await signout.click();
-                const logout = page.waitForResponse(response => new URL(response.url()).pathname === '/api/auth/logout' && response.request().method() === 'POST');
+                await exit.click();
                 await page.getByRole('alertdialog').getByRole('button', { name: 'Leave the room', exact: true }).click();
+                await expect(page).toHaveURL(new URL('/', baseURL!).href);
+                expect(logouts).toBe(0);
+                await page.locator('hb-global-nav .account-trigger').click();
+                const logout = page.waitForResponse(response => new URL(response.url()).pathname === '/api/auth/logout' && response.request().method() === 'POST');
+                await page.getByRole('menuitem', { name: 'Sign out', exact: true }).click();
                 const logoutResponse = await logout;
                 expect(logoutResponse.ok()).toBe(true);
                 await expect(page.getByRole('heading', { name: 'External identity simulation' })).toBeVisible();
@@ -301,9 +293,11 @@ for (const role of ['ATTENDEE', 'OPERATOR'] as const) {
                 let native = 0;
                 page.on('dialog', async dialog => { native++; await dialog.dismiss(); });
                 await page.route('https://listen.harmonicbeacon.com/**', route => route.fulfill({ contentType: 'text/html', body: '<h1>Confirmed guarded exit</h1>' }));
-                await (await globalListenLink(page)).click();
+                await surface.getByRole('button', { name: 'Leave room', exact: true }).click();
                 await expect(page.getByRole('alertdialog')).toBeVisible();
                 await page.getByRole('alertdialog').getByRole('button', { name: 'Leave the room', exact: true }).click();
+                await expect(page).toHaveURL(new URL('/', baseURL!).href);
+                await (await globalListenLink(page)).click();
                 await expect(page.getByRole('heading', { name: 'Confirmed guarded exit' })).toBeVisible();
                 expect(native).toBe(0);
             } finally { await stopPublisher(); }
@@ -390,6 +384,9 @@ test('live continuity without capture: full-stack ended Staff event releases par
                 let native = 0;
                 page.on('dialog', async dialog => { native++; await dialog.dismiss(); });
                 await page.route('https://listen.harmonicbeacon.com/**', route => route.fulfill({ contentType: 'text/html', body: '<h1>Ended event exit</h1>' }));
+                await expect(page.locator('hb-global-nav')).toHaveCount(0);
+                await surface.getByRole('button', { name: 'Back to sessions', exact: true }).click();
+                await expect(page).toHaveURL(new URL('/', baseURL!).href);
                 await (await globalListenLink(page)).click();
                 await expect(page.getByRole('heading', { name: 'Ended event exit' })).toBeVisible();
                 expect(native).toBe(0);

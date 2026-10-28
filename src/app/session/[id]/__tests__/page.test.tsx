@@ -678,6 +678,7 @@ describe('SessionRoomPage - participant identity', () => {
 
 describe('SessionRoomPage - staff cockpit handoff', () => {
     function installStaffToken(isAssignedFacilitator = true) {
+        navigationMocks.surface = 'cockpit';
         vi.mocked(global.fetch).mockImplementation((url: string | URL | Request) => {
             const target = String(url);
             if (target.includes('/entry')) {
@@ -774,59 +775,72 @@ describe('SessionRoomPage - staff cockpit handoff', () => {
         installStaffToken(false);
         await renderConnected();
 
+        expect(screen.getByRole('main')).toHaveClass('hb-room--embedded');
         expect(screen.queryByTestId('viewer-role-guidance')).not.toBeInTheDocument();
         const options = vi.mocked(Room).mock.calls.at(-1)?.[0] as RoomOptions;
         expect(options.audioCaptureDefaults).toEqual({echoCancellation: true});
         expect(options.publishDefaults?.audioPreset).toBeUndefined();
     });
 
-    it('restores the Staff console trigger after pointer activation without implicit focus', async () => {
-        installStaffToken();
-        await renderConnected();
-        const trigger = screen.getByRole('button', { name: 'Stage and hands' });
-        screen.getByRole('link', { name: 'Global exit' }).focus();
-        fireEvent.click(trigger);
-        fireEvent.keyDown(screen.getByRole('alertdialog'), { key: 'Escape' });
-        expect(trigger).toHaveFocus();
-        expect(currentRoom().disconnect).not.toHaveBeenCalled();
-        expect(mockPush).not.toHaveBeenCalled();
-    });
-
-    it('disconnects the standalone room and preserves device intent before opening the cockpit', async () => {
-        installStaffToken();
+    it('gives staff in participant view only Chat/Participants and a real queued hand action', async () => {
+        installStaffToken(false);
+        navigationMocks.surface = null;
+        const fallback = vi.mocked(global.fetch).getMockImplementation()!;
+        let raised = false;
+        vi.mocked(global.fetch).mockImplementation((url, init) => {
+            if (String(url).includes('/hand')) {
+                if (init?.method === 'POST') raised = true;
+                return Promise.resolve({ ok: true, json: async () => ({ participantId: 'staff-participant',
+                    raised, raisedAt: raised ? '2026-10-28T12:00:00Z' : null,
+                    queuePosition: raised ? 1 : null, canPublish: false, grantVersion: 0 }) } as Response);
+            }
+            return fallback(url, init);
+        });
         await renderConnected();
         const room = currentRoom();
-        room.localParticipant.permissions.canPublish = true;
-        act(() => room.emit('participantPermissionsChanged', null, room.localParticipant));
-        await waitFor(() => expect(screen.getByRole('button', { name: 'Turn camera on' })).toBeInTheDocument());
-        room.localParticipant.setMicrophoneEnabled.mockImplementationOnce(async (enabled: boolean) => {
-            room.localParticipant.isMicrophoneEnabled = enabled;
+        expect(screen.getByRole('main')).not.toHaveClass('hb-room--embedded');
+        expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['Chat', 'Participants 1']);
+        expect(screen.queryByRole('button', { name: 'Stage and hands' })).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Enable my staff controls' })).toBeNull();
+        expect(screen.queryByText(/Beacon room:/)).toBeNull();
+        fireEvent.click(await screen.findByRole('button', { name: 'Raise hand' }));
+        await screen.findByRole('button', { name: 'Lower hand' });
+        expect(fetch).toHaveBeenCalledWith('/api/scheduled-sessions/session-1/hand', { method: 'POST' });
+        expect(vi.mocked(fetch).mock.calls.some(([url, init]) => String(url).includes('/api/ops/') && init?.method === 'POST')).toBe(false);
+        expect(room.localParticipant.enableCameraAndMicrophone).not.toHaveBeenCalled();
+        expect(room.disconnect).not.toHaveBeenCalled();
+        fireEvent.click(screen.getByRole('button', { name: 'Change language to Spanish' }));
+        expect(await screen.findByRole('button', { name: 'Bajar la mano' })).toBeVisible();
+        expect(room.disconnect).not.toHaveBeenCalled();
+        expect(vi.mocked(Room)).toHaveBeenCalledOnce();
+    });
+
+    it('keeps a staff participant grant behind explicit consent and declines through audited self_leave', async () => {
+        installStaffToken(true);
+        navigationMocks.surface = null;
+        const fallback = vi.mocked(global.fetch).getMockImplementation()!;
+        let granted = true;
+        vi.mocked(global.fetch).mockImplementation((url, init) => {
+            if (String(url).includes('/api/ops/') && init?.method === 'POST') {
+                granted = false;
+                return Promise.resolve({ ok: true, json: async () => ({ canPublish: false, grantVersion: 2 }) } as Response);
+            }
+            if (String(url).includes('/hand')) return Promise.resolve({ ok: true, json: async () => ({
+                participantId: 'staff-participant', raised: false, raisedAt: null, queuePosition: null,
+                canPublish: granted, grantVersion: granted ? 1 : 2 }) } as Response);
+            return fallback(url, init);
         });
-        let releaseCamera: (() => void) | undefined;
-        room.localParticipant.setCameraEnabled.mockImplementationOnce(async (enabled: boolean) => {
-            await new Promise<void>((resolve) => { releaseCamera = resolve; });
-            room.localParticipant.isCameraEnabled = enabled;
-        });
-
-        fireEvent.click(screen.getByRole('button', { name: 'Unmute microphone' }));
-        fireEvent.click(screen.getByRole('button', { name: 'Turn camera on' }));
-        fireEvent.click(screen.getByRole('button', { name: 'Stage and hands' }));
-
-        expect(room.disconnect).not.toHaveBeenCalled();
-        expect(mockPush).not.toHaveBeenCalled();
-        expect(await screen.findByRole('alertdialog', { name: 'Leave the room?' })).toBeVisible();
-        expect(room.disconnect).not.toHaveBeenCalled();
-        fireEvent.click(screen.getByRole('button', { name: 'Leave the room' }));
-        await waitFor(() => expect(releaseCamera).toBeTypeOf('function'));
-        // Approval must still wait for the original in-flight device operation.
-        expect(room.disconnect).not.toHaveBeenCalled();
-        expect(mockPush).not.toHaveBeenCalled();
-        releaseCamera?.();
-
-        await waitFor(() => expect(room.disconnect).toHaveBeenCalledOnce());
-        expect(mockPush).toHaveBeenCalledWith('/ops/events/session-1');
-        expect(JSON.parse(window.sessionStorage.getItem('hb-stage-handoff:session-1') ?? '{}'))
-            .toEqual(expect.objectContaining({ camera: true, microphone: true, audioOnly: false }));
+        await renderConnected();
+        const room = currentRoom();
+        const invitation = await screen.findByRole('dialog', { name: 'You’re invited into the scene' });
+        expect(screen.getByRole('button', { name: 'Unmute microphone' })).toBeDisabled();
+        expect(room.localParticipant.enableCameraAndMicrophone).not.toHaveBeenCalled();
+        fireEvent.click(within(invitation).getByRole('button', { name: 'Not now' }));
+        await waitFor(() => expect(invitation).not.toBeInTheDocument());
+        expect(fetch).toHaveBeenCalledWith('/api/ops/sessions/session-1/stage', expect.objectContaining({
+            method: 'POST', body: JSON.stringify({ action: 'self_leave', expectedGrantVersion: 1 }),
+        }));
+        expect(room.localParticipant.enableCameraAndMicrophone).not.toHaveBeenCalled();
     });
 
     it('consumes a fresh handoff and restores both devices inside the persistent cockpit room', async () => {

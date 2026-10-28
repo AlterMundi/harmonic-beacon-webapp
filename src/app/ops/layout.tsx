@@ -5,6 +5,7 @@ import { OpsNavigation } from '@/components/ops/LiveLocaleSurfaces';
 import { resolveStaffByToken } from '@/lib/ops-auth';
 import { SESSION_COOKIE_NAME } from '@/lib/session-auth';
 import { effectiveAnalyticsRole } from '@/lib/analytics-access';
+import { RoomSiteChrome } from '@/components/navigation/RoomSiteChrome';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,7 +26,7 @@ export default async function OpsLayout({
 
     return (
         <div className="live-ops-shell min-h-screen bg-[var(--night)]">
-            <OpsNavigation analytics={Boolean(analyticsRole)} />
+            <RoomSiteChrome><OpsNavigation analytics={Boolean(analyticsRole)} /></RoomSiteChrome>
             <main className="hb-ops-content mx-auto max-w-5xl px-4 py-6">{children}</main>
         </div>
     );

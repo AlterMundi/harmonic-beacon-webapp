@@ -40,6 +40,8 @@ type HandTargetInput = {
 
 type RaiseInput = HandTargetInput & {
     ticketEntitlementId: string | null;
+    staffUserId?: string | null;
+    displayName?: string;
     now?: Date;
 };
 
@@ -105,6 +107,7 @@ function toHandState(
         publishGrantedAt: Date | null;
         publishRevokedAt: Date | null;
         grantVersion: number;
+        grantReconcileNeeded: boolean;
     },
     queuePosition: number | null,
 ): HandState {
@@ -113,7 +116,7 @@ function toHandState(
         raised: participant.raisedAt !== null,
         raisedAt: participant.raisedAt,
         queuePosition,
-        canPublish: hasActiveGrant(participant),
+        canPublish: hasActiveGrant(participant) && participant.grantReconcileNeeded === false,
         grantVersion: participant.grantVersion,
     };
 }
@@ -139,6 +142,8 @@ export async function raiseHand(input: RaiseInput): Promise<HandState> {
             scheduledSessionId: input.scheduledSessionId,
             participantIdentity: input.participantIdentity,
             ticketEntitlementId: input.ticketEntitlementId,
+            staffUserId: input.staffUserId ?? null,
+            displayName: input.displayName,
             raisedAt: now,
         },
         // Empty update: an existing row keeps its original raisedAt.
@@ -149,6 +154,7 @@ export async function raiseHand(input: RaiseInput): Promise<HandState> {
             publishGrantedAt: true,
             publishRevokedAt: true,
             grantVersion: true,
+            grantReconcileNeeded: true,
         },
     });
     // The upsert above matches on identity, so an existing row that has not
@@ -189,6 +195,7 @@ export async function lowerHand(input: LowerInput): Promise<HandState> {
             publishGrantedAt: true,
             publishRevokedAt: true,
             grantVersion: true,
+            grantReconcileNeeded: true,
         },
     });
     if (!participant) {
@@ -210,6 +217,7 @@ export async function lowerHand(input: LowerInput): Promise<HandState> {
                 publishGrantedAt: true,
                 publishRevokedAt: true,
                 grantVersion: true,
+                grantReconcileNeeded: true,
             },
         });
 
@@ -276,6 +284,7 @@ export async function getHandState(
             publishGrantedAt: true,
             publishRevokedAt: true,
             grantVersion: true,
+            grantReconcileNeeded: true,
         },
     });
     if (!participant) {

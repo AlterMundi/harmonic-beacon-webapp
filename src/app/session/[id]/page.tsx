@@ -25,6 +25,7 @@ import HandRaiseButton from "@/components/session/HandRaiseButton";
 import FacilitatorAudioQuality from "@/components/session/FacilitatorAudioQuality";
 import StaffPublicationAccess from "@/components/session/StaffPublicationAccess";
 import RoomSidebar, { type RoomPerson } from "@/components/session/RoomSidebar";
+import RoomLanguageControl from "@/components/session/RoomLanguageControl";
 import ShareEventButton from "@/components/events/ShareEventButton";
 import SessionGuidance from "@/components/session/SessionGuidance";
 import SessionIdentityGate from "@/components/session/SessionIdentityGate";
@@ -279,6 +280,9 @@ function SessionRoom() {
     const [canPublish, setCanPublish] = useState(false);
     const [grantVersion, setGrantVersion] = useState<number | null>(null);
     const [principalKind, setPrincipalKind] = useState<"ticket" | "staff">("ticket");
+    // A staff account can use the participant room. Only the embedded operator
+    // surface exposes staff tools; account capabilities are not a view mode.
+    const staffControlsVisible = principalKind === 'staff' && embeddedInCockpit;
     const echoPreferenceRef = useRef<boolean | undefined>(undefined);
     const [echoEnabled, setEchoEnabled] = useState<boolean | undefined>(undefined);
     const [echoBusy, setEchoBusy] = useState(false);
@@ -401,12 +405,12 @@ function SessionRoom() {
         setConnectionState(room.state);
         const localCanPublish = !stageAuthoritySuppressedRef.current &&
             Boolean(local.permissions?.canPublish);
-        // A ticket holder's LiveKit permission can arrive before the next
+        // A participant's LiveKit permission can arrive before the next
         // authoritative hand-state poll. Do not expose an invitation backed
         // by the previous grantVersion: declining it would correctly fail the
-        // server CAS with a stale revision. Staff have no attendee hand poll,
-        // so their event-scoped permission remains LiveKit-driven.
-        if (principalKindRef.current === 'staff' || !localCanPublish) {
+        // server CAS with a stale revision. The embedded staff surface instead
+        // pairs authority through its own staff grant poll.
+        if ((principalKindRef.current === 'staff' && embeddedInCockpit) || !localCanPublish) {
             setCanPublish(localCanPublish);
         }
         setIsMicOn(localCanPublish && local.isMicrophoneEnabled);
@@ -425,7 +429,7 @@ function SessionRoom() {
         const onStage = new Set(publishers.map((p) => p.identity));
         const speaker = room.activeSpeakers.find((p) => onStage.has(p.identity));
         if (speaker) setActiveSpeakerIdentity(speaker.identity);
-    }, [slotFor]);
+    }, [embeddedInCockpit, slotFor]);
 
     const scheduleStageRefresh = useCallback(() => {
         if (stageRefreshRef.current) return;
@@ -459,37 +463,6 @@ function SessionRoom() {
         }
         router.push("/");
     }, [router]);
-
-    const openStaffConsole = useCallback(async () => {
-        const pendingDeviceOperation = deviceOperationRef.current;
-        if (pendingDeviceOperation) {
-            try {
-                await pendingDeviceOperation;
-            } catch {
-                // The effective device state below remains authoritative.
-            }
-        }
-        const room = roomRef.current;
-        try {
-            window.sessionStorage.setItem(stageHandoffKey(id), JSON.stringify({
-                microphone: room?.localParticipant.isMicrophoneEnabled ?? isMicOn,
-                camera: room?.localParticipant.isCameraEnabled ?? isCameraOn,
-                audioOnly: audioOnlyRef.current,
-                createdAt: Date.now(),
-            } satisfies StageHandoff));
-        } catch {
-            // Navigation still works if storage is unavailable.
-        }
-        if (room) {
-            intentionalDisconnectRef.current = true;
-            try {
-                await disconnectRoomOnce(room);
-            } catch (failure) {
-                console.error("Failed to close the room before opening the console:", redactErrorDetail(failure));
-            }
-        }
-        router.push(`/ops/events/${id}`);
-    }, [id, isCameraOn, isMicOn, router]);
 
     const rejoin = useCallback(() => {
         if (autoReconnectTimerRef.current) {
@@ -568,7 +541,7 @@ function SessionRoom() {
 
     const acceptStageInvitation = useCallback(async () => {
         const room = roomRef.current;
-        if (!room || principalKind !== 'ticket' || !canPublish || stageInvitationBusy) return;
+        if (!room || staffControlsVisible || !canPublish || stageInvitationBusy) return;
 
         setStageInvitationBusy('accept');
         setStageInvitationError(null);
@@ -602,27 +575,30 @@ function SessionRoom() {
         copy.session.invitationCameraError,
         copy.session.invitationDeviceError,
         copy.session.invitationMicrophoneError,
-        principalKind,
+        staffControlsVisible,
         readStage,
         stageInvitationBusy,
     ]);
 
     const declineStageInvitation = useCallback(async () => {
-        if (principalKind !== 'ticket' || !canPublish || stageInvitationBusy || grantVersion === null) return;
+        if (staffControlsVisible || !canPublish || stageInvitationBusy || grantVersion === null) return;
 
         setStageInvitationBusy('decline');
         setStageInvitationError(null);
         try {
-            const response = await fetch(`/api/scheduled-sessions/${id}/hand`, {
-                method: 'PATCH',
+            const response = await fetch(principalKind === 'staff'
+                ? `/api/ops/sessions/${id}/stage` : `/api/scheduled-sessions/${id}/hand`, {
+                method: principalKind === 'staff' ? 'POST' : 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    action: 'decline_invitation',
+                    action: principalKind === 'staff' ? 'self_leave' : 'decline_invitation',
                     expectedGrantVersion: grantVersion,
                 }),
             });
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const next = await response.json() as { grantVersion?: unknown };
+            if (Number.isSafeInteger(next.grantVersion) && grantVersionRef.current !== null &&
+                (next.grantVersion as number) < grantVersionRef.current) return;
             if (Number.isSafeInteger(next.grantVersion) && (next.grantVersion as number) >= 0) {
                 grantVersionRef.current = next.grantVersion as number;
                 setGrantVersion(next.grantVersion as number);
@@ -636,7 +612,7 @@ function SessionRoom() {
         } finally {
             setStageInvitationBusy(null);
         }
-    }, [canPublish, copy.session.invitationDeclineError, grantVersion, id, principalKind, stageInvitationBusy]);
+    }, [canPublish, copy.session.invitationDeclineError, grantVersion, id, principalKind, staffControlsVisible, stageInvitationBusy]);
 
     const leaveStage = useCallback(async () => {
         if (
@@ -767,7 +743,7 @@ function SessionRoom() {
                 // transport reconnect the existing authority is already
                 // paired, so preserve it without UI flicker.
                 if (
-                    resolvedPrincipalKind === "staff" ||
+                    (resolvedPrincipalKind === "staff" && embeddedInCockpit) ||
                     data.canPublish !== true ||
                     stageInvitationAcceptedRef.current
                 ) {
@@ -939,7 +915,7 @@ function SessionRoom() {
                 }
 
                 const mayRestoreDevices = data.canPublish &&
-                    (data.principalKind === "staff" || stageInvitationAcceptedRef.current);
+                    ((data.principalKind === "staff" && embeddedInCockpit) || stageInvitationAcceptedRef.current);
                 if (mayRestoreDevices && desiredCameraRef.current && desiredMicRef.current) {
                     try {
                         await room.localParticipant.enableCameraAndMicrophone();
@@ -1039,7 +1015,7 @@ function SessionRoom() {
     }, [disconnectState]);
 
     useEffect(() => {
-        if (principalKind === 'ticket' && canPublish && !stageInvitationAccepted) {
+        if (!staffControlsVisible && canPublish && !stageInvitationAccepted) {
             stageInvitationRef.current?.focus();
             return;
         }
@@ -1047,7 +1023,7 @@ function SessionRoom() {
             setStageInvitationAccepted(false);
             setStageInvitationError(null);
         }
-    }, [canPublish, principalKind, stageInvitationAccepted]);
+    }, [canPublish, staffControlsVisible, stageInvitationAccepted]);
 
     useEffect(() => {
         if (stageExitConfirming) {
@@ -1302,16 +1278,16 @@ function SessionRoom() {
     const connectionLabel = copy.session.connection[connectionKey as keyof typeof copy.session.connection]
         ?? copy.session.connection.connecting;
     const canControlStageDevices = canPublish &&
-        (principalKind === 'staff' || stageInvitationAccepted);
-    const hasPendingStageInvitation = principalKind === 'ticket' &&
+        (staffControlsVisible || stageInvitationAccepted);
+    const hasPendingStageInvitation = !staffControlsVisible &&
         canPublish && !stageInvitationAccepted;
     const needsDeviceGesture = canControlStageDevices && !isMicOn && !isCameraOn;
-    const viewerStaffRole = principalKind === 'staff' && isLocalizedStaffRole(viewerInfo?.role)
+    const viewerStaffRole = staffControlsVisible && isLocalizedStaffRole(viewerInfo?.role)
         ? staffRolePresentation(copy, viewerInfo.role)
         : null;
 
     return (
-        <main className="event-shell hb-room">
+        <main className={`event-shell hb-room${embeddedInCockpit ? ' hb-room--embedded' : ''}`}>
             <div className="hb-room-shell relative z-10">
                 {/* Header */}
                 <header className="hb-room-header">
@@ -1340,15 +1316,7 @@ function SessionRoom() {
                         )}
                     </div>
                     <div className="ml-3 flex shrink-0 items-center gap-3">
-                        {principalKind === "staff" && !embeddedInCockpit && (
-                            <button
-                                type="button"
-                                onClick={event => { event.currentTarget.focus(); requestExit(openStaffConsole); }}
-                                className="inline-flex min-h-11 items-center rounded border border-[var(--gold)]/40 px-3 py-2 text-xs text-[var(--gold)] hover:bg-[var(--gold)]/10"
-                            >
-                                {copy.session.staffConsole}
-                            </button>
-                        )}
+                        {!staffControlsVisible && <RoomLanguageControl />}
                         <ShareEventButton sessionId={id} title={sessionInfo?.title || copy.session.sessionFallback} />
                         <span className="font-mono text-xs text-[var(--gold)]" aria-label={locale === 'es' ? 'Tiempo en la sala' : 'Time in room'}>{formatTime(duration)}</span>
                     </div>
@@ -1379,9 +1347,9 @@ function SessionRoom() {
                         </div>
                     )}
 
-                    {principalKind === 'staff' && isConnected && <StaffPublicationAccess sessionId={id} canPublish={canPublish} onGrantChange={applyGrantState} />}
+                    {staffControlsVisible && isConnected && <StaffPublicationAccess sessionId={id} canPublish={canPublish} onGrantChange={applyGrantState} />}
 
-                    {isConnected && principalKind === "ticket" && (
+                    {isConnected && !staffControlsVisible && (
                         <div className="hb-room-hand">
                             <HandRaiseButton
                                 sessionId={id}
@@ -1532,7 +1500,7 @@ function SessionRoom() {
 
                     </div>
                     {!canControlStageDevices && <p id="room-stage-controls-help" className="hb-room-controls-help">
-                        {principalKind === 'staff'
+                        {staffControlsVisible
                             ? (locale === 'es' ? 'Habilitá tus controles para usar el micrófono en la escena. La cámara del mosaico funciona por separado.' : 'Enable your controls to use the stage microphone. The tapestry camera works separately.')
                             : copy.session.stageControlsLocked}
                     </p>}
@@ -1712,10 +1680,10 @@ function SessionRoom() {
 
 
                 </div>
-                {!embeddedInCockpit && <RoomSidebar key={id} sessionId={id} people={roomPeople} staff={principalKind === 'staff'} />}
+                {!staffControlsVisible && <RoomSidebar key={id} sessionId={id} people={roomPeople} canEditName={principalKind === 'ticket'} />}
                 </div>
 
-                {principalKind === 'staff' && (
+                {staffControlsVisible && (
                     <div className="mx-auto mb-3 max-w-md rounded border border-[var(--border-subtle)] bg-[var(--surface-alt)] px-3 py-2 text-center text-xs leading-5 text-[var(--text-muted)]">
                         {copy.session.beaconRoom}: {beaconConnected ? <span className="text-[var(--lime)]">{copy.session.connection.connected}</span> : <span className="text-[var(--danger)]">{copy.session.connection.disconnected}</span>}
                         {' · '}{copy.session.playlist}: {hasPlaylistStream ? <span className="text-[var(--lime)]">{copy.session.active}</span> : <span className="text-[var(--danger)]">{copy.session.none}</span>}
@@ -1760,6 +1728,7 @@ const ENTRY_POLL_MS = 3_000;
 
 function SessionEntryGate({ sessionId }: { sessionId: string }) {
     const router = useRouter();
+    const searchParams = useSearchParams();
     const { locale, copy, seedLocale } = useLocale();
     const [entry, setEntry] = useState<EntryResponse | null>(null);
     const [entryError, setEntryError] = useState<string | null>(null);
@@ -1934,7 +1903,8 @@ function SessionEntryGate({ sessionId }: { sessionId: string }) {
         );
     }
 
-    if (entry.state === 'WAITING') {
+    if (entry.state === 'WAITING' || (entry.session.status === 'SCHEDULED' &&
+        searchParams.get('surface') !== 'cockpit')) {
         const startsAt = new Intl.DateTimeFormat(locale === 'es' ? 'es-AR' : 'en-US', {
             dateStyle: 'full',
             timeStyle: 'short',

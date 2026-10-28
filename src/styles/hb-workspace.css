@@ -10,7 +10,7 @@
 .hb-room :is(.text-sm), .hb-staff-workspace :is(.text-sm) { font-size: 1rem; line-height: 1.5; }
 .hb-room :is(button, a, input):focus-visible, .hb-staff-workspace :is(button, a, input):focus-visible, .hb-profile :is(button, a, input):focus-visible { outline: 2px solid var(--gold); outline-offset: 4px; }
 .hb-room :is(button, summary), .hb-staff-workspace :is(button, summary) { min-height: 44px; }
-.hb-room-shell { width: 100%; max-width: 1680px; margin: auto; min-height: calc(100svh - 72px); padding: 0 clamp(12px, 2vw, 32px) 24px; }
+.hb-room-shell { width: 100%; max-width: 1680px; margin: auto; min-height: 100svh; padding: 0 clamp(12px, 2vw, 32px) 24px; }
 .hb-room-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 22px 0; border-bottom: 1px solid var(--border-subtle); }
 .hb-room-header h1 { font: 500 clamp(1.5rem, 3vw, 2.25rem)/1.15 var(--font-cormorant), Georgia, serif; }
 .hb-room .hb-room-header h1 { font: 500 clamp(1.5rem, 3vw, 2.25rem)/1.15 var(--font-cormorant), Georgia, serif; }
@@ -22,7 +22,7 @@
 .hb-room-scene [data-scene="empty"] .terminal-state { min-height: 160px; padding: 24px 12px; }
 .hb-room-scene > .w-full.max-w-sm { width: 100%; max-width: 100%; }
 .hb-room-scene .crossfader, .hb-room-scene input[type="range"] { min-height: 44px; }
-.hb-room-controls { grid-area: 1 / 1; position: sticky; top: 80px; z-index: 20; padding: 16px 12px max(16px, env(safe-area-inset-bottom)); border: 1px solid var(--border-subtle); border-radius: 18px; background: #211b14; box-shadow: 0 -8px 32px #0003; }
+.hb-room-controls { grid-area: 1 / 1; position: sticky; top: 12px; z-index: 20; padding: 16px 12px max(16px, env(safe-area-inset-bottom)); border: 1px solid var(--border-subtle); border-radius: 18px; background: #211b14; box-shadow: 0 -8px 32px #0003; }
 .hb-room-controls > .mb-4 { margin-bottom: 12px; }
 .hb-room-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; }
 .hb-room-activation { flex-basis: 100%; padding: 16px; margin: 0; }
@@ -107,12 +107,12 @@
 .hb-staff-tools-heading .event-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .hb-staff-tools-heading--compact { justify-content: flex-end; border: 0; margin: 4px 0; padding: 0; }
 .hb-staff-tools-heading--compact .event-button { border-color: transparent; background: transparent; color: var(--text-secondary); padding: 8px; }
-html[data-hb-embedded-surface="cockpit"] .hb-room, html[data-hb-embedded-surface="cockpit"] .hb-room-shell { min-height: 0; }
-html[data-hb-embedded-surface="cockpit"] .hb-room-workspace { display: flex; flex-direction: column; }
-html[data-hb-embedded-surface="cockpit"] .hb-room-workspace > * { width: 100%; }
-html[data-hb-embedded-surface="cockpit"] .hb-room-header { flex-wrap: wrap; }
-html[data-hb-embedded-surface="cockpit"] .hb-room-header h1 { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-html[data-hb-embedded-surface="cockpit"] .hb-room-controls { position: relative; top: auto; }
+.hb-room--embedded, .hb-room--embedded .hb-room-shell { min-height: 0; }
+.hb-room--embedded .hb-room-workspace { display: flex; flex-direction: column; }
+.hb-room--embedded .hb-room-workspace > * { width: 100%; }
+.hb-room--embedded .hb-room-header { flex-wrap: wrap; }
+.hb-room--embedded .hb-room-header h1 { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.hb-room--embedded .hb-room-controls { position: relative; top: auto; }
 .hb-profile { max-width: 1180px; margin: auto; padding: clamp(24px, 5vw, 60px) clamp(16px, 4vw, 40px); }
 .hb-profile-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 24px; padding-bottom: 32px; }
 .hb-profile h1 { font: 500 clamp(2.5rem, 5vw, 4rem)/1.1 var(--font-cormorant), Georgia, serif; overflow-wrap: anywhere; }
