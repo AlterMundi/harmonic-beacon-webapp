@@ -405,7 +405,8 @@ def main(args):
         save(active, {'sourceSha': source})
         # The marker closes the launcher/worker race. Other launches refuse a
         # nonterminal marker; the worker holds the global lock throughout its job.
-        subprocess.run(['/usr/bin/screen', '-DmS', 'beacon-live-' + source[:12],
+        # GNU screen must fork before this launcher releases the build lock.
+        subprocess.run(['/usr/bin/screen', '-dmS', 'beacon-live-' + source[:12],
                         '/usr/bin/python3', '-I', str(Path(__file__).resolve()), '_worker', source],
                        env=ENV, check=True, timeout=20)
         return {'phase': 'queued', 'sourceSha': source, 'action': 'Read status; preserve the named job after SSH loss.'}

@@ -156,7 +156,10 @@ are accepted. App-only compatibility rejects changed dependencies, migrations,
 build/Compose definitions and media services. Broader changes use their owning
 reviewed adapters rather than weakening this restriction.
 
-`build` starts a named finite host screen job and returns. `status` reports its
+`build` starts a named finite host screen job and returns. GNU screen must
+fork with `-dmS` before the launcher releases its build lock; the native launcher
+regression exercises a real worker waiting on that lock. A launcher timeout
+leaves pending evidence for inspection, never permission to retry automatically. `status` reports its
 retained result; a pending result does not prove the job is running. An existing
 source never starts another build automatically. The exact image is built from
 a root-owned source, carries the source label and baked SHA, and passes a

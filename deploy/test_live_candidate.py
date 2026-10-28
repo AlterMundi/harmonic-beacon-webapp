@@ -1,5 +1,10 @@
 import importlib.util
 import json
+import os
+import shutil
+import subprocess
+import time
+import uuid
 from pathlib import Path
 import sys
 import tempfile
@@ -100,7 +105,7 @@ class AdmissionTests(unittest.TestCase):
                 with self.assertRaises(RuntimeError): m.main(['build', P])
                 self.assertEqual(launch.call_count, 1)
                 argv = launch.call_args.args[0]
-                self.assertEqual(argv[:2], ['/usr/bin/screen', '-DmS'])
+                self.assertEqual(argv[:2], ['/usr/bin/screen', '-dmS'])
                 self.assertIn('-I', argv); self.assertNotIn('/bin/sh', argv)
 
     def test_failed_or_uncertain_work_never_auto_replayed(self):
@@ -212,6 +217,36 @@ class AdmissionTests(unittest.TestCase):
         self.assertNotIn('/usr/bin/docker', grant)
         self.assertIn('NOSETENV', grant)
         for verb in ('build', 'status', 'admit'): self.assertIn('/usr/local/sbin/hb-live-candidate '+verb+' *', grant)
+
+
+class NativeLauncherTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which('screen'), 'GNU screen unavailable; verify on the receiving host')
+    def test_launcher_returns_while_worker_waits_for_its_build_lock(self):
+        # Exercise the real daemon/fork and flock interaction, not mocked argv.
+        native_run = subprocess.run
+        source = uuid.uuid4().hex + '00000000'
+        name = 'beacon-live-' + source[:12]
+        old_umask = os.umask(0o077)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / 'build.lock').touch(mode=0o600)
+            worker = root / 'worker.py'
+            worker.write_text("import fcntl\nfrom pathlib import Path\nr=Path(__file__).parent\nwith (r/'build.lock').open('r+') as lock:\n fcntl.flock(lock,fcntl.LOCK_EX)\n (r/'completed').write_text('worker acquired lock after launcher detached')\n")
+            env = {**m.ENV, 'HOME': str(root)}
+            try:
+                with patch.object(m, 'ROOT', root), patch.object(m, '__file__', str(worker)), \
+                        patch.object(m, 'ENV', env), patch.object(m, 'safe'), \
+                        patch.object(m.os, 'geteuid', return_value=0), patch.object(m, 'qualify'), \
+                        patch.object(m.subprocess, 'run', side_effect=lambda *a, **kw: native_run(*a, **{**kw, 'timeout': 3})):
+                    self.assertEqual(m.main(['build', source])['phase'], 'queued')
+                deadline = time.monotonic() + 10
+                while not (root / 'completed').exists() and time.monotonic() < deadline:
+                    time.sleep(0.05)
+                self.assertTrue((root / 'completed').exists(), 'detached worker never acquired released build lock')
+            finally:
+                native_run(['/usr/bin/screen', '-S', name, '-X', 'quit'], env=env,
+                           capture_output=True, timeout=3)
+                os.umask(old_umask)
 
 
 if __name__ == '__main__': unittest.main()
