@@ -8,7 +8,28 @@ export async function leaveConnectedRoom(
     surface: Frame | Page,
 ): Promise<void> {
     const state = surface.getByTestId('connection-state');
+    const host = 'page' in surface ? surface.page() : surface;
+    const roomFrame = 'page' in surface ? surface : null;
+    const embedded = roomFrame !== null && roomFrame !== host.mainFrame();
+    let outsideUrl: string | null = null;
+    try { outsideUrl = new URL('/', host.url()).href; } catch { /* about:blank fixture has no website destination. */ }
+    const isDetached = (owner: Frame | Page) => 'isDetached' in owner && owner.isDetached();
+    const count = async (locator: Locator, owner: Frame | Page): Promise<number> => {
+        try { return await locator.count(); }
+        catch (error) {
+            // This is only an observation. Detachment cannot qualify an exit
+            // until the verified top-level destination and teardown below hold.
+            if (isDetached(owner)) return 0;
+            throw error;
+        }
+    };
+    const outsideRoom = async () => embedded && outsideUrl !== null && host.url() === outsideUrl &&
+        await host.getByRole('main').count() > 0 &&
+        await host.getByTestId('persistent-room').count() === 0 &&
+        await host.getByTestId('connection-state').count() === 0 &&
+        await host.getByRole('alertdialog').count() === 0;
     let dialogs: Locator[] = [];
+    let dialogSurfaces: (Frame | Page)[] = [];
     let ownerIndex = -1;
     const leave = surface.getByRole('button', { name: /^(?:Leave room|Salir de la sala|Leave session|Salir de la sesión)$/i });
     if (await leave.isVisible()) {
@@ -17,6 +38,7 @@ export async function leaveConnectedRoom(
         // the confirmation itself or send an asynchronous request to its host.
         const surfaces = 'page' in surface && surface !== surface.page().mainFrame()
             ? [surface, surface.page()] : [surface];
+        dialogSurfaces = surfaces;
         dialogs = surfaces.map((owner) => owner.getByRole('alertdialog', {
             name: /^(?:Leave the room\?|¿Salir de la sala\?|Leave room|Salir de la sala|Leave session|Salir de la sesión)$/i,
         }));
@@ -37,20 +59,31 @@ export async function leaveConnectedRoom(
         // owner while waiting for actual teardown, even if it appeared later.
         let ambiguous = false;
         await expect.poll(async () => {
-            const pending = await Promise.all(dialogs.map((dialog) => dialog.count()));
+            const pending = await Promise.all(dialogs.map((dialog, index) => count(dialog, dialogSurfaces[index])));
             ambiguous ||= pending.some((count, index) => count > (index === ownerIndex ? 1 : 0));
-            return ambiguous || await state.count() === 0;
+            const remaining = await count(state, surface);
+            return ambiguous || (isDetached(surface) ? await outsideRoom() : remaining === 0);
         }, { message: 'confirmed room exit must disconnect without another confirmation owner' }).toBe(true);
         if (ambiguous) throw new Error('Ambiguous room exit: confirmation ownership changed during teardown');
     }
     // Also fail closed if the exit control was missing while still connected.
-    await expect(state).toHaveCount(0);
+    if (isDetached(surface)) {
+        await expect.poll(outsideRoom, { message: 'a detached room must reach the top-level session list without room state or another prompt' }).toBe(true);
+    } else await expect(state).toHaveCount(0);
     // A pending prompt is not successful teardown, including one that appears
     // between the last ownership sample and the asynchronous state check above.
     for (const [index, dialog] of dialogs.entries()) {
+        if (isDetached(dialogSurfaces[index])) {
+            await expect.poll(outsideRoom).toBe(true);
+            continue;
+        }
         try {
             await expect(dialog).toHaveCount(0);
         } catch (error) {
+            if (isDetached(dialogSurfaces[index])) {
+                await expect.poll(outsideRoom).toBe(true);
+                continue;
+            }
             if (index !== ownerIndex && await dialog.count() > 0) {
                 throw new Error('Ambiguous room exit: confirmation ownership changed during teardown');
             }

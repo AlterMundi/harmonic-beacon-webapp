@@ -60,11 +60,11 @@ stackTest('FACILITATOR_OP completes two consecutive event lifecycles without swi
                     const operationsNavigation = staff.getByRole('navigation', {
                         name: /Operaciones de eventos|Event operations/i,
                     });
-                    await expect(operationsNavigation).toBeVisible();
-                    // Identity lives in the one canonical global user menu.
-                    // The operations strip must not recreate the removed
-                    // second user circle on any lifecycle page.
-                    await expect(operationsNavigation.locator('details')).toHaveCount(0);
+                    // The room owns its operations tools; unrelated site/account
+                    // navigation stays outside the persistent room workspace.
+                    await expect(operationsNavigation).toHaveCount(0);
+                    await expect(staff.locator('hb-global-nav')).toHaveCount(0);
+                    await expect(staff.getByRole('tab', { name: /Manos|Hands/i })).toBeVisible();
 
                     const attendeeContext = await browser.newContext();
                     const attendee = await attendeeContext.newPage();

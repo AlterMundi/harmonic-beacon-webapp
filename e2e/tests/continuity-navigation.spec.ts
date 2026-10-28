@@ -329,7 +329,7 @@ for (const role of ['ATTENDEE', 'OPERATOR'] as const) {
                 });
                 const original = await page.evaluate(() => ({ state: history.state, url: location.href }));
                 const before = await settledContinuity(surface);
-                const focus = page.getByRole('button', { name: 'Language / Idioma', exact: true });
+                const focus = page.getByRole('button', { name: 'Change language to Spanish', exact: true });
                 await focus.focus();
                 await page.evaluate(() => history.back());
                 await expect(page.getByRole('alertdialog')).toBeVisible();
