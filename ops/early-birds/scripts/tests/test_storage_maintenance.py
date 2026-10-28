@@ -67,6 +67,18 @@ class RetentionTests(unittest.TestCase):
         eligible, _ = m.selection(images, set(), 1800000000, set())
         self.assertEqual([x['Id'] for x in eligible], [images[2]['Id']])
 
+    def test_generated_live_rollback_tags_do_not_pin_superseded_history_forever(self):
+        images = self.images()
+        for image in images:
+            image['RepoTags'] = ['harmonic-beacon/live:'+image['RepoTags'][0].split(':')[1]]
+        images[2]['RepoTags'] += ['harmonic-beacon/live:rollback-'+'2'*40]
+        eligible, protected = m.selection(images, {images[-1]['Id']}, 1800000000, {images[0]['Id']})
+        self.assertIn(images[0]['Id'], protected)
+        self.assertIn(images[2], eligible)
+        images[2]['RepoTags'] += ['harmonic-beacon/live:rollback-manual-unknown']
+        eligible, _ = m.selection(images, {images[-1]['Id']}, 1800000000, {images[0]['Id']})
+        self.assertNotIn(images[2], eligible)
+
     def test_recent_image_never_retired(self):
         images = self.images()
         eligible, _ = m.selection(images, set(), m.created(images[0])+3600, set())
