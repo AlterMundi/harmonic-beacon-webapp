@@ -13,6 +13,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import tarfile
 import time
 from urllib.request import Request, urlopen
 
@@ -282,6 +283,74 @@ def admit(source):
         return {'phase': 'admitted', 'sourceSha': source, 'imageId': image['Id'], 'expiresAt': value['expiresAt']}
 
 
+def retire(source):
+    # Only derived source contexts/build logs are retired. Images, deployment
+    # snapshots, permits, credentials and application data are never deleted.
+    safe(ROOT / 'build.lock'); safe(LOCK); safe(PERMIT)
+    with (ROOT / 'build.lock').open('r+') as build_lock, LOCK.open('r+') as release_lock:
+        fcntl.flock(build_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        fcntl.flock(release_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        directory = ROOT / source; safe(directory, True)
+        result_path = directory / 'result.json'; safe(result_path)
+        result = json.loads(result_path.read_text())
+        if result.get('sourceSha') != source or result.get('phase') not in ('built', 'failed'):
+            raise RuntimeError('only terminal build evidence can be retired')
+        permit = json.loads(PERMIT.read_text())
+        protected = {permit['sourceSha'], permit['priorSourceSha']}
+        containers = run(['docker', 'ps', '-aq']).decode().split()
+        if len(containers) > 256: raise RuntimeError('runtime inventory exceeds bound')
+        if containers:
+            bindings = run(['docker', 'inspect', '--format',
+                            '{{.Image}} {{index .Config.Labels "org.opencontainers.image.revision"}}', *containers]).decode().splitlines()
+            for row in bindings:
+                fields = row.split()
+                if len(fields) > 1 and SHA.fullmatch(fields[1]): protected.add(fields[1])
+                if fields and fields[0] == result.get('imageId'):
+                    raise RuntimeError('build image remains referenced by a container')
+        if source in protected: raise RuntimeError('build remains a current/admitted/recovery source')
+        history = ROOT / 'retired'
+        if not history.exists(): history.mkdir(mode=0o700)
+        safe(history, True)
+        archives = sorted(history.glob('*.tar.gz'), key=lambda p:p.stat().st_mtime)
+        while len(archives) >= 6:
+            candidates = [p for p in archives if SHA.fullmatch(p.name[:40]) and p.name[:40] not in protected]
+            if not candidates: raise RuntimeError('retired evidence ceiling is protected')
+            old = candidates[0]; safe(old); old.unlink(); archives.remove(old)
+        evidence = [result_path]
+        log = directory / 'build.log'
+        if log.exists(): safe(log); evidence.append(log)
+        if any(p.stat().st_size > 20 * 1024**2 for p in evidence):
+            raise RuntimeError('retirement evidence exceeds bound')
+        archive = history / (source + '-' + os.urandom(8).hex() + '.tar.gz')
+        digests = {}
+        for p in evidence:
+            with p.open('rb') as stream: digests[p.name] = hashlib.file_digest(stream, 'sha256').hexdigest()
+        pending = history / (source + '.pending')
+        with tarfile.open(pending, 'x:gz', compresslevel=3) as tar:
+            for p in evidence: tar.add(p, arcname=p.name, recursive=False)
+        pending.chmod(0o600)
+        with tarfile.open(pending, 'r:gz') as tar:
+            if {m.name for m in tar.getmembers()} != set(digests):
+                raise RuntimeError('retirement archive inventory mismatch')
+            for member in tar.getmembers():
+                with tar.extractfile(member) as stream:
+                    if hashlib.file_digest(stream, 'sha256').hexdigest() != digests[member.name]:
+                        raise RuntimeError('retirement archive verification failed')
+        with pending.open('rb') as stream:
+            os.fsync(stream.fileno()); checksum = hashlib.file_digest(stream, 'sha256').hexdigest()
+        os.replace(pending, archive)
+        parent = os.open(history, os.O_DIRECTORY)
+        try: os.fsync(parent)
+        finally: os.close(parent)
+        shutil.rmtree(directory)
+        active = ROOT / 'active.json'
+        if active.exists():
+            safe(active)
+            if json.loads(active.read_text())['sourceSha'] == source: active.unlink()
+        return {'phase': 'retired', 'sourceSha': source, 'evidenceSha256': checksum,
+                'action': 'Terminal evidence retained under six-archive policy; no image or recovery state deleted.'}
+
+
 def readback(source):
     safe(LOCK)
     with LOCK.open('r+') as lock:
@@ -304,11 +373,12 @@ def readback(source):
 
 
 def main(args):
-    if os.geteuid() != 0 or len(args) != 2 or args[0] not in ('build', 'status', 'admit', 'readback', '_worker') or not SHA.fullmatch(args[1]):
-        raise RuntimeError('usage: hb-live-candidate build|status|admit|readback SHA40')
+    if os.geteuid() != 0 or len(args) != 2 or args[0] not in ('build', 'status', 'admit', 'readback', 'retire', '_worker') or not SHA.fullmatch(args[1]):
+        raise RuntimeError('usage: hb-live-candidate build|status|admit|readback|retire SHA40')
     os.umask(0o077)
     safe(Path(__file__).absolute()); safe(ROOT, True)
     verb, source = args; directory = ROOT / source
+    if verb == 'retire': return retire(source)
     if verb == 'readback': return readback(source)
     if verb == 'status':
         safe(directory, True)
@@ -321,8 +391,8 @@ def main(args):
     with lockpath.open('r+') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         if directory.exists(): return {'phase': 'retained', 'sourceSha': source, 'action': 'Read status; no duplicate build started.'}
-        if len([p for p in ROOT.iterdir() if p.is_dir()]) >= MAX_RECORDS:
-            raise RuntimeError('three retained builds reached; custodian must retire terminal disposable evidence before more work')
+        if len([p for p in ROOT.iterdir() if p.is_dir() and SHA.fullmatch(p.name)]) >= MAX_RECORDS:
+            raise RuntimeError('three retained builds reached; retire an unreferenced terminal build before more work')
         active = ROOT / 'active.json'
         if active.exists():
             safe(active)

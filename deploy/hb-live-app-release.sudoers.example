@@ -19,4 +19,5 @@ Defaults!/usr/local/sbin/hb-live-candidate env_delete += "PYTHONPATH PYTHONHOME 
 %hb-live-operators ALL=(root) NOPASSWD: NOSETENV: /usr/local/sbin/hb-live-candidate build *, \
     /usr/local/sbin/hb-live-candidate status *, \
     /usr/local/sbin/hb-live-candidate admit *, \
-    /usr/local/sbin/hb-live-candidate readback *
+    /usr/local/sbin/hb-live-candidate readback *, \
+    /usr/local/sbin/hb-live-candidate retire *

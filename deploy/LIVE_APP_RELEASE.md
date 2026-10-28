@@ -173,10 +173,17 @@ Bounds: one active/pending build, three retained build records, one hour,20MiB
 log,256MiB/10000 tracked source files,512MiB per Git output file,20GiB initial
 root/data reserve and a10GiB build stop floor. Successful disposable source
 contexts are removed; failed/uncertain contexts and logs remain for diagnosis.
-The three-record ceiling stops additional accumulation. A root custodian retires
-only terminal disposable build evidence after recording its result and confirming
-no pending operation depends on it; actual images and required recovery bundles
-remain under their owning retention policy. To stop a stuck build, inspect its
+The three-record ceiling stops additional accumulation. `retire SHA40` lets the appointed operator
+retire only an unreferenced terminal build. It rejects current/admitted/prior
+release sources, any source/image still referenced by a container, and pending
+work. It preserves and verifies the result/log in a root-private archive before
+removing only the derived source context/build directory. Six archives are kept;
+current recovery sources remain protected. Images, permits, deployment snapshots
+and application data are never removed. After diagnosing a terminal failed build,
+explicit retirement followed by `build` supports a fresh attempt without
+replaying uncertain work. A pending result cannot be retired: inspect the named
+job and preserve uncertainty before recovery. Actual images and required recovery
+bundles remain under their owning retention policy. To stop a stuck build, inspect its
 exact named screen and Docker process first; stop only that task, retain its
 unknown result and inspect state before any explicit retry. No timer, model
 wakeup, root shell, runner activation or automatic production promotion is added.

@@ -160,6 +160,40 @@ class AdmissionTests(unittest.TestCase):
                 command.assert_not_called()
             self.assertEqual(permit.read_bytes(),before)
 
+    def retirement_fixture(self, root, phase='failed'):
+        source=root/S;source.mkdir();(source/'result.json').write_text(json.dumps({'sourceSha':S,'phase':phase}))
+        (source/'build.log').write_text('retained diagnostic')
+        (source/'source').mkdir();(source/'source'/'public-code').write_text('reconstructible')
+        lock=root/'build.lock';lock.touch();release_lock=root/'release.lock';release_lock.touch()
+        permit=root/'permit.json';permit.write_text(json.dumps({'sourceSha':P,'priorSourceSha':'c'*40}))
+        return source,release_lock,permit
+
+    def test_retirement_preserves_failed_evidence_before_explicit_rebuild(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);source,lock,permit=self.retirement_fixture(root)
+            (root/'active.json').write_text(json.dumps({'sourceSha':S}))
+            with patch.object(m,'ROOT',root),patch.object(m,'LOCK',lock),patch.object(m,'PERMIT',permit),patch.object(m,'safe'),patch.object(m,'run',return_value=b''):
+                result=m.retire(S)
+            self.assertEqual(result['phase'],'retired');self.assertFalse(source.exists());self.assertFalse((root/'active.json').exists())
+            archives=list((root/'retired').glob('*.tar.gz'));self.assertEqual(len(archives),1)
+            import tarfile
+            with tarfile.open(archives[0]) as t:self.assertEqual(t.extractfile('build.log').read(),b'retained diagnostic')
+
+    def test_retirement_rejects_pending_current_and_runtime_references(self):
+        for case in ('pending','current','container'):
+            with tempfile.TemporaryDirectory() as d:
+                root=Path(d);source,lock,permit=self.retirement_fixture(root,'pending' if case=='pending' else 'built')
+                if case=='current':permit.write_text(json.dumps({'sourceSha':S,'priorSourceSha':P}))
+                outputs=[b'container',('image '+S).encode()] if case=='container' else [b'']
+                with patch.object(m,'ROOT',root),patch.object(m,'LOCK',lock),patch.object(m,'PERMIT',permit),patch.object(m,'safe'),patch.object(m,'run',side_effect=outputs),self.subTest(case=case),self.assertRaises(RuntimeError):m.retire(S)
+                self.assertTrue((source/'build.log').exists())
+
+    def test_retirement_does_not_overwrite_uncertain_archive(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);source,lock,permit=self.retirement_fixture(root);history=root/'retired';history.mkdir();pending=history/(S+'.pending');pending.write_bytes(b'uncertain')
+            with patch.object(m,'ROOT',root),patch.object(m,'LOCK',lock),patch.object(m,'PERMIT',permit),patch.object(m,'safe'),patch.object(m,'run',return_value=b''),self.assertRaises(FileExistsError):m.retire(S)
+            self.assertEqual(pending.read_bytes(),b'uncertain');self.assertTrue(source.exists())
+
     def test_runtime_readback_never_serializes_environment_or_participant_data(self):
         with tempfile.TemporaryDirectory() as d:
             lock = Path(d)/'lock';lock.touch()
