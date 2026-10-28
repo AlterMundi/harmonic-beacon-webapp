@@ -607,9 +607,9 @@ export const messages: Record<UiLocale, Messages> = {
             globalNorth: 'Norte Global',
             globalSouth: 'Sur Global',
             experienceEyebrow: 'LA EXPERIENCIA',
-            experienceHeading: 'Proyección del Mito Personal',
+            experienceHeading: 'Proyección Armónica del Mito',
             experienceBody: 'Conocé la práctica que inspira estos encuentros: un recorrido guiado a través del cuerpo, el sonido y el lenguaje simbólico de tus propias imágenes.',
-            experienceLink: 'Conocer la Proyección del Mito',
+            experienceLink: 'Conocer la Proyección Armónica del Mito',
         },
         ticketLogin: {
             accountRequired: 'Primero ingresá con tu cuenta de Harmonic Beacon. Después vinculás tu entrada una sola vez.',
@@ -1235,9 +1235,9 @@ export const messages: Record<UiLocale, Messages> = {
             globalNorth: 'Global North',
             globalSouth: 'Global South',
             experienceEyebrow: 'THE EXPERIENCE',
-            experienceHeading: 'Personal Myth Projection',
+            experienceHeading: 'Harmonic Myth Projection',
             experienceBody: 'Discover the practice behind these gatherings: a guided journey through the body, sound, and the symbolic language of your own images.',
-            experienceLink: 'Explore Personal Myth Projection',
+            experienceLink: 'Explore Harmonic Myth Projection',
         },
         ticketLogin: {
             accountRequired: 'Sign in with your Harmonic Beacon account first. Then bind your ticket once.',
