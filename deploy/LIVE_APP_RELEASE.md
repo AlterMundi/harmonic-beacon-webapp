@@ -2,7 +2,7 @@
 
 This path updates the app image while retaining the existing media staging
 configuration. A closed optional permit can also update tapestry when its
-dependency artifact is part of the same qualified change. It is owner-operated as root, with no runner sudo grant. It does
+dependency artifact is part of the same qualified change. It runs through the root-owned helper, with no runner sudo grant. It does
 not replace the original installed #590 helper or its recovery state.
 
 Install the reviewed `hb-live-app-release.py` as
@@ -99,3 +99,113 @@ identities must remain unchanged and running during the operation. It does not
 waive staging rehearsal, exact image identity, rollback, or the future-event
 window. Never infer this authorization from general host access. Existing permit
 files without this field keep the normal no-live-session restriction.
+
+## Appointed Unix operators
+
+Staff API authority does not include image delivery. For an operator appointed
+by the human, install the exact command grant in
+`deploy/hb-live-app-release.sudoers.example` as root-owned mode0440 and validate
+it with `visudo -cf` before adoption. Add only that operator's existing Unix
+account to the local `hb-live-operators` group. Reuse its existing SSH identity;
+do not grant Docker access, a root shell, environment overrides, or write access
+to helpers, permits, engine bundles or transaction evidence.
+
+The ten explicit environment/verb invocations reuse the reviewed helper. They
+allow preparing, applying, inspecting and recovering the current root-admitted
+image set; they do not admit new image identities or build source. The root
+custodian still qualifies/builds the source and admits its exact image permit.
+An operator can execute the complete staging rollback/forward and production
+transaction after admission. Record this distinction: command installation is
+not independent build/admission capability or real receiving acceptance.
+
+Before replacing a previous permit, hold the shared app-bridge operation lock,
+preserve its exact bytes and engine/wrapper bundle with its recovery record,
+and verify the previous transaction is terminal while still holding that lock.
+Keep active and previous images independently retained. Never replace a permit
+while another operator is preparing/applying/recovering its transaction. Current
+status, image/provenance checks and activity controls remain mandatory. Removing
+the group membership revokes this host delivery grant; it does not revoke the
+separate Staff credential.
+
+Build work uses a named host screen/tmux session, retained exit status and a
+bounded log. Place its tracked context on the data filesystem. Retain source
+identity, artifact digest and necessary recovery evidence, then remove the
+disposable context/archive after successful image qualification. The existing
+storage maintainer owns eligible image/cache retention; never prune required
+rollback images to make capacity checks pass.
+
+## Bounded operator build and admission
+
+Install the reviewed `deploy/hb-live-candidate.py` as root-owned mode0755
+`/usr/local/sbin/hb-live-candidate`. Create root-owned mode0700
+`/mnt/beacon-data/builds/live-operator` and a root-owned mode0600 `build.lock`
+inside it. Validate/adopt the same sudoers template above only for appointed
+operators. Helpers, permits, logs and recovery snapshots remain root-private.
+
+The additional exact helper supports `build SHA40`, `status SHA40` and
+`admit SHA40`, plus `readback SHA40` for a bounded runtime/agenda snapshot.
+The snapshot exposes only selected container/image/source identities, health and
+non-PII scheduling counts; it contains no environment or raw diagnostics. It accepts only the current protected `release` head, a uniquely
+merged PR and the successful GitHub Actions `delivery-gate-release` on that
+PR's exact head. Admission additionally verifies the trusted gate workflow/event/base,
+the actual current CI attempt and its GitHub Actions aggregate check, and equality
+of the merged source tree with that qualified head. Fixed GitHub HTTPS reads and the fixed public repository fetch
+independently verify caller-supplied identities. Neither caller paths, Docker
+arguments, image files, source archives, environments nor arbitrary commands
+are accepted. App-only compatibility rejects changed dependencies, migrations,
+build/Compose definitions and media services. Broader changes use their owning
+reviewed adapters rather than weakening this restriction.
+
+`build` starts a named finite host screen job and returns. `status` reports its
+retained result; a pending result does not prove the job is running. An existing
+source never starts another build automatically. The exact image is built from
+a root-owned source, carries the source label and baked SHA, and passes a
+non-root public-assets read before admission. `admit` requalifies the source,
+holds the shared release lock, preserves the previous permit/bundle and prior
+image independently, and writes the new closed23-hour image-pair permit. A
+replay cannot renew or replace an existing admitted transaction. The result binds
+the production image/source and verified migration coordinate; admission rejects
+a changed base/schema under the release lock. If staging
+currently runs a different pending release, recover it with its existing permit
+before admission of the next source; never edit an active transaction.
+
+Bounds: one active/pending build, three retained build records, one hour,20MiB
+log,256MiB/10000 tracked source files,512MiB per Git output file,20GiB initial
+root/data reserve and a10GiB build stop floor. Successful disposable source
+contexts are removed; failed/uncertain contexts and logs remain for diagnosis.
+The three-record ceiling stops additional accumulation. `retire SHA40` lets the appointed operator
+retire only an unreferenced terminal build. It rejects current/admitted/prior
+release sources, any source/image still referenced by a container, and pending
+work. It preserves and verifies the result/log in a root-private archive before
+removing only the derived source context/build directory. Six archives are kept;
+current recovery sources remain protected. Images, permits, deployment snapshots
+and application data are never removed. After diagnosing a terminal failed build,
+explicit retirement followed by `build` supports a fresh attempt without
+replaying uncertain work. A pending result cannot be retired: inspect the named
+job and preserve uncertainty before recovery. Actual images and required recovery
+bundles remain under their owning retention policy. To stop a stuck build, inspect its
+exact named screen and Docker process first; stop only that task, retain its
+unknown result and inspect state before any explicit retry. No timer, model
+wakeup, root shell, runner activation or automatic production promotion is added.
+
+Receiving sequence over the operator's existing SSH route:
+
+```text
+sudo -n /usr/local/sbin/hb-live-candidate readback SHA40
+sudo -n /usr/local/sbin/hb-live-candidate build SHA40
+sudo -n /usr/local/sbin/hb-live-candidate status SHA40
+sudo -n /usr/local/sbin/hb-live-candidate admit SHA40
+sudo -n /usr/local/sbin/hb-live-app-release staging prepare
+sudo -n /usr/local/sbin/hb-live-app-release staging apply
+sudo -n /usr/local/sbin/hb-live-app-release staging rollback
+sudo -n /usr/local/sbin/hb-live-app-release staging prepare
+sudo -n /usr/local/sbin/hb-live-app-release staging apply
+```
+
+Verify staging provenance and actual changed behavior. Confirm the live activity,
+next event and externally announced24-hour window before production prepare/apply.
+Read back public production health/readiness and exact image identity. An installed
+grant is not acceptance: the receiving operator must exercise build, admission
+and staging recovery using its own authenticated route before autonomous delivery
+is claimed. Listen has a separate root-owner delivery path; this helper cannot
+build/admit or replace Listen, Account, workers, media or databases.
