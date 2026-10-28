@@ -24,6 +24,9 @@ const runtimeTables = [
   'beacon_oauth_refresh_tokens',
   'beacon_oauth_access_tokens',
   'beacon_oauth_consents',
+  'beacon_oauth_resources',
+  'beacon_oauth_client_resources',
+  'beacon_oauth_client_assertions',
   'beacon_jwks',
 ];
 

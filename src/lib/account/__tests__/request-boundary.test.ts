@@ -79,6 +79,11 @@ describe('Account OAuth confidential-client request boundary', () => {
             ['/api/account/auth/verify-email', 'GET'],
             ['/api/account/auth/get-session', 'GET'],
             ['/api/account/auth/sign-up/email', 'GET'],
+            ['/api/account/auth/oauth2/resource/create', 'POST'],
+            ['/api/account/auth/oauth2/resources', 'GET'],
+            ['/api/account/auth/oauth2/client/register', 'POST'],
+            ['/api/account/auth/oauth2/register', 'POST'],
+            ['/api/account/auth/oauth2/par', 'POST'],
         ]) await expect(accountRequestAllowed(request(path, method))).resolves.toBe(false);
     });
 

@@ -68,7 +68,8 @@ describe('pinned Better Auth magic-link protocol', () => {
         const token = new URL(deliveredURL).searchParams.get('token')!;
 
         expect(state.database.verification).toHaveLength(1);
-        expect(state.database.verification[0].identifier).toBe(hashEarlyBirdMagicLinkToken(token));
+        expect(state.database.verification[0].identifier).toBe(`magic-link:${hashEarlyBirdMagicLinkToken(token)}`);
+        expect(JSON.parse(state.database.verification[0].value as string)).toMatchObject({ type: 'magic-link' });
         expect(JSON.stringify(state.database.verification)).not.toContain(token);
 
         const response = await state.auth.handler(new Request(deliveredURL));
@@ -98,6 +99,31 @@ describe('pinned Better Auth magic-link protocol', () => {
         expect(alteredResponse.status).toBe(302);
         expect(alteredResponse.headers.get('location')).toContain('error=INVALID_TOKEN');
         expect(state.database.session).toHaveLength(sessionsAfterFirstUse);
+    });
+
+    it('rejects untyped pre-upgrade records and cross-purpose state without creating an account', async () => {
+        const state = protocol();
+        await requestLink(state.auth);
+        const deliveredURL = state.deliveredURL();
+        const token = new URL(deliveredURL).searchParams.get('token')!;
+        const record = state.database.verification[0];
+        const legacyValue = JSON.parse(record.value as string);
+        delete legacyValue.type;
+        // A pending 1.6 link must restart at the coordinated cutover. Do not
+        // restore the untyped fallback removed by the security update.
+        record.identifier = hashEarlyBirdMagicLinkToken(token);
+        record.value = JSON.stringify(legacyValue);
+        const legacy = await state.auth.handler(new Request(deliveredURL));
+        expect(legacy.headers.get('location')).toContain('error=INVALID_TOKEN');
+        expect(state.database.user).toHaveLength(0);
+        expect(state.database.session).toHaveLength(0);
+
+        record.identifier = `magic-link:${hashEarlyBirdMagicLinkToken(token)}`;
+        record.value = JSON.stringify({ ...legacyValue, type: 'authorization_code' });
+        const crossPurpose = await state.auth.handler(new Request(deliveredURL));
+        expect(crossPurpose.headers.get('location')).toContain('error=INVALID_TOKEN');
+        expect(state.database.user).toHaveLength(0);
+        expect(state.database.session).toHaveLength(0);
     });
 
     it('rejects an expired token without creating a user or session', async () => {
