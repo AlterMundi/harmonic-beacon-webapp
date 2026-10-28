@@ -658,61 +658,77 @@ model ListenerAccountSubject {
 // Better Auth OAuth Provider storage. Clients are provisioned from the exact
 // static contract; dynamic registration remains disabled.
 model BeaconOAuthClient {
-  id                      String         @id
-  clientId                String         @unique @map("client_id")
-  clientSecret            String?        @map("client_secret") @db.Text
-  disabled                Boolean        @default(false)
-  skipConsent             Boolean?       @map("skip_consent")
-  enableEndSession        Boolean?       @map("enable_end_session")
-  subjectType             String?        @map("subject_type")
-  scopes                  String[]
-  userId                  String?        @map("user_id")
-  user                    EarlyBirdUser? @relation(fields: [userId], references: [id], onDelete: SetNull)
-  createdAt               DateTime       @default(now()) @map("created_at")
-  updatedAt               DateTime       @updatedAt @map("updated_at")
-  name                    String?
-  uri                     String?
-  icon                    String?
-  contacts                String[]
-  tos                     String?
-  policy                  String?
-  softwareId              String?        @map("software_id")
-  softwareVersion         String?        @map("software_version")
-  softwareStatement       String?        @map("software_statement") @db.Text
-  redirectUris            String[]       @map("redirect_uris")
-  postLogoutRedirectUris  String[]       @map("post_logout_redirect_uris")
-  tokenEndpointAuthMethod String?        @map("token_endpoint_auth_method")
-  grantTypes              String[]       @map("grant_types")
-  responseTypes           String[]       @map("response_types")
-  public                  Boolean        @default(false)
-  type                    String?
-  requirePKCE             Boolean        @default(true) @map("require_pkce")
-  referenceId             String?        @map("reference_id")
-  metadata                Json?
+  id                               String         @id
+  clientId                         String         @unique @map("client_id")
+  clientSecret                     String?        @map("client_secret") @db.Text
+  clientDiscoveryId                String?        @map("client_discovery_id")
+  disabled                         Boolean        @default(false)
+  skipConsent                      Boolean?       @map("skip_consent")
+  enableEndSession                 Boolean?       @map("enable_end_session")
+  subjectType                      String?        @map("subject_type")
+  scopes                           String[]
+  clientCredentialsScopes          String[]       @default([]) @map("client_credentials_scopes")
+  userId                           String?        @map("user_id")
+  user                             EarlyBirdUser? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt                        DateTime       @default(now()) @map("created_at")
+  updatedAt                        DateTime       @updatedAt @map("updated_at")
+  name                             String?
+  uri                              String?
+  icon                             String?
+  contacts                         String[]
+  tos                              String?
+  policy                           String?
+  softwareId                       String?        @map("software_id")
+  softwareVersion                  String?        @map("software_version")
+  softwareStatement                String?        @map("software_statement") @db.Text
+  redirectUris                     String[]       @map("redirect_uris")
+  postLogoutRedirectUris           String[]       @map("post_logout_redirect_uris")
+  backchannelLogoutUri             String?        @map("backchannel_logout_uri")
+  backchannelLogoutSessionRequired Boolean?       @map("backchannel_logout_session_required")
+  tokenEndpointAuthMethod          String?        @map("token_endpoint_auth_method")
+  applicationType                  String?        @map("application_type")
+  jwks                             String?        @db.Text
+  jwksUri                          String?        @map("jwks_uri")
+  grantTypes                       String[]       @map("grant_types")
+  responseTypes                    String[]       @map("response_types")
+  public                           Boolean        @default(false)
+  type                             String?
+  requirePKCE                      Boolean        @default(true) @map("require_pkce")
+  dpopBoundAccessTokens            Boolean        @default(false) @map("dpop_bound_access_tokens")
+  referenceId                      String?        @map("reference_id")
+  metadata                         Json?
 
   refreshTokens BeaconOAuthRefreshToken[]
   accessTokens  BeaconOAuthAccessToken[]
   consents      BeaconOAuthConsent[]
+  resourceLinks BeaconOAuthClientResource[]
 
   @@index([userId])
   @@map("beacon_oauth_clients")
 }
 
 model BeaconOAuthRefreshToken {
-  id          String                @id
-  token       String                @unique @db.Text
-  clientId    String                @map("client_id")
-  client      BeaconOAuthClient     @relation(fields: [clientId], references: [clientId], onDelete: Cascade)
-  sessionId   String?               @map("session_id")
-  session     EarlyBirdAuthSession? @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  userId      String                @map("user_id")
-  user        EarlyBirdUser         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  referenceId String?               @map("reference_id")
-  expiresAt   DateTime              @map("expires_at")
-  createdAt   DateTime              @default(now()) @map("created_at")
-  revoked     DateTime?
-  authTime    DateTime?             @map("auth_time")
-  scopes      String[]
+  id                      String                @id
+  token                   String                @unique @db.Text
+  clientId                String                @map("client_id")
+  client                  BeaconOAuthClient     @relation(fields: [clientId], references: [clientId], onDelete: Cascade)
+  sessionId               String?               @map("session_id")
+  session                 EarlyBirdAuthSession? @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  userId                  String                @map("user_id")
+  user                    EarlyBirdUser         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  referenceId             String?               @map("reference_id")
+  authorizationCodeId     String?               @map("authorization_code_id")
+  resources               String[]              @default([])
+  requestedUserInfoClaims String[]              @default([]) @map("requested_user_info_claims")
+  expiresAt               DateTime              @map("expires_at")
+  createdAt               DateTime              @default(now()) @map("created_at")
+  revoked                 DateTime?
+  rotatedAt               DateTime?             @map("rotated_at")
+  rotationReplayResponse  String?               @map("rotation_replay_response") @db.Text
+  rotationReplayExpiresAt DateTime?             @map("rotation_replay_expires_at")
+  confirmation            Json?
+  authTime                DateTime?             @map("auth_time")
+  scopes                  String[]
 
   accessTokens BeaconOAuthAccessToken[]
 
@@ -721,47 +737,101 @@ model BeaconOAuthRefreshToken {
   @@index([userId])
   @@index([expiresAt])
   @@index([revoked])
+  @@index([authorizationCodeId])
   @@map("beacon_oauth_refresh_tokens")
 }
 
 model BeaconOAuthAccessToken {
-  id          String                   @id
-  token       String                   @unique @db.Text
-  clientId    String                   @map("client_id")
-  client      BeaconOAuthClient        @relation(fields: [clientId], references: [clientId], onDelete: Cascade)
-  sessionId   String?                  @map("session_id")
-  session     EarlyBirdAuthSession?    @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  userId      String?                  @map("user_id")
-  user        EarlyBirdUser?           @relation(fields: [userId], references: [id], onDelete: SetNull)
-  referenceId String?                  @map("reference_id")
-  refreshId   String?                  @map("refresh_id")
-  refresh     BeaconOAuthRefreshToken? @relation(fields: [refreshId], references: [id], onDelete: SetNull)
-  expiresAt   DateTime                 @map("expires_at")
-  createdAt   DateTime                 @default(now()) @map("created_at")
-  scopes      String[]
+  id                      String                   @id
+  token                   String                   @unique @db.Text
+  clientId                String                   @map("client_id")
+  client                  BeaconOAuthClient        @relation(fields: [clientId], references: [clientId], onDelete: Cascade)
+  sessionId               String?                  @map("session_id")
+  session                 EarlyBirdAuthSession?    @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  userId                  String?                  @map("user_id")
+  user                    EarlyBirdUser?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  referenceId             String?                  @map("reference_id")
+  authorizationCodeId     String?                  @map("authorization_code_id")
+  resources               String[]                 @default([])
+  requestedUserInfoClaims String[]                 @default([]) @map("requested_user_info_claims")
+  revoked                 DateTime?
+  confirmation            Json?
+  refreshId               String?                  @map("refresh_id")
+  refresh                 BeaconOAuthRefreshToken? @relation(fields: [refreshId], references: [id], onDelete: SetNull)
+  expiresAt               DateTime                 @map("expires_at")
+  createdAt               DateTime                 @default(now()) @map("created_at")
+  scopes                  String[]
 
   @@index([clientId])
   @@index([sessionId])
   @@index([userId])
   @@index([refreshId])
   @@index([expiresAt])
+  @@index([authorizationCodeId])
   @@map("beacon_oauth_access_tokens")
 }
 
 model BeaconOAuthConsent {
-  id          String            @id
-  clientId    String            @map("client_id")
-  client      BeaconOAuthClient @relation(fields: [clientId], references: [clientId], onDelete: Cascade)
-  userId      String?           @map("user_id")
-  user        EarlyBirdUser?    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  referenceId String?           @map("reference_id")
-  scopes      String[]
-  createdAt   DateTime          @default(now()) @map("created_at")
-  updatedAt   DateTime          @updatedAt @map("updated_at")
+  id                      String            @id
+  clientId                String            @map("client_id")
+  client                  BeaconOAuthClient @relation(fields: [clientId], references: [clientId], onDelete: Cascade)
+  userId                  String?           @map("user_id")
+  user                    EarlyBirdUser?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  referenceId             String?           @map("reference_id")
+  scopes                  String[]
+  resources               String[]          @default([])
+  requestedUserInfoClaims String[]          @default([]) @map("requested_user_info_claims")
+  createdAt               DateTime          @default(now()) @map("created_at")
+  updatedAt               DateTime          @updatedAt @map("updated_at")
 
   @@index([clientId])
   @@index([userId])
   @@map("beacon_oauth_consents")
+}
+
+// Additive provider storage. Account's exact route allowlist continues to deny
+// resource/client management, assertions and unselected grant types.
+model BeaconOAuthResource {
+  id                            String                      @id
+  identifier                    String                      @unique
+  name                          String
+  accessTokenTtl                Int?                        @map("access_token_ttl")
+  refreshTokenTtl               Int?                        @map("refresh_token_ttl")
+  signingAlgorithm              String?                     @map("signing_algorithm")
+  signingKeyId                  String?                     @map("signing_key_id")
+  allowedScopes                 String[]                    @map("allowed_scopes")
+  customClaims                  Json?                       @map("custom_claims")
+  dpopBoundAccessTokensRequired Boolean                     @default(false) @map("dpop_bound_access_tokens_required")
+  disabled                      Boolean                     @default(false)
+  createdAt                     DateTime?                   @map("created_at")
+  updatedAt                     DateTime?                   @map("updated_at")
+  policyVersion                 Int                         @default(1) @map("policy_version")
+  metadata                      Json?
+  clients                       BeaconOAuthClientResource[]
+
+  @@map("beacon_oauth_resources")
+}
+
+model BeaconOAuthClientResource {
+  id         String              @id
+  clientId   String              @map("client_id")
+  client     BeaconOAuthClient   @relation(fields: [clientId], references: [clientId], onDelete: Cascade)
+  resourceId String              @map("resource_id")
+  resource   BeaconOAuthResource @relation(fields: [resourceId], references: [identifier], onDelete: Cascade)
+  metadata   Json?
+  createdAt  DateTime?           @map("created_at")
+
+  @@unique([clientId, resourceId])
+  @@index([clientId])
+  @@index([resourceId])
+  @@map("beacon_oauth_client_resources")
+}
+
+model BeaconOAuthClientAssertion {
+  id        String   @id
+  expiresAt DateTime @map("expires_at")
+
+  @@map("beacon_oauth_client_assertions")
 }
 
 model BeaconJwks {
@@ -770,6 +840,8 @@ model BeaconJwks {
   privateKey String    @map("private_key") @db.Text
   createdAt  DateTime  @map("created_at")
   expiresAt  DateTime? @map("expires_at")
+  alg        String?
+  crv        String?
 
   @@index([expiresAt])
   @@map("beacon_jwks")

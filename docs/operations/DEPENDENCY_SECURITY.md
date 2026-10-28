@@ -25,17 +25,58 @@ The temporary Prisma/deepmerge exception is retired. `npm run audit:production`
 now rejects every high or critical production-tree advisory without exceptions.
 Do not renew an expiry or suppress a new advisory to qualify an artifact.
 
-## Remaining OAuth-provider finding
+## OAuth-provider migration (#640)
 
-The moderate [GHSA-p2fr-6hmx-4528](https://github.com/advisories/GHSA-p2fr-6hmx-4528)
-remains reported for OAuth-provider 1.6.30. Account uses the upstream workaround:
-no custom `validAudiences`, so only its default base URL and OIDC userinfo
-resource are accepted. Authorization-code flow, opaque userinfo access tokens,
-and separately verified ID tokens remain unchanged. The PostgreSQL handler
-regression must reject an unrelated resource. This is a workaround, not a patched
-package or proof that RFC 8707 grant binding is fixed. Provider 1.7 requires a
-schema migration and changed resource semantics; deliver that as a separate
-identity change.
+This separate identity candidate pins Better Auth and OAuth Provider to 1.7.14,
+with the matching core/adapters and verified npm lock. It supersedes the 1.6.30
+package workaround for [resource binding](https://github.com/advisories/GHSA-p2fr-6hmx-4528)
+and includes the upstream [Magic Link](https://github.com/advisories/GHSA-965c-763c-88jm)
+and [OAuth Proxy](https://github.com/advisories/GHSA-r4xp-prcw-77qf) fixes. Package
+matching alone does not establish that the previous deployed configuration was
+exploitable. Keep this migration separate from the Live app-only room delivery.
+
+Apply `20261028100000_account_oauth_provider_17` and
+`20261028100500_account_jwt_key_metadata` before selecting the new Account
+and Listener images. Their transactions add storage without dropping or rewriting
+historical clients, sessions, token verifiers or consent. New resource/client
+link tables start empty; no resource or permission is backfilled. Existing
+session-deletion cascades, confidential static clients, PKCE, grant selection and
+the exact public endpoint allowlist stay enforced. The updated Account role
+provisioner grants only its explicit runtime table inventory, including the
+three new provider tables; it does not grant general/default table access.
+JWT metadata starts null for prior keys. The existing configured EdDSA/Ed25519
+fallback retains their bytes and IDs rather than generating replacement keys.
+
+Qualify ordinary authorization-code/opaque-userinfo/ID-token flows and reject
+ungranted resource indicators with `invalid_target`. Test the new resource
+constraints and partial-DDL failure, preserved pre-upgrade signed sessions and
+opaque tokens, revocation, and Listener's dual-cookie bridge on real PostgreSQL.
+
+### Magic Link cutover
+
+The upstream namespace is now `magic-link:<custom SHA256 hex>`, with a typed
+`magic-link` payload. Retain the existing custom hash and delivery idempotency;
+do not enable global identifier hashing for Listener or restore an untyped
+cross-purpose fallback. Upgrade every server sharing verification storage in
+one coordinated cutover. Existing authenticated sessions and token verifiers
+remain intact. Pending pre-upgrade Magic Links must be requested again, as
+specified by the [upstream release guidance](https://github.com/better-auth/better-auth/releases/tag/v1.7.7).
+Their current lifetime is ten minutes. Announce this bounded interruption and
+verify the application's invalid/expired-link recovery. Preserve old records
+until ordinary expiry; do not rewrite them into trusted typed records, replay
+queued mail, or resend links automatically. Restart incomplete OAuth/SAML sign-in
+flows when required by that guidance.
+
+### Recovery
+
+Prove backup/restore and exact-image recovery on the isolated staging services.
+Rollback selects the retained prior application images while keeping the additive
+columns/tables and new evidence; never drop the new storage or restore a stale
+database over later sessions. Old-style writes remain compatible, but reverting
+the auth image reintroduces its old package advisories. Retain the qualified
+forward candidate and the coordinated verification-storage cutover record.
+Only the owning operator's actual staged and production receipts establish
+delivery; a clean source audit is not a runtime claim.
 
 ## Qualification and recovery
 

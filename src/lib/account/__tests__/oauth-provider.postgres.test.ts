@@ -1,6 +1,6 @@
-import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto';
 import type { PrismaClient } from '@prisma/client';
-import { createLocalJWKSet, jwtVerify } from 'jose';
+import { createLocalJWKSet, decodeProtectedHeader, jwtVerify } from 'jose';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ACCOUNT_PROVISIONED_SCOPES } from '../config';
 
@@ -27,7 +27,7 @@ function jsonRequest(path: string, body: unknown) {
     });
 }
 
-postgres('pinned OAuth Provider 1.6.30 confidential-client lifecycle', () => {
+postgres('pinned OAuth Provider 1.7 confidential-client lifecycle', () => {
     beforeAll(async () => {
         process.env.BEACON_ACCOUNT_BASE_URL = issuer;
         process.env.BEACON_ACCOUNT_AUTH_SECRET = 'handler-auth-secret-that-is-at-least-32-characters';
@@ -103,7 +103,7 @@ postgres('pinned OAuth Provider 1.6.30 confidential-client lifecycle', () => {
         });
     });
 
-    it('exchanges an auth code and rejects an unrelated access-token resource', async () => {
+    it('exchanges tokens and binds resources to the authorized grant', async () => {
         const verifier = randomBytes(48).toString('base64url');
         const challenge = createHash('sha256').update(verifier).digest('base64url');
         const authorizeURL = new URL('/api/account/auth/oauth2/authorize', issuer);
@@ -167,6 +167,18 @@ postgres('pinned OAuth Provider 1.6.30 confidential-client lifecycle', () => {
         const tokens = await token.json() as { access_token: string; id_token: string };
         expect(tokens.access_token).toMatch(/^hb_acct_p_at_/);
         expect(tokens.id_token.split('.')).toHaveLength(3);
+        // Legacy key rows have no alg/crv metadata. Keep their bytes and kid;
+        // the configured EdDSA/Ed25519 fallback must still verify issued tokens.
+        const keyId = decodeProtectedHeader(tokens.id_token).kid!;
+        const beforeKey = await prisma.beaconJwks.findUniqueOrThrow({ where: { id: keyId } });
+        await prisma.beaconJwks.update({ where: { id: keyId }, data: { alg: null, crv: null } });
+        const { accountAuth } = await import('../auth');
+        const oldKeySet = await accountAuth().api.getJwks();
+        expect((await jwtVerify(tokens.id_token, createLocalJWKSet(oldKeySet), {
+            issuer, audience: clientId, algorithms: ['EdDSA'],
+        })).payload.sub).toBe(accountId);
+        expect(await prisma.beaconJwks.findUniqueOrThrow({ where: { id: keyId } }))
+            .toMatchObject({ publicKey: beforeKey.publicKey, privateKey: beforeKey.privateKey });
 
         const introspection = await handler(new Request(`${issuer}/api/account/auth/oauth2/introspect`, {
             method: 'POST', headers: {
@@ -215,8 +227,103 @@ postgres('pinned OAuth Provider 1.6.30 confidential-client lifecycle', () => {
         }));
         expect(rejected.status).toBe(400);
         expect(await rejected.json()).toMatchObject({
-            error: 'invalid_request', error_description: 'requested resource invalid',
+            error: 'invalid_target',
         });
+        const identifier = 'https://resource.example.invalid/api';
+        const resourceId = randomUUID();
+        const otherIdentifier = 'https://other-resource.example.invalid/api';
+        const otherResourceId = randomUUID();
+        await prisma.beaconOAuthResource.create({ data: {
+            id: resourceId, identifier, name: 'Isolated resource', allowedScopes: ACCOUNT_PROVISIONED_SCOPES,
+        } });
+        await prisma.beaconOAuthClientResource.create({ data: { id: randomUUID(), clientId, resourceId: identifier } });
+        await prisma.beaconOAuthResource.create({ data: {
+            id: otherResourceId, identifier: otherIdentifier, name: 'Other isolated resource', allowedScopes: ACCOUNT_PROVISIONED_SCOPES,
+        } });
+        await prisma.beaconOAuthClientResource.create({ data: { id: randomUUID(), clientId, resourceId: otherIdentifier } });
+        try {
+            // Reuse this protocol's real signed-in browser session; repeated
+            // password attempts exercise a different production rate bucket.
+            const cookie = sessionCookie;
+            const verifier = randomBytes(48).toString('base64url');
+            const authorize = async (resource?: string) => {
+                const url = new URL('/api/account/auth/oauth2/authorize', issuer);
+                url.search = new URLSearchParams({
+                    client_id: clientId, redirect_uri: 'https://listen.harmonicbeacon.com/api/account/callback',
+                    response_type: 'code', scope: ACCOUNT_PROVISIONED_SCOPES.join(' '),
+                    state: 'resource-grant-state', nonce: 'resource-grant-nonce',
+                    code_challenge: createHash('sha256').update(verifier).digest('base64url'), code_challenge_method: 'S256',
+                    ...(resource ? { resource } : {}),
+                }).toString();
+                const response = await handler(new Request(url, { headers: { host: 'account.harmonicbeacon.com', cookie } }));
+                expect(response.status).toBe(302);
+                const code = new URL(response.headers.get('location')!).searchParams.get('code');
+                expect(code).toBeTruthy();
+                return code!;
+            };
+            const exchange = (code: string, resource = identifier) => handler(new Request(`${issuer}/api/account/auth/oauth2/token`, {
+                method: 'POST', headers: {
+                    host: 'account.harmonicbeacon.com', 'content-type': 'application/x-www-form-urlencoded',
+                    authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`,
+                }, body: new URLSearchParams({
+                    grant_type: 'authorization_code', code, code_verifier: verifier,
+                    redirect_uri: 'https://listen.harmonicbeacon.com/api/account/callback', resource,
+                }),
+            }));
+            const withoutGrant = await exchange(await authorize(identifier), otherIdentifier);
+            expect(withoutGrant.status).toBe(400);
+            expect(await withoutGrant.json()).toMatchObject({ error: 'invalid_target' });
+
+            const granted = await exchange(await authorize(identifier));
+            expect(granted.status).toBe(200);
+            const tokens = await granted.json();
+            const { accountAuth } = await import('../auth');
+            const verified = await jwtVerify(tokens.access_token, createLocalJWKSet(await accountAuth().api.getJwks()), {
+                issuer, audience: identifier, algorithms: ['EdDSA'],
+            });
+            expect(verified.payload.sub).toBe(accountId);
+        } finally {
+            await prisma.beaconOAuthResource.deleteMany({ where: { id: { in: [resourceId, otherResourceId] } } });
+        }
+    });
+
+    it('preserves a pre-upgrade signed session and opaque token, then fences them on session removal', async () => {
+        const sessionId = randomUUID();
+        const sessionToken = `legacy-session-${randomUUID()}`;
+        const opaqueToken = `legacy-opaque-${randomUUID()}`;
+        const tokenId = randomUUID();
+        const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+        // 1.6 persisted the unprefixed opaque-token SHA256/base64url verifier.
+        // Its signed session cookie uses HMAC-SHA256 and padded base64.
+        const signature = createHmac('sha256', 'handler-auth-secret-that-is-at-least-32-characters')
+            .update(sessionToken).digest('base64');
+        const cookie = `__Host-hb_account_session=${encodeURIComponent(`${sessionToken}.${signature}`)}`;
+        await prisma.earlyBirdAuthSession.create({ data: {
+            id: sessionId, token: sessionToken, userId: accountId, expiresAt,
+            securityRevision: 1, authorityEnvironment: 'production',
+        } });
+        await prisma.beaconOAuthAccessToken.create({ data: {
+            id: tokenId, token: createHash('sha256').update(opaqueToken).digest('base64url'),
+            clientId, sessionId, userId: accountId, scopes: ACCOUNT_PROVISIONED_SCOPES, expiresAt,
+        } });
+        try {
+            expect((await currentAccountSession(new Headers({ cookie })))?.user.id).toBe(accountId);
+            const request = () => new Request(`${issuer}/api/account/auth/oauth2/userinfo`, {
+                headers: { authorization: `Bearer hb_acct_p_at_${opaqueToken}` },
+            });
+            const before = await handler(request());
+            expect(before.status).toBe(200);
+            expect(await before.json()).toMatchObject({ sub: accountId });
+            expect(await prisma.beaconOAuthAccessToken.findUniqueOrThrow({ where: { id: tokenId } }))
+                .toMatchObject({ resources: [], revoked: null });
+            await prisma.earlyBirdAuthSession.delete({ where: { id: sessionId } });
+            expect(await prisma.beaconOAuthAccessToken.findUnique({ where: { id: tokenId } })).toBeNull();
+            expect((await handler(request())).status).toBe(401);
+            expect(await currentAccountSession(new Headers({ cookie }))).toBeNull();
+        } finally {
+            await prisma.beaconOAuthAccessToken.deleteMany({ where: { id: tokenId } });
+            await prisma.earlyBirdAuthSession.deleteMany({ where: { id: sessionId } });
+        }
     });
 
     it.each([
