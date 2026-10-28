@@ -21,3 +21,4 @@ ProtectKernelModules=yes
 ProtectControlGroups=yes
 RestrictAddressFamilies=AF_UNIX
 ReadWritePaths=/var/lib/harmonic-beacon /mnt/beacon-data/archives/runtime-images /run/lock
+ReadWritePaths=-/mnt/beacon-data/builds/live-operator

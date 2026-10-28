@@ -18,6 +18,7 @@ ARCHIVES = Path('/mnt/beacon-data/archives/runtime-images')
 STATE = Path('/var/lib/harmonic-beacon/storage-maintenance')
 METRICS = Path('/var/lib/harmonic-beacon/metrics/storage-maintenance.prom')
 DELIVERY_STATE = Path('/var/lib/harmonic-beacon')
+APP_PERMIT = Path('/etc/harmonic-beacon/live-app-release/permit.json')
 REPOSITORIES = {
     'harmonic-beacon/account', 'harmonic-beacon/live', 'harmonic-beacon/live-staging',
     'harmonic-beacon/app', 'harmonic-beacon/tapestry', 'harmonic-beacon/tapestry-staging',
@@ -28,6 +29,7 @@ REPOSITORIES = {
 # Existing deployment locks: do not collect while a service is changing target.
 LOCKS = [
     '/var/lib/harmonic-beacon/app-bridge/operation.lock',
+    '/mnt/beacon-data/builds/live-operator/build.lock',
     '/var/lib/harmonic-beacon/account-delivery/.delivery-production.lock',
     '/var/lib/harmonic-beacon/account-delivery/.delivery-staging.lock',
     '/var/lib/harmonic-beacon/listener-delivery/operation.lock',
@@ -135,6 +137,28 @@ def rollback_protection(images, used):
                     raise RuntimeError('Live media rollback image missing')
                 protected.add(previous)
                 covered.add(image_id)
+    # The app-only release supersedes the old media transaction for app.
+    # Preserve its admitted pair even when one is not currently container-bound.
+    if APP_PERMIT.exists():
+        info = APP_PERMIT.lstat()
+        if (APP_PERMIT.is_symlink() or not stat.S_ISREG(info.st_mode)
+                or info.st_uid != 0 or info.st_mode & 0o077 or info.st_nlink != 1
+                or info.st_size > 16384):
+            raise RuntimeError('unsafe Live app recovery permit')
+        permit = json.loads(APP_PERMIT.read_text())
+        pairs = [('candidateImageId', 'priorImageId')]
+        if 'candidateTapestryImageId' in permit or 'priorTapestryImageId' in permit:
+            pairs.append(('candidateTapestryImageId', 'priorTapestryImageId'))
+        available = {i['Id'] for i in images if not i.get('Unavailable')}
+        for candidate_key, previous_key in pairs:
+            candidate, previous = permit.get(candidate_key), permit.get(previous_key)
+            if any(not isinstance(v, str) or not re.fullmatch('sha256:[a-f0-9]{64}', v)
+                   for v in (candidate, previous)) or candidate == previous:
+                raise RuntimeError('invalid Live app recovery image pair')
+            if not {candidate, previous}.issubset(available):
+                raise RuntimeError('Live app recovery image missing')
+            protected.update((candidate, previous))
+            covered.update({candidate, previous}.intersection(used))
     supported = set()
     for repo in REPOSITORIES:
         active = {i['Id'] for i in images if i.get('Running') and

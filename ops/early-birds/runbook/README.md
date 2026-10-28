@@ -118,7 +118,10 @@ The policy:
 - Retain all container-bound images, explicit rollback tags, the newest three
   images per service repository, and images younger than three days. Resolve
   rollback images from Account delivery records bound to active images,
-  Listener production/staging records, and the fixed Live/media transaction.
+  Listener production/staging records, the fixed Live/media transaction, and
+  the current root-private Live app permit (including its optional tapestry pair).
+  Both admitted images must remain available; missing or malformed evidence
+  stops collection. The app candidate build lock also excludes maintenance.
   Preserve an entire repository when any active image lacks recovery evidence.
   A running container whose image-store metadata is missing also stays protected;
   it is not a usable recovery image. Analytics/PMP images remain untouched until
@@ -492,3 +495,22 @@ Before first activation, retain the prior configuration and validate with
 logs, open descriptors on the new log inode, service health and the next timer
 invocation. Never truncate an active log or delete logs merely to meet a free
 space threshold. Standard system rotation state prevents duplicate rotations.
+
+### cAdvisor log capacity
+
+cAdvisor uses Docker json-file rotation at 10 MiB per file, three files. Existing
+containers retain their original logging configuration until explicitly recreated.
+For an authorized storage repair, preserve a bounded recent diagnostic log, inspect
+the exact running Compose file and service, then replace only `cadvisor` with
+`docker compose --env-file <existing-root-env> -f <existing-compose> -f <reviewed-logging-override> up -d --no-deps --no-build --pull never cadvisor`.
+The override changes logging only. Preserve the prior configuration and exact
+image; compare the fully resolved service with logging removed before applying.
+Verify the new container's log configuration, actual Prometheus scrape recovery,
+unchanged peer container IDs and public readiness. Do not truncate Docker-owned
+open log files or recreate application, media, database or alert-routing services
+for this repair. The old unbounded accumulated log is disposable diagnostic output;
+retain only the last 1000 lines, at most 8 MiB, root-private, for seven days
+at `/var/lib/harmonic-beacon/storage-relief-diagnostics/cadvisor.log`. Install
+`tmpfiles.d/harmonic-beacon-storage-diagnostics.conf` in `/etc/tmpfiles.d/` and
+verify the existing `systemd-tmpfiles-clean.timer`; the diagnostic directory
+contains only that replaceable file, never manifests or recovery state.
