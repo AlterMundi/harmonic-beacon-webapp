@@ -204,7 +204,8 @@ for (const includeFirefox of ['0', '1']) test(`Account collection preserves exac
             'denied VIDEO locale changes do not retry capture',
             'locale preserves real LiveKit playback',
             'cancelled exits preserve real media, state and focus',
-            'sign-out waits for confirmation and revokes once',
+            // Account navigation returns only after a confirmed room exit.
+            'sign-out follows confirmed room exit and revokes once',
             'server removal dismisses a pending guard and restores a guarded room',
             'Back cancellation and native unload retain real playback',
         ].map(suffix => `live continuity without capture: full-stack ${role} ${suffix}`)),
