@@ -25,6 +25,15 @@ The separate `listener-delivery/v1` runner contract remains inactive until its
 external installation and protected-runner setup are complete. Owner operation
 does not install or activate that automation or expand another operator's grants.
 
+For subsequent releases while Account is already enabled, retain the existing
+root-owned relying-party bundle and run `preflight.sh <sha40>` followed by
+`activate.sh <sha40>`. `prepare.sh` is first-cutover preparation and deliberately
+rejects an Account-enabled runtime; do not disable Account to update an app.
+When a candidate adds a public route, install its reviewed exact Nginx location
+on isolated staging first, test the actual HTTPS boundary, then apply the same
+bounded location to production with `nginx -t` and a reload. Keep a copy of the
+prior vhost for recovery; app activation does not update host Nginx.
+
 ## Preparation and activation
 
 1. Build the exact reviewed `early-birds` SHA as
