@@ -18,6 +18,11 @@ unrelated host services, private data, existing resource grants and each person'
 identity. No conversational-bot permission expansion follows from this appointment.
 A separate provider or merchant's authority remains with that resource's owner.
 
+The full operator may maintain and renew its own dedicated machine credential
+through the supported root issuer/revocation path under this standing appointment;
+credential expiry does not require CompAII to intervene. Preserve issuance/revocation
+audits and never reuse a human token.
+
 Sai's existing human Staff identity retains FACILITATOR_OP: it combines the global
 staff capabilities with facilitator treatment on assigned events. Machine Staff
 ADMIN profiles remain separate, revocable and audited; never replace a human
