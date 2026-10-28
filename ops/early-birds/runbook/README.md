@@ -115,7 +115,7 @@ The policy:
 - Retire only exact reclaimable, unshared BuildKit cache IDs older than 72 hours
   (without an age delay below 30% free, once delivery locks are available), with a second inventory check. Verify image IDs did
   not change. Never prune volumes, containers, shared cache or unrelated repos.
-- Retain all container-bound images, explicit rollback tags, the newest three
+- Retain all container-bound images, unknown/manual rollback tags, the newest three
   images per service repository, and images younger than three days. Resolve
   rollback images from Account delivery records bound to active images,
   Listener production/staging records, the fixed Live/media transaction, and
@@ -123,6 +123,10 @@ The policy:
   Both admitted images must remain available; missing or malformed evidence
   stops collection. The app candidate build lock also excludes maintenance.
   Preserve an entire repository when any active image lacks recovery evidence.
+  The Live helper’s generated `rollback-<SHA40>` tags may age out only under
+  this same repository coverage, exact admitted-pair, newest-three and age policy;
+  a superseded generated tag must not pin every release forever. Other rollback
+  tag shapes remain protected.
   A running container whose image-store metadata is missing also stays protected;
   it is not a usable recovery image. Analytics/PMP images remain untouched until
   their own delivery records can be bound by a supported adapter.

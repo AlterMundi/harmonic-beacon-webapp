@@ -180,7 +180,9 @@ def selection(images, used, now, rollback_ids=None):
         tags = image.get('RepoTags') or []
         repos = {tag.rsplit(':', 1)[0] for tag in tags}
         if (not tags or not repos.issubset(REPOSITORIES)
-                or any(not re.fullmatch('[a-f0-9]{7}|[a-f0-9]{40}', t.rsplit(':', 1)[1]) for t in tags)):
+                or any(not re.fullmatch('[a-f0-9]{7}|[a-f0-9]{40}' +
+                                      ('|rollback-[a-f0-9]{40}' if t.rsplit(':', 1)[0] == 'harmonic-beacon/live' else ''),
+                                      t.rsplit(':', 1)[1]) for t in tags)):
             protected.add(image['Id'])
         for repo in repos.intersection(REPOSITORIES):
             groups[repo].append(image)
