@@ -343,7 +343,7 @@ describe('Main browser CI execution policy', () => {
 });
 
 describe('Live batch executable CI discovery', () => {
-    it('collects all sixteen isolated helper browser regressions, outside the main testDir', () => {
+    it('collects all eighteen isolated helper browser regressions, outside the main testDir', () => {
         expect(existsSync(helperConfig), 'dedicated helper discovery config is missing').toBe(true);
         const report = JSON.parse(execFileSync(process.execPath, [
             'node_modules/@playwright/test/cli.js', 'test', '--config', helperConfig, '--list', '--reporter=json',
@@ -357,8 +357,11 @@ describe('Live batch executable CI discovery', () => {
             }
         };
         visit(report.suites);
-        expect(titles).toHaveLength(16);
+        expect(titles).toHaveLength(18);
         expect(titles).toContain('rejects a delayed second owner; disconnect=true');
+        for (const navigate of ['true', 'false']) {
+            expect(titles).toContain(`a detached room qualifies only after the confirmed parent reaches the session list; navigate=${navigate}`);
+        }
         expect(report.config.projects).toHaveLength(1);
         expect(report.config.projects[0].name).toBe('chromium');
         expect(report.config.projects[0].retries).toBe(0);
