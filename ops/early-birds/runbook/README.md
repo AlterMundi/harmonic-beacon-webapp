@@ -509,4 +509,8 @@ Verify the new container's log configuration, actual Prometheus scrape recovery,
 unchanged peer container IDs and public readiness. Do not truncate Docker-owned
 open log files or recreate application, media, database or alert-routing services
 for this repair. The old unbounded accumulated log is disposable diagnostic output;
-retain only the last 1000 lines, at most 8 MiB, root-private, for seven days.
+retain only the last 1000 lines, at most 8 MiB, root-private, for seven days
+at `/var/lib/harmonic-beacon/storage-relief-diagnostics/cadvisor.log`. Install
+`tmpfiles.d/harmonic-beacon-storage-diagnostics.conf` in `/etc/tmpfiles.d/` and
+verify the existing `systemd-tmpfiles-clean.timer`; the diagnostic directory
+contains only that replaceable file, never manifests or recovery state.
