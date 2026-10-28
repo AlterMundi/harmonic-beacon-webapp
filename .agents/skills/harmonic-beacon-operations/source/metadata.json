@@ -1,7 +1,7 @@
 {
   "name": "harmonic-beacon-operations",
   "description": "Operate Harmonic Beacon from authoritative live state.",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "author": "Nicol\u00e1s Ech\u00e1niz, Codex, CompAII",
   "license": "Apache-2.0",
   "platforms": [

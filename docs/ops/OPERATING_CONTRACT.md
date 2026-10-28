@@ -7,6 +7,11 @@ participant identity, or mutable production value.
 
 ## Authority and ownership
 
+The standing [Sai/Eko platform delegation](OPERATOR_DELEGATION.md), explicitly
+requested by Nicolás on2026-10-28, gives Sai/Eko independent operating authority.
+CompAII is not a required approver. Full platform administration and bounded
+Staff-only access remain separate grants.
+
 - The user's current request defines scope. Technical access does not expand
   it.
 - One operator owns each mutable environment and candidate at a time. Other
@@ -105,9 +110,9 @@ Codex and Hermes. The linked delivery invariants remain part of this contract.
    around permissions, payments, migrations or recovery. Do not automatically
    request a reviewer for every change or create reviewer chains. Resolve
    substantive findings before delivery; applicable automated checks remain.
-5. Promote the exact reviewed candidate through its configured workflow. Do
-   not develop directly on a production lane or substitute a direct host
-   command for an available reviewed path.
+5. Promote the exact reviewed candidate through its configured workflow, or the
+   appointed full operator’s documented owner route when a bounded adapter cannot
+   express the authorized task. Do not develop directly on a production lane.
 6. Read back exact deployed provenance, health/readiness, private boundaries,
    service-specific behavior, and recovery target.
 
@@ -132,7 +137,9 @@ they are loaded at those boundaries instead of repeated in every diagnosis.
   behavior from a unit test or a green workflow that did not exercise it.
 - During an active event, prefer observation and reversible runtime controls;
   do not deploy or restart unless the user explicitly accepts the live impact.
-- No Live or Account deploys within the 24 hours before an event. Confirm the
+- Avoid Live or Account deploys within24hours of an event by default. Sai may
+  select a different window and accept its operational impact under the standing
+  platform delegation, without another CompAII/Nicolás approval. Confirm the
   next event from Staff scheduling and the Live database, including timezone;
   missing scheduled rows do not disprove an event announced elsewhere. Resolve
   conflicts in the owning issue before promotion. Any explicitly authorized

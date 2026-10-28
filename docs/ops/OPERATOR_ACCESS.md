@@ -9,6 +9,10 @@ entitlement flow; this credential is not an attendee or facilitator identity.
 
 ## Credential and authority
 
+[Full platform delegation](OPERATOR_DELEGATION.md) is separate from this bounded
+Staff/API route. Sai/Eko have explicit host/repository operating authority;
+CompAII need not provision each release or authorize each recovery.
+
 `operator-credentials.ts` reuses `User` and `WebSession`: a dedicated machine
 User with an unusable local-password marker, no StaffAccountBinding, a reserved
 local issuer/subject, and a random 256-bit Bearer credential stored only as a
@@ -111,8 +115,9 @@ address may identify a machine account; it is not a mailbox or human login.
 
 For an operator with a Unix SSH account, install `deploy/hb-operator-access.py`
 as root-owned `/usr/local/sbin/hb-operator-access` and grant sudo only for its
-exact `staging` and/or `production` invocations. Do not add the account to Docker
-or grant general sudo. Root owns a mode-0600 `access.json` next to the existing
+exact `staging` and/or `production` invocations. A Staff-only appointment does
+not grant Docker or general sudo; an explicitly appointed full platform operator
+uses the separate delegation policy. Root owns a mode-0600 `access.json` next to the existing
 operator configuration, mapping each Unix username to `{uid,operator,environments}`.
 The broker verifies sudo's authenticated UID against this policy and never lets
 the request select another operator, credential, output path or root operation.
