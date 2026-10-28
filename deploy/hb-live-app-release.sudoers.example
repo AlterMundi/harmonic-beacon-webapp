@@ -12,3 +12,10 @@ Defaults!/usr/local/sbin/hb-live-app-release env_delete += "PYTHONPATH PYTHONHOM
     /usr/local/sbin/hb-live-app-release production rollback, \
     /usr/local/sbin/hb-live-app-release production recover, \
     /usr/local/sbin/hb-live-app-release production status
+
+# Only this fixed helper can build/admit qualified protected-release app sources.
+Defaults!/usr/local/sbin/hb-live-candidate env_reset
+Defaults!/usr/local/sbin/hb-live-candidate env_delete += "PYTHONPATH PYTHONHOME PYTHONSTARTUP PYTHONUSERBASE LD_PRELOAD LD_LIBRARY_PATH HB_BUILD_LOCK_FD"
+%hb-live-operators ALL=(root) NOPASSWD: NOSETENV: /usr/local/sbin/hb-live-candidate build *, \
+    /usr/local/sbin/hb-live-candidate status *, \
+    /usr/local/sbin/hb-live-candidate admit *

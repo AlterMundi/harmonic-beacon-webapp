@@ -118,8 +118,9 @@ An operator can execute the complete staging rollback/forward and production
 transaction after admission. Record this distinction: command installation is
 not independent build/admission capability or real receiving acceptance.
 
-Before replacing a previous permit, preserve its exact bytes and engine/wrapper
-bundle with its recovery record, and verify the previous transaction is terminal.
+Before replacing a previous permit, hold the shared app-bridge operation lock,
+preserve its exact bytes and engine/wrapper bundle with its recovery record,
+and verify the previous transaction is terminal while still holding that lock.
 Keep active and previous images independently retained. Never replace a permit
 while another operator is preparing/applying/recovering its transaction. Current
 status, image/provenance checks and activity controls remain mandatory. Removing
@@ -132,3 +133,69 @@ identity, artifact digest and necessary recovery evidence, then remove the
 disposable context/archive after successful image qualification. The existing
 storage maintainer owns eligible image/cache retention; never prune required
 rollback images to make capacity checks pass.
+
+## Bounded operator build and admission
+
+Install the reviewed `deploy/hb-live-candidate.py` as root-owned mode0755
+`/usr/local/sbin/hb-live-candidate`. Create root-owned mode0700
+`/mnt/beacon-data/builds/live-operator` and a root-owned mode0600 `build.lock`
+inside it. Validate/adopt the same sudoers template above only for appointed
+operators. Helpers, permits, logs and recovery snapshots remain root-private.
+
+The additional exact helper supports `build SHA40`, `status SHA40` and
+`admit SHA40`. It accepts only the current protected `release` head, a uniquely
+merged PR and the successful GitHub Actions `delivery-gate-release` on that
+PR's exact head. Admission additionally verifies the trusted gate workflow/event/base,
+the actual current CI attempt and its GitHub Actions aggregate check, and equality
+of the merged source tree with that qualified head. Fixed GitHub HTTPS reads and the fixed public repository fetch
+independently verify caller-supplied identities. Neither caller paths, Docker
+arguments, image files, source archives, environments nor arbitrary commands
+are accepted. App-only compatibility rejects changed dependencies, migrations,
+build/Compose definitions and media services. Broader changes use their owning
+reviewed adapters rather than weakening this restriction.
+
+`build` starts a named finite host screen job and returns. `status` reports its
+retained result; a pending result does not prove the job is running. An existing
+source never starts another build automatically. The exact image is built from
+a root-owned source, carries the source label and baked SHA, and passes a
+non-root public-assets read before admission. `admit` requalifies the source,
+holds the shared release lock, preserves the previous permit/bundle and prior
+image independently, and writes the new closed23-hour image-pair permit. A
+replay cannot renew or replace an existing admitted transaction. The result binds
+the production image/source and verified migration coordinate; admission rejects
+a changed base/schema under the release lock. If staging
+currently runs a different pending release, recover it with its existing permit
+before admission of the next source; never edit an active transaction.
+
+Bounds: one active/pending build, three retained build records, one hour,20MiB
+log,256MiB/10000 tracked source files,512MiB per Git output file,20GiB initial
+root/data reserve and a10GiB build stop floor. Successful disposable source
+contexts are removed; failed/uncertain contexts and logs remain for diagnosis.
+The three-record ceiling stops additional accumulation. A root custodian retires
+only terminal disposable build evidence after recording its result and confirming
+no pending operation depends on it; actual images and required recovery bundles
+remain under their owning retention policy. To stop a stuck build, inspect its
+exact named screen and Docker process first; stop only that task, retain its
+unknown result and inspect state before any explicit retry. No timer, model
+wakeup, root shell, runner activation or automatic production promotion is added.
+
+Receiving sequence over the operator's existing SSH route:
+
+```text
+sudo -n /usr/local/sbin/hb-live-candidate build SHA40
+sudo -n /usr/local/sbin/hb-live-candidate status SHA40
+sudo -n /usr/local/sbin/hb-live-candidate admit SHA40
+sudo -n /usr/local/sbin/hb-live-app-release staging prepare
+sudo -n /usr/local/sbin/hb-live-app-release staging apply
+sudo -n /usr/local/sbin/hb-live-app-release staging rollback
+sudo -n /usr/local/sbin/hb-live-app-release staging prepare
+sudo -n /usr/local/sbin/hb-live-app-release staging apply
+```
+
+Verify staging provenance and actual changed behavior. Confirm the live activity,
+next event and externally announced24-hour window before production prepare/apply.
+Read back public production health/readiness and exact image identity. An installed
+grant is not acceptance: the receiving operator must exercise build, admission
+and staging recovery using its own authenticated route before autonomous delivery
+is claimed. Listen has a separate root-owner delivery path; this helper cannot
+build/admit or replace Listen, Account, workers, media or databases.
