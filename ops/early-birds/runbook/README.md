@@ -502,7 +502,10 @@ cAdvisor uses Docker json-file rotation at 10 MiB per file, three files. Existin
 containers retain their original logging configuration until explicitly recreated.
 For an authorized storage repair, preserve a bounded recent diagnostic log, inspect
 the exact running Compose file and service, then replace only `cadvisor` with
-`docker compose --env-file <existing-root-env> -f <existing-compose> -f <reviewed-logging-override> up -d --no-deps --no-build --pull never cadvisor`.
+`docker compose --project-name <inspected-project-label> --env-file <existing-root-env> -f <existing-compose> -f <reviewed-logging-override> up -d --no-deps --no-build --pull never cadvisor`.
+Resolve the project from the running container’s `com.docker.compose.project`
+label and pass it explicitly to both configuration and replacement commands;
+the directory’s default name can create a second monitor instead of replacing it.
 The override changes logging only. Preserve the prior configuration and exact
 image; compare the fully resolved service with logging removed before applying.
 Verify the new container's log configuration, actual Prometheus scrape recovery,
