@@ -9,7 +9,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 
 spec = importlib.util.spec_from_file_location('candidate', Path(__file__).with_name('hb-live-candidate.py'))
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
@@ -167,6 +167,50 @@ class AdmissionTests(unittest.TestCase):
             with patch.object(m,'ROOT',root),patch.object(m,'PERMIT',permit),patch.object(m,'LOCK',lock),patch.object(m,'safe'),patch.object(m,'qualify'),patch.object(m,'terminal_previous'),patch.object(m,'inspect',return_value=current),patch.object(m,'run') as command:
                 with self.assertRaisesRegex(RuntimeError,'base changed'):m.admit(S)
                 command.assert_not_called()
+            self.assertEqual(permit.read_bytes(),before)
+
+    def test_operator_compiler_has_no_credentials_network_or_socket_and_is_removed(self):
+        with tempfile.TemporaryDirectory() as d:
+            directory=Path(d);checkout=directory/'source';checkout.mkdir();calls=[]
+            def command(argv, **kwargs):
+                calls.append(argv)
+                if argv[:2]==['docker','create']: return ('f'*64).encode()
+                if argv[:3]==['docker','start','-a']:
+                    (directory/'operator'/'beacon-operator.cjs').write_bytes(b'compiled fixture')
+                    return b''
+                if argv[:2]==['docker','inspect']:
+                    return json.dumps([{'State':{'Running':False,'ExitCode':0}}]).encode()
+                return b''
+            with patch.object(m,'safe'),patch.object(m,'run',side_effect=command):
+                digest=m.compile_operator(S,'sha256:'+'1'*64,checkout,directory)
+            self.assertEqual(len(digest),64)
+            create=calls[0];self.assertIn('--read-only',create);self.assertIn('none',create)
+            self.assertIn('fsize=8388608:8388608',create);self.assertIn('512m',create)
+            self.assertNotIn('--env-file',create);self.assertFalse(any('docker.sock' in x for x in create))
+            self.assertEqual(calls[-1],['docker','rm','-f','f'*64])
+
+    def test_operator_compiler_timeout_removes_only_its_created_container(self):
+        with tempfile.TemporaryDirectory() as d:
+            directory=Path(d);checkout=directory/'source';checkout.mkdir();calls=[]
+            def command(argv, **kwargs):
+                calls.append(argv)
+                if argv[:2]==['docker','create']: return ('f'*64).encode()
+                if argv[:3]==['docker','start','-a']: raise subprocess.TimeoutExpired(argv,120)
+                return b''
+            with patch.object(m,'safe'),patch.object(m,'run',side_effect=command):
+                with self.assertRaises(subprocess.TimeoutExpired):m.compile_operator(S,'sha256:'+'1'*64,checkout,directory)
+            self.assertEqual(calls[-1],['docker','rm','-f','f'*64])
+
+    def test_operator_generation_failure_preserves_existing_app_permit(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);directory=root/S;directory.mkdir();lock=root/'lock';lock.touch()
+            current={'Image':'sha256:'+'2'*64,'Config':{'Labels':{'org.opencontainers.image.revision':P}}}
+            candidate={'Id':'sha256:'+'1'*64,'Config':{'Labels':{'org.opencontainers.image.revision':S}}}
+            (directory/'result.json').write_text(json.dumps({'phase':'built','sourceSha':S,'imageId':candidate['Id'],'priorImageId':current['Image'],'priorSourceSha':P,'schemaVersion':'exact','operatorBundleSha256':'3'*64}))
+            permit=root/'permit.json';permit.write_text(json.dumps({'permitId':'old','sourceSha':P,'candidateImageId':current['Image']}));before=permit.read_bytes()
+            operator=Mock();operator.install_generation.side_effect=RuntimeError('generation rejected')
+            with patch.object(m,'ROOT',root),patch.object(m,'PERMIT',permit),patch.object(m,'LOCK',lock),patch.object(m,'safe'),patch.object(m,'qualify'),patch.object(m,'terminal_previous'),patch.object(m,'inspect',return_value=current),patch.object(m,'schema_version',return_value='exact'),patch.object(m,'run',return_value=json.dumps([candidate]).encode()),patch.object(m,'operator_helper',return_value=operator):
+                with self.assertRaisesRegex(RuntimeError,'generation rejected'):m.admit(S)
             self.assertEqual(permit.read_bytes(),before)
 
     def retirement_fixture(self, root, phase='failed'):

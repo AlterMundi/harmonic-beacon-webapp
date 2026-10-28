@@ -189,6 +189,51 @@ def bounded_build(command, logfile):
         sel.close()
 
 
+OPERATOR_HELPER = Path('/usr/local/sbin/hb-operator')
+
+
+def operator_helper():
+    from importlib.machinery import SourceFileLoader
+    import importlib.util
+    safe(OPERATOR_HELPER)
+    loader = SourceFileLoader('trusted_beacon_operator', str(OPERATOR_HELPER))
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    helper = importlib.util.module_from_spec(spec); loader.exec_module(helper)
+    return helper
+
+
+def compile_operator(source, image_id, checkout, directory):
+    """Compile exact source without runtime credentials, network or host sockets."""
+    if not SHA.fullmatch(source) or not re.fullmatch('sha256:[a-f0-9]{64}', image_id):
+        raise RuntimeError('Exact operator compiler source/image required')
+    safe(checkout, True); safe(directory, True)
+    output = directory / 'operator'
+    output.mkdir(mode=0o700)
+    build = "require('esbuild').buildSync({entryPoints:['/run/operator-source/scripts/beacon-operator.ts'],bundle:true,platform:'node',target:'node22',format:'cjs',packages:'external',tsconfig:'/run/operator-source/tsconfig.json',outfile:'/run/operator-out/beacon-operator.cjs'})"
+    # Inner timeout terminates the compiler even if its Docker client disappears.
+    launcher = "require('child_process').execFileSync(process.execPath,['-e',"+json.dumps(build)+"],{timeout:90000,killSignal:'SIGKILL',stdio:'inherit'})"
+    cid = run(['docker', 'create', '--read-only', '--network', 'none', '--user', '0:0',
+               '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--memory', '512m',
+               '--cpus', '1', '--pids-limit', '128', '--tmpfs', '/tmp:rw,noexec,nosuid,nodev,size=16m',
+               '--ulimit', 'fsize=8388608:8388608', '--label', 'com.harmonicbeacon.operator.compile='+source,
+               '--mount', 'type=bind,source='+str(checkout)+',target=/run/operator-source,readonly',
+               '--mount', 'type=bind,source='+str(output)+',target=/run/operator-out',
+               '--entrypoint', 'node', image_id, '-e', launcher]).decode().strip()
+    if not re.fullmatch('[a-f0-9]{64}', cid): raise RuntimeError('Compiler container identity missing; inspect')
+    try:
+        run(['docker', 'start', '-a', cid], timeout=120)
+        status = json.loads(run(['docker', 'inspect', cid]))[0]
+        if status['State']['Running'] or status['State']['ExitCode'] != 0:
+            raise RuntimeError('Operator compilation failed')
+        bundle = output / 'beacon-operator.cjs'; safe(bundle)
+        if list(output.iterdir()) != [bundle] or not 0 < bundle.stat().st_size <= 8_388_608:
+            raise RuntimeError('Compiler output inventory/size mismatch')
+        bundle.chmod(0o600)
+        return hashlib.sha256(bundle.read_bytes()).hexdigest()
+    finally:
+        run(['docker', 'rm', '-f', cid])
+
+
 def worker(source):
     directory = ROOT / source; safe(directory, True)
     safe(ROOT / 'build.lock')
@@ -233,8 +278,10 @@ def worker(source):
         script = "const fs=require('fs'),p=require('path');if(process.getuid()===0)throw Error('root');for(const n of fs.readdirSync('/app/public',{recursive:true}))fs.accessSync(p.join('/app/public',n),fs.constants.R_OK);"
         run(['docker', 'run', '--rm', '--network', 'none', '--read-only', '--cap-drop', 'ALL',
              '--security-opt', 'no-new-privileges', '--entrypoint', 'node', artifact['Id'], '-e', script])
+        operator_digest = compile_operator(source, artifact['Id'], checkout, directory)
         save(directory / 'result.json', {**admission, 'phase': 'built', 'imageId': artifact['Id'],
-                                           'priorImageId': baseline['Image'], 'priorSourceSha': prior, 'schemaVersion': schema})
+                                           'priorImageId': baseline['Image'], 'priorSourceSha': prior, 'schemaVersion': schema,
+                                           'operatorBundleSha256': operator_digest})
         shutil.rmtree(checkout)
     except Exception as error:
         save(directory / 'result.json', {'sourceSha': source, 'phase': 'failed',
@@ -270,6 +317,8 @@ def admit(source):
         image = json.loads(run(['docker', 'image', 'inspect', result['imageId']]))[0]
         if image['Config']['Labels']['org.opencontainers.image.revision'] != source or prior == image['Id']:
             raise RuntimeError('distinct exact image and provenance required')
+        # Publish a verified exact-source operator before rotating its app permit.
+        operator_helper().install_generation(source, ROOT / source / 'operator' / 'beacon-operator.cjs', result.get('operatorBundleSha256', ''))
         # A replay never replaces the active transaction or extends its expiry.
         if old['sourceSha'] == source and old['candidateImageId'] == image['Id']:
             return {'phase': 'admitted', 'sourceSha': source, 'expiresAt': old['expiresAt']}

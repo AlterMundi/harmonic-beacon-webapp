@@ -53,6 +53,90 @@ def custody(path, private=False):
         if current == Path('/'): break
         current = current.parent
 
+MAX_BUNDLE_BYTES = 8_388_608
+MAX_GENERATIONS = 64
+
+
+def verified_bundle(bundle, manifest_path, private=False):
+    custody(bundle, private); custody(manifest_path, True)
+    if not bundle.is_file() or not manifest_path.is_file() or not 0 < bundle.stat().st_size <= MAX_BUNDLE_BYTES or manifest_path.stat().st_size > 16384:
+        raise RuntimeError('Operator bundle size/type bound exceeded')
+    manifest = json.loads(manifest_path.read_text())
+    if set(manifest) != {'bundleSha256', 'sourceSha', 'compatibleRuntimeShas'} or \
+        not isinstance(manifest.get('sourceSha'), str) or not re.fullmatch(r'[a-f0-9]{40}', manifest['sourceSha']) or \
+        not isinstance(manifest['compatibleRuntimeShas'], list) or not 1 <= len(manifest['compatibleRuntimeShas']) <= 16 or \
+        any(not isinstance(v, str) or not re.fullmatch(r'[a-f0-9]{40}', v) for v in manifest['compatibleRuntimeShas']) or \
+        manifest['bundleSha256'] != hashlib.sha256(bundle.read_bytes()).hexdigest():
+        raise RuntimeError('Reviewed operator bundle identity mismatch')
+    return manifest
+
+
+def select_bundle(revision):
+    if not isinstance(revision, str) or not re.fullmatch(r'[a-f0-9]{40}', revision):
+        raise RuntimeError('Invalid runtime source')
+    generation = BUNDLE.parent / 'runtimes' / revision
+    # A present but incomplete/unsafe generation must not fall back silently.
+    if generation.exists() or generation.is_symlink():
+        custody(generation)
+        if not generation.is_dir(): raise RuntimeError('Invalid operator generation')
+        bundle, manifest_path = generation / BUNDLE.name, generation / MANIFEST.name
+        manifest = verified_bundle(bundle, manifest_path, True)
+        if manifest['sourceSha'] != revision or manifest['compatibleRuntimeShas'] != [revision]:
+            raise RuntimeError('Exact runtime operator generation mismatch')
+    else:
+        bundle, manifest = BUNDLE, verified_bundle(BUNDLE, MANIFEST)
+    if revision not in manifest['compatibleRuntimeShas']:
+        raise RuntimeError('Operator generation does not admit runtime source')
+    return bundle, manifest
+
+
+def install_generation(source, bundle, expected_digest):
+    """Root-only immutable publish; caller holds the existing app operation lock."""
+    if os.geteuid() != 0 or not isinstance(source, str) or not re.fullmatch('[a-f0-9]{40}', source):
+        raise RuntimeError('Root and exact generation source required')
+    custody(Path(__file__).resolve()); custody(BUNDLE.parent)
+    custody(bundle, True)
+    if not bundle.is_file() or not 0 < bundle.stat().st_size <= MAX_BUNDLE_BYTES:
+        raise RuntimeError('Invalid compiler output type/size')
+    raw = bundle.read_bytes()
+    if not re.fullmatch('[a-f0-9]{64}', expected_digest) or hashlib.sha256(raw).hexdigest() != expected_digest:
+        raise RuntimeError('Compiler output digest mismatch')
+    root = BUNDLE.parent / 'runtimes'
+    if not root.exists(): root.mkdir(mode=0o700)
+    custody(root)
+    generation = root / source
+    if generation.exists() or generation.is_symlink():
+        selected, manifest = select_bundle(source)
+        if selected.parent != generation or manifest['bundleSha256'] != expected_digest:
+            raise RuntimeError('Immutable operator generation already differs')
+        return manifest
+    if len([p for p in root.iterdir() if re.fullmatch('[a-f0-9]{40}', p.name)]) >= MAX_GENERATIONS:
+        raise RuntimeError('Operator generation ceiling reached; inspect retained recovery references')
+    pending = root / '.pending'
+    if pending.exists() or pending.is_symlink():
+        raise RuntimeError('Pending operator generation requires inspection')
+    pending.mkdir(mode=0o700)
+    manifest = {'bundleSha256': expected_digest, 'sourceSha': source, 'compatibleRuntimeShas': [source]}
+    try:
+        for name, data in [(BUNDLE.name, raw), (MANIFEST.name, (json.dumps(manifest)+'\n').encode())]:
+            with (pending / name).open('xb') as output:
+                os.chmod(pending / name, 0o600)
+                output.write(data); output.flush(); os.fsync(output.fileno())
+        verified_bundle(pending / BUNDLE.name, pending / MANIFEST.name)
+        fd = os.open(pending, os.O_RDONLY | os.O_DIRECTORY)
+        try: os.fsync(fd)
+        finally: os.close(fd)
+        os.rename(pending, generation)
+        fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+        try: os.fsync(fd)
+        finally: os.close(fd)
+    except Exception:
+        # Only this invocation's unpublished staging directory is disposable.
+        if pending.exists(): shutil.rmtree(pending)
+        raise
+    return manifest
+
+
 def decode_logs(raw):
     chunks = []
     while raw:
@@ -88,25 +172,20 @@ def operate(environment, operator=None):
     if environment not in TARGETS: raise RuntimeError('Unknown environment')
     profile = profile_directory(environment, operator)
     request_file = profile / 'request.json'
-    for path in [Path(__file__).resolve(), BUNDLE, MANIFEST, request_file]: custody(path, path in [MANIFEST, request_file])
-    if request_file.stat().st_size > 65536 or MANIFEST.stat().st_size > 16384 or BUNDLE.stat().st_size > 8_388_608:
+    for path in [Path(__file__).resolve(), request_file]: custody(path, path == request_file)
+    if request_file.stat().st_size > 65536:
         raise RuntimeError('Input size bound exceeded')
-    request = json.loads(request_file.read_text()); manifest = json.loads(MANIFEST.read_text())
-    if set(manifest) != {'bundleSha256','sourceSha','compatibleRuntimeShas'} or \
-        not re.fullmatch(r'[a-f0-9]{40}', manifest.get('sourceSha', '')) or \
-        not isinstance(manifest['compatibleRuntimeShas'], list) or not 1 <= len(manifest['compatibleRuntimeShas']) <= 16 or \
-        any(not isinstance(v, str) or not re.fullmatch(r'[a-f0-9]{40}', v) for v in manifest['compatibleRuntimeShas']) or \
-        manifest['bundleSha256'] != hashlib.sha256(BUNDLE.read_bytes()).hexdigest():
-        raise RuntimeError('Reviewed operator bundle identity mismatch')
+    request = json.loads(request_file.read_text())
     runtime = api('GET', '/containers/' + TARGETS[environment] + '/json')
     actual = dict(v.split('=',1) for v in runtime['Config']['Env'])
     revision = actual.get('BEACON_GIT_SHA')
     if request.get('environment') != environment or request.get('expectedSourceSha') != revision or \
-        revision not in manifest['compatibleRuntimeShas'] or not runtime['State']['Running']:
+        not runtime['State']['Running']:
         raise RuntimeError('Runtime environment/source mismatch')
     image = api('GET', '/images/' + runtime['Image'] + '/json')
     baked = dict(v.split('=',1) for v in image['Config'].get('Env', []))
     if baked.get('BEACON_GIT_SHA') != revision: raise RuntimeError('Immutable image/source mismatch')
+    bundle, manifest = select_bundle(revision)
     operation = request.get('operation')
     if operation not in ['provision','revoke','close','request']: raise RuntimeError('Unsupported operation')
     if request.get('tokenPath') or request.get('responsePath'): raise RuntimeError('Wrapper owns credential/output paths')
@@ -115,7 +194,7 @@ def operate(environment, operator=None):
     STATE.mkdir(mode=0o700, parents=True, exist_ok=True); custody(STATE)
     run_id = uuid.uuid4().hex; directory = STATE / run_id; directory.mkdir(mode=0o700)
     inputs = directory / 'input'; outputs = directory / 'output'; inputs.mkdir(mode=0o700); outputs.mkdir(mode=0o700)
-    shutil.copyfile(BUNDLE, inputs / 'beacon-operator.cjs'); os.chmod(inputs / 'beacon-operator.cjs', 0o600)
+    shutil.copyfile(bundle, inputs / 'beacon-operator.cjs'); os.chmod(inputs / 'beacon-operator.cjs', 0o600)
     if operation == 'provision': request['tokenPath'] = '/run/operator-out/credential'
     if operation == 'request':
         custody(credential, True); shutil.copyfile(credential, inputs / 'credential'); os.chmod(inputs / 'credential', 0o600)
