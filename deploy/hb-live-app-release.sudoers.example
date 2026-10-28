@@ -1,0 +1,14 @@
+# Root-owned mode0440. Add only appointed Unix operators to hb-live-operators.
+# The existing root-owned permit remains the exact-image admission boundary.
+Defaults!/usr/local/sbin/hb-live-app-release env_reset
+Defaults!/usr/local/sbin/hb-live-app-release env_delete += "PYTHONPATH PYTHONHOME PYTHONSTARTUP PYTHONUSERBASE LD_PRELOAD LD_LIBRARY_PATH"
+%hb-live-operators ALL=(root) NOPASSWD: NOSETENV: /usr/local/sbin/hb-live-app-release staging prepare, \
+    /usr/local/sbin/hb-live-app-release staging apply, \
+    /usr/local/sbin/hb-live-app-release staging rollback, \
+    /usr/local/sbin/hb-live-app-release staging recover, \
+    /usr/local/sbin/hb-live-app-release staging status, \
+    /usr/local/sbin/hb-live-app-release production prepare, \
+    /usr/local/sbin/hb-live-app-release production apply, \
+    /usr/local/sbin/hb-live-app-release production rollback, \
+    /usr/local/sbin/hb-live-app-release production recover, \
+    /usr/local/sbin/hb-live-app-release production status

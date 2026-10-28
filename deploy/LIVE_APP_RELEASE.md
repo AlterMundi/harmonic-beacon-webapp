@@ -2,7 +2,7 @@
 
 This path updates the app image while retaining the existing media staging
 configuration. A closed optional permit can also update tapestry when its
-dependency artifact is part of the same qualified change. It is owner-operated as root, with no runner sudo grant. It does
+dependency artifact is part of the same qualified change. It runs through the root-owned helper, with no runner sudo grant. It does
 not replace the original installed #590 helper or its recovery state.
 
 Install the reviewed `hb-live-app-release.py` as
@@ -99,3 +99,36 @@ identities must remain unchanged and running during the operation. It does not
 waive staging rehearsal, exact image identity, rollback, or the future-event
 window. Never infer this authorization from general host access. Existing permit
 files without this field keep the normal no-live-session restriction.
+
+## Appointed Unix operators
+
+Staff API authority does not include image delivery. For an operator appointed
+by the human, install the exact command grant in
+`deploy/hb-live-app-release.sudoers.example` as root-owned mode0440 and validate
+it with `visudo -cf` before adoption. Add only that operator's existing Unix
+account to the local `hb-live-operators` group. Reuse its existing SSH identity;
+do not grant Docker access, a root shell, environment overrides, or write access
+to helpers, permits, engine bundles or transaction evidence.
+
+The ten explicit environment/verb invocations reuse the reviewed helper. They
+allow preparing, applying, inspecting and recovering the current root-admitted
+image set; they do not admit new image identities or build source. The root
+custodian still qualifies/builds the source and admits its exact image permit.
+An operator can execute the complete staging rollback/forward and production
+transaction after admission. Record this distinction: command installation is
+not independent build/admission capability or real receiving acceptance.
+
+Before replacing a previous permit, preserve its exact bytes and engine/wrapper
+bundle with its recovery record, and verify the previous transaction is terminal.
+Keep active and previous images independently retained. Never replace a permit
+while another operator is preparing/applying/recovering its transaction. Current
+status, image/provenance checks and activity controls remain mandatory. Removing
+the group membership revokes this host delivery grant; it does not revoke the
+separate Staff credential.
+
+Build work uses a named host screen/tmux session, retained exit status and a
+bounded log. Place its tracked context on the data filesystem. Retain source
+identity, artifact digest and necessary recovery evidence, then remove the
+disposable context/archive after successful image qualification. The existing
+storage maintainer owns eligible image/cache retention; never prune required
+rollback images to make capacity checks pass.
