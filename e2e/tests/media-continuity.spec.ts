@@ -92,13 +92,16 @@ stackTest.describe('media continuity', () => {
         await withReconciledPublicationGrant(db, SESSION_ES.id, async () => {
         // --- Facilitator publishes mic + camera into the stage room. ---
         const facilitatorContext = await browser.newContext();
-        const facilitator = await facilitatorContext.newPage();
+        const facilitatorPage = await facilitatorContext.newPage();
         await loginViaDashboard(
-            facilitator,
+            facilitatorPage,
             'FACILITATOR',
             'E2E Facilitator',
-            ROUTES.session(SESSION_ES.id),
+            ROUTES.opsSession(SESSION_ES.id),
         );
+        await expect(facilitatorPage.getByTestId('persistent-room')).toBeVisible();
+        const facilitator = (await (await facilitatorPage.getByTestId('persistent-room').elementHandle())?.contentFrame())!;
+        expect(facilitator).not.toBeNull();
         await expect(facilitator.getByTestId('connection-state')).toHaveAttribute(
             'data-state',
             'connected',
@@ -281,7 +284,7 @@ stackTest.describe('media continuity', () => {
         });
     });
 
-    stackTest('standalone staff room hands media off to the cockpit without duplicate identity', async ({ page }, testInfo) => {
+    stackTest('staff participant accepts an invitation and exits before opening a clean cockpit without duplicate identity', async ({ page }, testInfo) => {
         stackTest.slow();
         const db = requireDirectDb(testInfo);
         await withSessionStatus(db, SESSION_ES.id, 'LIVE', async () => {
@@ -297,18 +300,23 @@ stackTest.describe('media continuity', () => {
                 'connected',
                 { timeout: 20_000 },
             );
-            await page.getByRole('button', { name: /Unmute microphone|Activar micrófono/i }).click();
-            await page.getByRole('button', { name: /Turn camera on|Encender cámara/i }).click();
+            await expect(page.locator('hb-global-nav')).toHaveCount(0);
+            await expect(page.getByRole('tab')).toHaveCount(2);
+            await expect(page.getByRole('button', { name: /Unmute microphone|Activar micrófono/i })).toBeDisabled();
+            await page.getByRole('button', { name: /Aceptar y entrar|Accept and join/i }).click();
+            await expect(page.getByRole('button', { name: /Mute microphone|Silenciar micrófono/i })).toBeVisible();
+            await expect(page.getByRole('button', { name: /Turn camera off|Apagar cámara/i })).toBeVisible();
 
-            await page.getByRole('button', { name: /Stage and hands|Escena y manos/i }).click();
+            await page.getByRole('button', { name: /^(?:Leave room|Salir de la sala)$/i }).click();
             await expect(page.getByRole('alertdialog')).toBeVisible();
             await page.getByRole('alertdialog').getByRole('button', { name: /Leave the room|Salir de la sala/i }).click();
-            await expect(page).toHaveURL(new RegExp(`/ops/events/${SESSION_ES.id}$`));
+            await expect(page).toHaveURL(new URL('/', page.url()).href);
+            await page.goto(ROUTES.opsSession(SESSION_ES.id));
 
             const iframe = page.locator('iframe[data-testid="persistent-room"]');
             const handle = await iframe.elementHandle();
             const roomFrame = await handle?.contentFrame();
-            expect(roomFrame, 'persistent room frame did not mount after handoff').not.toBeNull();
+            expect(roomFrame, 'persistent room frame did not mount after room exit').not.toBeNull();
             if (!roomFrame) return;
 
             await expect(roomFrame.getByTestId('connection-state')).toHaveAttribute(
@@ -317,10 +325,10 @@ stackTest.describe('media continuity', () => {
                 { timeout: 20_000 },
             );
             await expect(
-                roomFrame.getByRole('button', { name: /Mute microphone|Silenciar micrófono/i }),
+                roomFrame.getByRole('button', { name: /Unmute microphone|Activar micrófono/i }),
             ).toBeVisible();
             await expect(
-                roomFrame.getByRole('button', { name: /Turn camera off|Apagar cámara/i }),
+                roomFrame.getByRole('button', { name: /Turn camera on|Encender cámara/i }),
             ).toBeVisible();
             await expect(roomFrame.getByText(/access is open elsewhere|entrada está abierta en otro lugar/i))
                 .toHaveCount(0);

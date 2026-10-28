@@ -73,7 +73,10 @@ function confirmedAlias(body: unknown): string | null {
     return value.displayName;
 }
 
-export default function SessionAliasEditor({ sessionId }: { sessionId: string }) {
+export default function SessionAliasEditor({ sessionId, presentation = 'menu' }: {
+    sessionId: string;
+    presentation?: 'menu' | 'room';
+}) {
     const { locale } = useLocale();
     const labels = copy[locale];
     const [phase, setPhase] = useState<Phase>('closed');
@@ -204,7 +207,8 @@ export default function SessionAliasEditor({ sessionId }: { sessionId: string })
             <>
                 <button
                     type="button"
-                    role="menuitem"
+                    role={presentation === 'menu' ? 'menuitem' : undefined}
+                    className={presentation === 'room' ? 'event-button event-button--secondary w-full' : undefined}
                     onClick={(event) => {
                         event.stopPropagation();
                         void beginEditing();
@@ -239,7 +243,7 @@ export default function SessionAliasEditor({ sessionId }: { sessionId: string })
             onSubmit={(event) => void submit(event)}
             noValidate
         >
-            <label className="text-xs text-[var(--text-secondary)]" htmlFor="hb-session-alias">
+            <label className="text-sm text-[var(--text-secondary)]" htmlFor="hb-session-alias">
                 {labels.label}
             </label>
             <input
@@ -254,13 +258,13 @@ export default function SessionAliasEditor({ sessionId }: { sessionId: string })
                     setError(null);
                     setSaved(false);
                 }}
-                className="min-h-10 rounded-md border border-white/20 bg-black/20 px-2 text-sm text-[var(--paper)] outline-none focus:border-[var(--gold)]"
+                className="min-h-11 rounded-md border border-white/20 bg-black/20 px-2 text-base text-[var(--paper)] outline-none focus:border-[var(--gold)]"
             />
             <div className="grid grid-cols-2 gap-2">
-                <button type="submit" disabled={cannotSubmit} aria-busy={phase === 'saving'}>
+                <button type="submit" className={presentation === 'room' ? 'event-button event-button--primary' : undefined} disabled={cannotSubmit} aria-busy={phase === 'saving'}>
                     {phase === 'saving' ? labels.saving : labels.save}
                 </button>
-                <button type="button" disabled={phase === 'saving'} onClick={cancel}>
+                <button type="button" className={presentation === 'room' ? 'event-button event-button--secondary' : undefined} disabled={phase === 'saving'} onClick={cancel}>
                     {labels.cancel}
                 </button>
             </div>

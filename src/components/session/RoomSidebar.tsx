@@ -3,6 +3,7 @@
 import { useId, useState } from 'react';
 import { useLocale } from '@/context/LocaleContext';
 import SessionContributions from './SessionContributions';
+import SessionAliasEditor from '@/components/brand/SessionAliasEditor';
 
 export type RoomPerson = {
     identity: string;
@@ -13,8 +14,8 @@ export type RoomPerson = {
     speaking: boolean;
 };
 
-export default function RoomSidebar({ sessionId, people, staff = false }: {
-    sessionId: string; people: RoomPerson[]; staff?: boolean;
+export default function RoomSidebar({ sessionId, people, staff = false, canEditName = false }: {
+    sessionId: string; people: RoomPerson[]; staff?: boolean; canEditName?: boolean;
 }) {
     const { locale } = useLocale();
     const es = locale === 'es';
@@ -32,13 +33,14 @@ export default function RoomSidebar({ sessionId, people, staff = false }: {
                     const next = event.key === 'Home' ? 'chat' : event.key === 'End' ? 'people' : index === 0 ? 'people' : 'chat';
                     setPanel(next); document.getElementById(`${prefix}-${next}`)?.focus();
                 }}>
-                {key === 'chat' ? 'Chat' : <>{es ? 'Personas' : 'People'} <span>{people.length}</span></>}
+                {key === 'chat' ? 'Chat' : <>{es ? 'Participantes' : 'Participants'} <span>{people.length}</span></>}
             </button>)}
         </div>
         <div role="tabpanel" id={`${prefix}-chat-panel`} aria-labelledby={`${prefix}-chat`} hidden={panel !== 'chat'}>
             <SessionContributions sessionId={sessionId} staff={staff} panelActive={panel === 'chat'} />
         </div>
         <section role="tabpanel" id={`${prefix}-people-panel`} aria-labelledby={`${prefix}-people`} hidden={panel !== 'people'} className="hb-room-people">
+            {canEditName && <div className="mb-5"><SessionAliasEditor sessionId={sessionId} presentation="room" /></div>}
             <label htmlFor={`${prefix}-search`}>{es ? 'Buscar participante' : 'Find a participant'}</label>
             <input id={`${prefix}-search`} type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder={es ? 'Nombre en la sala' : 'Room name'} />
             {people.length === 0 ? <p role="status">{es ? 'La lista aparecerá al conectar la sala.' : 'The list appears when the room connects.'}</p> : <ul>

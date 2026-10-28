@@ -18,6 +18,7 @@ import SessionContributions from '../session/SessionContributions';
 import SessionLifecycleControl from './SessionLifecycleControl';
 import SpotlightConsole, { type SpotlightSummary } from './SpotlightConsole';
 import TapestryArrange from './TapestryArrange';
+import RoomLanguageControl from '../session/RoomLanguageControl';
 
 type Drawer = 'doors' | 'hands' | 'scene' | 'tapestry' | 'admission' | 'health' | 'contributions';
 const ROOM_TABS = ['hands', 'scene', 'contributions'] as const;
@@ -149,6 +150,7 @@ export default function ConductorCockpit({
 
     return (
         <div className="hb-staff-workspace space-y-4" data-testid="conductor-cockpit">
+            <div className="flex justify-end"><RoomLanguageControl /></div>
             <a className="hb-staff-jump" href={`#${tabsId}-tools`}>
                 {locale === 'es' ? 'Ir al panel del equipo ↓' : 'Go to the staff panel ↓'}
             </a>

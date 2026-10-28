@@ -20,7 +20,14 @@ stackTest('participant and operator share chat while panels preserve media and m
                 await installMediaProbe(audience);
                 await loginViaDashboard(audience, 'ATTENDEE', 'Ana de prueba', ROUTES.session(SESSION_ES.id));
                 await expect(audience.getByTestId('connection-state')).toHaveAttribute('data-state', 'connected', { timeout: 30_000 });
+                await expect(audience.locator('hb-global-nav')).toHaveCount(0);
+                await expect(audience.getByRole('tab')).toHaveCount(2);
+                await expect(audience.getByRole('tab', { name: /^(?:Chat|Participantes \d+|Participants \d+)$/ })).toHaveCount(2);
+                await expect(audience.locator('.hb-staff-tools')).toHaveCount(0);
+                await expect(audience.getByRole('button', { name: /Subir a la escena|Join the stage/ })).toHaveCount(0);
                 await loginViaDashboard(staff, 'OPERATOR', 'Equipo de prueba', ROUTES.opsSession(SESSION_ES.id));
+                await expect(staff.locator('hb-global-nav')).toHaveCount(0);
+                await expect(staff.getByRole('navigation', { name: /Event operations|Operaciones de eventos/ })).toHaveCount(0);
                 const room = staff.frameLocator('[data-testid="persistent-room"]');
                 await expect(room.getByTestId('connection-state')).toHaveAttribute('data-state', 'connected', { timeout: 30_000 });
                 const staffToken = await staff.request.get(`/api/scheduled-sessions/${SESSION_ES.id}/token`);
@@ -51,10 +58,10 @@ stackTest('participant and operator share chat while panels preserve media and m
                 await expect(audience.getByTestId('contributions-feed')).toContainText('Una respuesta del equipo', { timeout: 15_000 });
                 await expect(audience.getByTestId('contributions-feed')).toContainText(`${staffName} · Operaciones`);
 
-                await audience.getByRole('tab', { name: /Personas|People/ }).click();
+                await audience.getByRole('tab', { name: /Participantes|Participants/ }).click();
                 await audience.getByRole('searchbox').fill(staffName);
-                await expect(audience.getByRole('tabpanel', { name: /Personas|People/ })).toContainText(staffName);
-                await audience.getByRole('tab', { name: /Personas|People/ }).press('Home');
+                await expect(audience.getByRole('tabpanel', { name: /Participantes|Participants/ })).toContainText(staffName);
+                await audience.getByRole('tab', { name: /Participantes|Participants/ }).press('Home');
                 await expect(audience.getByRole('tab', { name: 'Chat', exact: true })).toBeFocused();
                 await expect(audience.getByRole('tab', { name: 'Chat', exact: true })).toHaveAttribute('aria-selected', 'true');
                 expectMediaContinuity(before, await mediaProbeSnapshot(audience));
@@ -91,6 +98,8 @@ stackTest('participant and operator share chat while panels preserve media and m
                 await testInfo.attach('operator-stage', { body: await staff.screenshot({ fullPage: true }), contentType: 'image/png' });
                 await staff.setViewportSize({ width: 320, height: 844 });
                 await staff.getByRole('link', { name: /Ir al panel del equipo|Go to the staff panel/ }).click();
+                await expect(staff.getByRole('tab', { name: /^(?:Escena|Stage)$/ })).toBeInViewport();
+                await staff.locator('.hb-staff-tools').scrollIntoViewIfNeeded();
                 await testInfo.attach('operator-mobile-tools', { body: await staff.screenshot(), contentType: 'image/png' });
                 await staff.setViewportSize({ width: 1440, height: 1000 });
                 await staff.getByRole('tab', { name: 'Chat', exact: true }).click();
@@ -172,46 +181,75 @@ for (const role of ['OPERATOR', 'FACILITATOR'] as const) stackTest(`${role} can 
         expect(created.status()).toBe(200);
         await client.query("update scheduled_sessions set status='LIVE', started_at=now() where id=$1 and title=$2", [eventId, title]);
         await installMediaProbe(page);
-        await page.goto(`/session/${eventId}`);
-        await expect(page.getByTestId('connection-state')).toHaveAttribute('data-state', 'connected', { timeout: 30_000 });
-        const before = await mediaProbeSnapshot(page);
+        // Even an operator gets the participant presentation on the public
+        // room route: queue the hand without granting publication or capture.
+        if (role === 'OPERATOR') {
+            await page.goto(`/session/${eventId}`);
+            await expect(page.getByTestId('connection-state')).toHaveAttribute('data-state', 'connected', { timeout: 30_000 });
+            await expect(page.getByRole('tab')).toHaveCount(2);
+            await expect(page.locator('.hb-staff-tools')).toHaveCount(0);
+            // The separately configured tapestry camera keeps its existing
+            // default-on policy. Queueing must not acquire stage devices.
+            await expect(page.getByRole('button', { name: /Cambiar a cámara trasera|Switch to rear camera/ })).toBeVisible();
+            const beforeHand = await mediaProbeSnapshot(page);
+            const [raised] = await Promise.all([
+                page.waitForResponse(response => response.url().endsWith(`/api/scheduled-sessions/${eventId}/hand`) && response.request().method() === 'POST'),
+                page.getByRole('button', { name: /Levantar la mano|Raise hand/ }).click(),
+            ]);
+            expect(raised.status()).toBe(200);
+            expect(await raised.json()).toMatchObject({ raised: true, canPublish: false });
+            await expect(page.getByRole('button', { name: /Activar micrófono|Unmute microphone/i })).toBeDisabled();
+            const afterHand = await mediaProbeSnapshot(page);
+            expect(afterHand.captureAttempts).toBe(beforeHand.captureAttempts);
+            expect(afterHand.audioCaptureAttempts).toBe(0);
+            await page.getByRole('button', { name: /Bajar la mano|Lower hand/ }).click();
+            await page.getByRole('button', { name: /^(?:Salir de la sala|Leave room)$/ }).click();
+            await page.getByRole('alertdialog').getByRole('button', { name: /^(?:Salir de la sala|Leave the room)$/ }).click();
+            await expect(page).toHaveURL(new URL('/', page.url()).href);
+        }
+        await page.goto(`/ops/events/${eventId}`);
+        await expect(page.getByTestId('persistent-room')).toBeVisible();
+        const room = (await (await page.locator('[data-testid="persistent-room"]').elementHandle())?.contentFrame())!;
+        expect(room).not.toBeNull();
+        await expect(room.getByTestId('connection-state')).toHaveAttribute('data-state', 'connected', { timeout: 30_000 });
+        const before = await mediaProbeSnapshot(room);
         if (role === 'OPERATOR') {
             const [grant] = await Promise.all([
                 page.waitForResponse(response => response.url().endsWith(`/api/ops/sessions/${eventId}/stage`) && response.request().method() === 'POST'),
-                page.getByRole('button', { name: /Subir a la escena|Join the stage/ }).click(),
+                room.getByRole('button', { name: /Habilitar mis controles de equipo|Enable my staff controls/ }).click(),
             ]);
             expect(grant.status()).toBe(200);
         }
-        const mic = page.getByRole('button', { name: /Activar micrófono|Unmute microphone/i });
+        const mic = room.getByRole('button', { name: /Activar micrófono|Unmute microphone/i });
         await expect(mic).toBeVisible();
-        await expect(page.getByRole('button', { name: /Encender cámara|Turn camera on/i })).toBeVisible();
-        const after = await mediaProbeSnapshot(page);
+        await expect(room.getByRole('button', { name: /Encender cámara|Turn camera on/i })).toBeVisible();
+        const after = await mediaProbeSnapshot(room);
         expect(after.captureAttempts).toBe(before.captureAttempts);
         expect(after.peerConnectionsClosed).toBe(before.peerConnectionsClosed);
         const token = await page.request.get(`/api/scheduled-sessions/${eventId}/token`);
         const publishingIdentity = await token.json();
         expect(publishingIdentity).toMatchObject({ canPublish: true, isAssignedFacilitator: role === 'FACILITATOR' });
         await mic.click();
-        await expect(page.getByRole('button', { name: /Silenciar micrófono|Mute microphone/i })).toBeVisible();
-        const leaveStage = page.getByRole('button', { name: /Salir de la escena|Leave the scene/ });
+        await expect(room.getByRole('button', { name: /Silenciar micrófono|Mute microphone/i })).toBeVisible();
+        const leaveStage = room.getByRole('button', { name: /Salir de la escena|Leave the scene/ });
         await expect(leaveStage).toBeEnabled();
-        const beforeExit = await mediaProbeSnapshot(page);
+        const beforeExit = await mediaProbeSnapshot(room);
         await leaveStage.click();
-        const confirmation = page.getByRole('alertdialog');
+        const confirmation = room.getByRole('alertdialog');
         await confirmation.getByRole('button', { name: /Sí, dejar la escena|Yes, leave the scene/ }).click();
         await expect(leaveStage).toBeDisabled();
         await expect(mic).toBeDisabled();
-        await expect(page.getByTestId('connection-state')).toHaveAttribute('data-state', 'connected');
+        await expect(room.getByTestId('connection-state')).toHaveAttribute('data-state', 'connected');
         // Revocation deliberately fences the old identity and its transports.
         // The page and session remain; transport renewal must not reacquire a device.
-        await expect.poll(async () => (await mediaProbeSnapshot(page)).peerConnectionsClosed).toBeGreaterThan(beforeExit.peerConnectionsClosed);
+        await expect.poll(async () => (await mediaProbeSnapshot(room)).peerConnectionsClosed).toBeGreaterThan(beforeExit.peerConnectionsClosed);
         const audienceToken = await page.request.get(`/api/scheduled-sessions/${eventId}/token`);
         const audienceIdentity = await audienceToken.json();
         expect(audienceIdentity).toMatchObject({ canPublish: false });
         expect(audienceIdentity.identity).not.toBe(publishingIdentity.identity);
-        await expect(page.getByTestId('connection-state')).toHaveAttribute('data-state', 'connected');
-        expect((await mediaProbeSnapshot(page)).captureAttempts).toBe(beforeExit.captureAttempts);
-        await page.getByRole('button', { name: /Subir a la escena|Join the stage/ }).click();
+        await expect(room.getByTestId('connection-state')).toHaveAttribute('data-state', 'connected');
+        expect((await mediaProbeSnapshot(room)).captureAttempts).toBe(beforeExit.captureAttempts);
+        await room.getByRole('button', { name: /Habilitar mis controles de equipo|Enable my staff controls/ }).click();
         await expect(mic).toBeEnabled();
     } finally {
         await page.goto('about:blank');

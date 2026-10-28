@@ -55,7 +55,7 @@ export default function StaffPublicationAccess({ sessionId, canPublish, onGrantC
     if (canPublish) return null;
     return <div className="hb-staff-publication-access">
         <button type="button" className="event-button event-button--primary" disabled={busy} onClick={() => void activate()}>
-            {busy ? (es ? 'Preparando la escena…' : 'Preparing stage…') : (es ? 'Subir a la escena' : 'Join the stage')}
+            {busy ? (es ? 'Habilitando controles…' : 'Enabling controls…') : (es ? 'Habilitar mis controles de equipo' : 'Enable my staff controls')}
         </button>
         {notice && <p role="status">{notice}</p>}
     </div>;

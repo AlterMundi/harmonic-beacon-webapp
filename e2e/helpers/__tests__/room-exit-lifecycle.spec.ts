@@ -1,6 +1,40 @@
 import { expect, test } from '@playwright/test';
 import { leaveConnectedRoom } from '../audio-readiness';
 
+for (const navigateParent of [true, false]) {
+    test(`a detached room qualifies only after the confirmed parent reaches the session list; navigate=${navigateParent}`, async ({ page }) => {
+        await page.route('https://room.fixture/**', route => route.fulfill({ contentType: 'text/html', body:
+            new URL(route.request().url()).pathname === '/' ? '<main><h1>Session list</h1></main>' : '<main><iframe data-testid="persistent-room" title="Room"></iframe></main>' }));
+        await page.goto('https://room.fixture/ops/events/test');
+        const room = page.frames()[1];
+        await room.setContent('<span data-testid="connection-state">Connected</span><button id="leave">Leave room</button>');
+        await page.evaluate(({ navigateParent }) => {
+            const doc = document.querySelector('iframe')!.contentDocument!;
+            doc.querySelector<HTMLButtonElement>('#leave')!.onclick = () => {
+                const dialog = document.createElement('dialog');
+                dialog.setAttribute('role', 'alertdialog');
+                dialog.setAttribute('aria-label', 'Leave the room?');
+                dialog.innerHTML = '<button>Leave the room</button>';
+                dialog.querySelector('button')!.onclick = () => {
+                    if (navigateParent) location.assign('/');
+                    else { dialog.remove(); document.querySelector('iframe')!.remove(); }
+                };
+                document.body.append(dialog); dialog.showModal();
+            };
+        }, { navigateParent });
+        if (navigateParent) {
+            await leaveConnectedRoom(room);
+            await expect(page).toHaveURL('https://room.fixture/');
+            await expect(page.getByRole('heading', { name: 'Session list' })).toBeVisible();
+            expect(room.isDetached()).toBe(true);
+        } else {
+            await expect(leaveConnectedRoom(room)).rejects.toThrow();
+            await expect(page).toHaveURL('https://room.fixture/ops/events/test');
+            expect(room.isDetached()).toBe(true);
+        }
+    });
+}
+
 // Independent-review F1: both prompts originate in one exit request. The
 // second native modal appears while genuine asynchronous teardown is pending.
 for (const disconnect of [true, false]) {

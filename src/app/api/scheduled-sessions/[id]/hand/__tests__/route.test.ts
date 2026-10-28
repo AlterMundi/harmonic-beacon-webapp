@@ -4,6 +4,7 @@ import { createRequest, mockParams, parseResponse } from '@/__tests__/helpers';
 
 const mocks = vi.hoisted(() => ({
     resolveRoomPrincipal: vi.fn(),
+    resolveRoomViewer: vi.fn(),
     raiseHand: vi.fn(),
     lowerHand: vi.fn(),
     getHandState: vi.fn(),
@@ -13,6 +14,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@/lib/room-entitlement', () => ({
     resolveRoomPrincipal: mocks.resolveRoomPrincipal,
+    resolveRoomViewer: mocks.resolveRoomViewer,
 }));
 vi.mock('@/lib/hand-queue', async (importOriginal) => {
     const original = await importOriginal<typeof import('@/lib/hand-queue')>();
@@ -62,7 +64,7 @@ function handState(overrides: Record<string, unknown> = {}) {
 describe('/api/scheduled-sessions/[id]/hand', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.resolveRoomPrincipal.mockResolvedValue({
+        mocks.resolveRoomViewer.mockResolvedValue({
             ok: true,
             principal: attendeePrincipal,
         });
@@ -90,7 +92,7 @@ describe('/api/scheduled-sessions/[id]/hand', () => {
     });
 
     it('denies an unauthenticated or unentitled caller at the entitlement gate', async () => {
-        mocks.resolveRoomPrincipal.mockResolvedValue({
+        mocks.resolveRoomViewer.mockResolvedValue({
             ok: false,
             status: 403,
             error: 'Not authorized',
@@ -106,8 +108,8 @@ describe('/api/scheduled-sessions/[id]/hand', () => {
         expect(mocks.raiseHand).not.toHaveBeenCalled();
     });
 
-    it('denies staff even when the room gate would admit them to observe', async () => {
-        mocks.resolveRoomPrincipal.mockResolvedValue({
+    it('lets staff raise only their own hand without creating a publication grant', async () => {
+        mocks.resolveRoomViewer.mockResolvedValue({
             ok: true,
             principal: {
                 ...attendeePrincipal,
@@ -119,12 +121,18 @@ describe('/api/scheduled-sessions/[id]/hand', () => {
         const { POST } = await import('../route');
 
         const response = await POST(
-            createRequest('/api/scheduled-sessions/event-1/hand', { method: 'POST' }),
+            createRequest('/api/scheduled-sessions/event-1/hand', { method: 'POST',
+                headers: { host: 'live.harmonicbeacon.com', origin: 'https://live.harmonicbeacon.com' },
+                body: { participantIdentity: 'someone-else', staffUserId: 'someone-else' } }),
             mockParams({ id: 'event-1' }),
         );
 
-        expect(response.status).toBe(403);
-        expect(mocks.raiseHand).not.toHaveBeenCalled();
+        expect(response.status).toBe(200);
+        expect(await response.json()).toMatchObject({ canPublish: false, raised: true });
+        expect(mocks.raiseHand).toHaveBeenCalledWith({ scheduledSessionId: 'event-1',
+            participantIdentity: 'opaque-attendee-1', ticketEntitlementId: null,
+            staffUserId: 'operator-1', displayName: 'Operator' });
+        expect(mocks.resolveRoomPrincipal).not.toHaveBeenCalled();
     });
 
     it('raises the caller\u2019s hand for their own event and returns the queue state', async () => {
@@ -148,6 +156,8 @@ describe('/api/scheduled-sessions/[id]/hand', () => {
             scheduledSessionId: 'event-1',
             participantIdentity: 'opaque-attendee-1',
             ticketEntitlementId: 'ticket-1',
+            staffUserId: null,
+            displayName: 'Attendee',
         });
     });
 
@@ -288,5 +298,52 @@ describe('/api/scheduled-sessions/[id]/hand', () => {
 
         expect(status).toBe(404);
         expect(body).toMatchObject({ error: 'participant_not_found' });
+    });
+
+    it('polls an assigned staff member without materializing presence or a preflight grant', async () => {
+        mocks.resolveRoomViewer.mockResolvedValue({ ok: true, principal: { ...attendeePrincipal,
+            ticketEntitlementId: null, staffUserId: 'staff-1', isAssignedFacilitator: true } });
+        mocks.getHandState.mockResolvedValue(handState({ raised: false, canPublish: false }));
+        const { GET } = await import('../route');
+        const response = await GET(createRequest('/api/scheduled-sessions/event-1/hand'), mockParams({ id: 'event-1' }));
+        expect(response.status).toBe(200);
+        expect(await response.json()).toMatchObject({ canPublish: false });
+        expect(mocks.resolveRoomPrincipal).not.toHaveBeenCalled();
+        expect(mocks.raiseHand).not.toHaveBeenCalled();
+    });
+
+    it.each([undefined, 'https://untrusted.example'])('rejects a staff hand write with Origin %s', async origin => {
+        mocks.resolveRoomViewer.mockResolvedValue({ ok: true, principal: { ...attendeePrincipal,
+            ticketEntitlementId: null, staffUserId: 'staff-1' } });
+        const { POST } = await import('../route');
+        const headers: Record<string, string> = { host: 'live.harmonicbeacon.com' };
+        if (origin) headers.origin = origin;
+        const response = await POST(createRequest('/api/scheduled-sessions/event-1/hand', { method: 'POST', headers }), mockParams({ id: 'event-1' }));
+        expect(response.status).toBe(403);
+        expect(mocks.raiseHand).not.toHaveBeenCalled();
+    });
+
+    it('does not let the hand API demote a staff facilitator or bypass self_leave', async () => {
+        mocks.resolveRoomViewer.mockResolvedValue({ ok: true, principal: { ...attendeePrincipal,
+            ticketEntitlementId: null, staffUserId: 'staff-1', isAssignedFacilitator: true } });
+        const { PATCH } = await import('../route');
+        const response = await PATCH(createRequest('/api/scheduled-sessions/event-1/hand', {
+            method: 'PATCH', headers: { host: 'live.harmonicbeacon.com', origin: 'https://live.harmonicbeacon.com' },
+            body: { action: 'decline_invitation', expectedGrantVersion: 1 },
+        }), mockParams({ id: 'event-1' }));
+        expect(response.status).toBe(403);
+        expect(mocks.declineStageInvitation).not.toHaveBeenCalled();
+        expect(mocks.leaveStage).not.toHaveBeenCalled();
+    });
+
+    it('does not let staff raise a participant hand before the doors open', async () => {
+        mocks.resolveRoomViewer.mockResolvedValue({ ok: true, principal: { ...attendeePrincipal,
+            session: { ...attendeePrincipal.session, status: 'SCHEDULED' }, ticketEntitlementId: null, staffUserId: 'staff-1' } });
+        const { POST } = await import('../route');
+        const response = await POST(createRequest('/api/scheduled-sessions/event-1/hand', {
+            method: 'POST', headers: { host: 'live.harmonicbeacon.com', origin: 'https://live.harmonicbeacon.com' },
+        }), mockParams({ id: 'event-1' }));
+        expect(response.status).toBe(403);
+        expect(mocks.raiseHand).not.toHaveBeenCalled();
     });
 });
