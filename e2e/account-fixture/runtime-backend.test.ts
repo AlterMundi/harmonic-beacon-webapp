@@ -328,6 +328,40 @@ test('public Playwright failure summary exposes only allowlisted diagnostic meta
         column: 5,
         classification: 'timeout',
     });
+    const helperLocation = structuredClone(report);
+    helperLocation.suites[0].specs[0].title = 'live continuity without capture: full-stack OPERATOR server removal customer@example.com token=private';
+    const helperResult = helperLocation.suites[0].specs[0].tests[0].results[0] as {
+        errorLocation: { file: string; line: number; column: number };
+    };
+    helperResult.errorLocation = {
+        file: '/tmp/navigation-account-private/app/e2e/helpers/audio-readiness.ts',
+        line: 209,
+        column: 15,
+    };
+    const helperSummary = backend.summarizePlaywrightFailureReport(helperLocation);
+    assert.deepEqual(helperSummary.failures[0], {
+        project: 'firefox-account', file: 'e2e/tests/continuity-navigation.spec.ts',
+        line: 271, column: 5, classification: 'timeout', role: 'OPERATOR',
+        helperLocation: { file: 'e2e/helpers/audio-readiness.ts', line: 209, column: 15 },
+    });
+    assert.doesNotMatch(JSON.stringify(helperSummary), /private|customer@|token|\/tmp\//);
+    const errorOnlyLocation = structuredClone(helperLocation);
+    const errorOnlyResult = errorOnlyLocation.suites[0].specs[0].tests[0].results[0] as {
+        errorLocation?: { file: string; line: number; column: number };
+        errors: Array<{ location: { file: string; line: number; column: number } }>;
+    };
+    delete errorOnlyResult.errorLocation;
+    errorOnlyResult.errors[0].location = { ...helperResult.errorLocation };
+    assert.deepEqual(backend.summarizePlaywrightFailureReport(errorOnlyLocation).failures[0], helperSummary.failures[0]);
+    helperResult.errorLocation.file = '/tmp/private/e2e/helpers/customer-secret.ts';
+    const unknownHelper = backend.summarizePlaywrightFailureReport(helperLocation);
+    assert.equal('helperLocation' in unknownHelper.failures[0], false);
+    assert.doesNotMatch(JSON.stringify(unknownHelper), /private|customer|token|\/tmp\//);
+    helperLocation.suites[0].specs[0].title = 'live continuity without capture: full-stack customer@example.com removed';
+    assert.equal('role' in backend.summarizePlaywrightFailureReport(helperLocation).failures[0], false);
+    helperLocation.suites[0].specs[0].title = 'live continuity without capture: full-stack ATTENDEE removed';
+    helperLocation.suites[0].specs[0].file = 'tests/customer-secret.spec.ts';
+    assert.equal('role' in backend.summarizePlaywrightFailureReport(helperLocation).failures[0], false);
     const runner = await readFile(path.join(process.cwd(), 'e2e/account-fixture/run.ts'), 'utf8');
     assert.match(runner, /summarizePlaywrightFailureReport\(report\)/);
     assert.match(runner, /ACCOUNT_PLAYWRIGHT_FAILURE_SUMMARY \$\{JSON\.stringify\(summary\)\}/);
