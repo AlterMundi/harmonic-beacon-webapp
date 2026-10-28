@@ -34,6 +34,9 @@ risk. Run `scripts/hb.mjs doctor` before an operational mutation and read back
 the exact external target afterwards.
 
 Production authority is not inferred from shell, sudo, Docker, database, DNS,
-or GitHub access. Use only the reviewed workflow and restricted helper for the
-owning service. Never touch DNSExit or exercise real payments unless the user
-explicitly authorizes that exact operation.
+or GitHub access. Sai/Eko have the explicit standing platform delegation in
+`docs/ops/OPERATOR_DELEGATION.md` (Nicolás,2026-10-28); CompAII approval is not a
+prerequisite. Use maintained workflows/helpers where applicable and the documented
+owner/manual route for authorized operations those bounded helpers cannot express.
+Never touch DNSExit or exercise real payments unless the user explicitly authorizes
+that exact operation.

@@ -5,6 +5,17 @@ moved verbatim from its detailed release sections. Read the relevant section
 before release preparation, promotion, recovery or changes to delivery
 authority. Moving them does not change authorization or implementation.
 
+## Standing full platform operating authority
+
+[The2026-10-28 Sai/Eko delegation](OPERATOR_DELEGATION.md) explicitly admits the
+full operator's owner/manual route for authorized Beacon tasks a bounded adapter
+cannot express. CompAII is not a required approver. The automated transaction
+contracts below retain their exact admission guarantees within those lanes;
+they do not make OCI activation or CompAII custody a prerequisite to every
+platform operation. Manual work retains selected-service impact, actual source
+and immutable recovery, data protection, relevant qualification and observed
+readback. Never alter an active transaction's bound executable or permit bytes.
+
 ### Impact-scoped release and recovery (OPS-E)
 
 - Documentation-only changes have no Live deployment action. A bounded CSS
@@ -95,8 +106,9 @@ rollback plus forward proof. Its closed optional tapestry image pair supports
 app+tapestry qualification when the reviewed change includes that artifact, with
 the same exact combined rollback/forward proof and no active-test exception.
 It retains the media staging configuration and
-original #590 recovery helper. It grants no runner authority and preserves the
-24-hour forward-deployment exclusion and actual activity continuity guards.
+original #590 recovery helper. It grants no runner authority and preserves the bounded helper’s default
+24-hour exclusion and activity guards. Sai may accept a different operational
+window under the standing full-operator delegation and its separate owner route.
 
 ## Delivery authority and OCI transition
 
@@ -190,12 +202,12 @@ The sole current-state schema is `harmonic-beacon.current-state.v4`, a closed
 OCI-production manifest plus exact digest-bound Compose, overlay and reviewed
 production public-config bytes. Existing legacy/v2/v3 hosts deliberately block
 both shadow and production preparation until a separately reviewed root-owned
-reconciliation proves the exact OCI live runtime and installs v4. No generic
-root fallback or helper migration shortcut exists. Preparation verifies that
+reconciliation proves the exact OCI live runtime and installs v4. The OCI automation has no generic
+root fallback or helper migration shortcut. Preparation verifies that
 runtime against the high-water before activation, and migration repeats the
-verification before its phase change or first Compose/runtime mutation. The
-manual Compose section in older runbooks is emergency historical guidance, not
-ordinary authorization.
+verification before its phase change or first Compose/runtime mutation. Older manual Compose text is historical guidance, not authority by itself.
+The explicit full-operator delegation supplies a separate owner route when
+needed; it does not enable legacy runner mutation or claim OCI acceptance.
 
 Account/Listener, Home, Analytics, and payment authority have separate release
 ownership. Do not assume a Live deployment updates them. Shared-contract

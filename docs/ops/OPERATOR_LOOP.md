@@ -9,6 +9,11 @@ changes to those invariants must be implemented and reviewed before use.
 
 ## Start and continue
 
+Sai/Eko’s [standing platform delegation](OPERATOR_DELEGATION.md) includes delivery,
+recovery and operational decisions without CompAII as a gate. Maintain one owner
+per mutable target. Bounded helper limits do not remove the full operator’s
+authorized owner/manual route.
+
 1. Resolve the canonical repository from `deploy/platform-services.json`.
    Inspect Git remotes: `origin` may be a personal fork. Read `AGENTS.md` from
    the canonical protected base, preserve existing work, and use a clean worktree.
@@ -23,7 +28,7 @@ changes to those invariants must be implemented and reviewed before use.
    use `change-impact` plus checks required by the actual risk. Reuse unaffected
    evidence; required hosted checks still have to qualify the candidate.
 5. Review the integrated result as the task owner and
-   deliver through the service's reviewed workflow. Read back the deployed
+   deliver through the service's maintained workflow or authorized owner route. Read back the deployed
    artifact and relevant behavior. A merged PR is an intermediate outcome.
 
 A failed test continues the repair loop. External GitHub approval is not a

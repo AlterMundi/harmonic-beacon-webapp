@@ -11,6 +11,9 @@ Resolve the canonical owner repository in `deploy/platform-services.json`;
 files contain the common procedure for Codex and Hermes, including required
 release/recovery checks. This skill is a router, not a second policy copy.
 Existing user authorization defines scope; installing a skill grants none.
+Read `docs/ops/OPERATOR_DELEGATION.md` for standing full-platform appointments.
+A helper limit or missing CompAII reply is not a new approval requirement for an
+appointed full operator with a supported owner/manual route.
 
 Use a clean worktree and check for another owner or in-flight deployment.
 Before operational mutation, run `node scripts/hb.mjs doctor --service ID` for
@@ -28,8 +31,8 @@ work and keep one owner per mutable target.
 - Qualification: use `change-impact` and the required risk-specific checks at
   the integrated boundary. A failed gate blocks promotion; continue authorized
   repairs. Carry forward evidence only for unchanged behavior and inputs.
-- Promotion/recovery: use the owning service's reviewed workflow and restricted
-  helper. Read the catalog's relevant runbook and verify the actual candidate,
+- Promotion/recovery: use the owning service's maintained workflow/helper or the
+  appointed full operator's documented owner/manual route when required. Read the catalog's relevant runbook and verify the actual candidate,
   environment, recovery path and result. Shell access is not extra authority.
 - Missing reviewer/access: name the actual dependency, preserve the candidate
   and continue independent in-scope work. Do not change identities or weaken
@@ -58,7 +61,8 @@ or authority over separately owned services.
 
 Use a separate credential profile for every appointed operator. The delegated
 Unix Staff API path in OPERATOR_ACCESS.md preserves root credential custody and
-normal API audit without browser automation or general Docker/sudo access.
+normal API audit without browser automation. That bounded Staff grant remains
+separate from an explicitly appointed full platform operator's host administration.
 Receiving tool installation, access verification and staging acceptance are
 separate evidence; do not claim another operator is ready from a shared key or
 a published skill alone.

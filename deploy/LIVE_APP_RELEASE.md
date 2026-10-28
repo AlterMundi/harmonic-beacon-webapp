@@ -1,5 +1,10 @@
 # Owner-operated Live app delivery
 
+Sai/Eko are appointed full platform operators under
+[the standing delegation](../docs/ops/OPERATOR_DELEGATION.md). They may own permits,
+recovery and authorized manual operations; root ownership does not mean CompAII
+ownership. This bounded helper is one supported route.
+
 This path updates the app image while retaining the existing media staging
 configuration. A closed optional permit can also update tapestry when its
 dependency artifact is part of the same qualified change. It runs through the root-owned helper, with no runner sudo grant. It does
@@ -76,8 +81,10 @@ Use `sudo /usr/local/sbin/hb-live-app-release <environment> <verb>`:
    Verify the affected user behavior on this exact candidate.
 3. `production prepare`, `production apply` requires both staging records,
    their exact hashes and the currently healthy candidate in staging. New
-   promotion is refused when a scheduled event is within 24 hours. Database
-   and participant continuity checks remain active.
+   promotion through this bounded helper is refused within24hours of a scheduled
+   event. The appointed full operator may select an explicit scheduling exception
+   through the documented owner route; do not change these bytes during an active
+   transaction. Database and participant continuity remain operational requirements.
 4. Read back public health/readiness, source/image identity and the affected
    behavior. Record the exact outcome and recovery target in #590.
 
