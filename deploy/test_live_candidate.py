@@ -160,6 +160,17 @@ class AdmissionTests(unittest.TestCase):
                 command.assert_not_called()
             self.assertEqual(permit.read_bytes(),before)
 
+    def test_runtime_readback_never_serializes_environment_or_participant_data(self):
+        with tempfile.TemporaryDirectory() as d:
+            lock = Path(d)/'lock';lock.touch()
+            value = {'Id':'container','Image':'image','Config':{'Labels':{},'Env':['POSTGRES_USER=service','POSTGRES_DB=beacon','PRIVATE=do-not-expose']},'State':{'Running':True,'Health':{'Status':'healthy'}}}
+            with patch.object(m,'LOCK',lock),patch.object(m,'safe'),patch.object(m,'inspect',return_value=value),patch.object(m,'run',return_value=b'{"live":0,"within24h":0,"next":null}'):
+                result=m.readback(S)
+            self.assertEqual(len(result['services']),7)
+            self.assertNotIn('do-not-expose',json.dumps(result))
+            self.assertNotIn('Env',json.dumps(result))
+            self.assertEqual(result['agenda']['live'],0)
+
     def test_sudo_grant_has_no_worker_root_shell_or_docker_capability(self):
         grant = Path(__file__).with_name('hb-live-app-release.sudoers.example').read_text()
         self.assertNotIn('_worker', grant)

@@ -282,12 +282,34 @@ def admit(source):
         return {'phase': 'admitted', 'sourceSha': source, 'imageId': image['Id'], 'expiresAt': value['expiresAt']}
 
 
+def readback(source):
+    safe(LOCK)
+    with LOCK.open('r+') as lock:
+        fcntl.flock(lock, fcntl.LOCK_SH | fcntl.LOCK_NB)
+        services = []
+        for name in ['beacon-app', 'hb-live-staging-app', 'beacon-commerce-reconciler',
+                     'beacon-postgres', 'beacon-livekit', 'beacon-playlist-bot', 'beacon-tapestry']:
+            value = inspect(name)
+            services.append({'name': name, 'containerId': value['Id'], 'imageId': value['Image'],
+                             'sourceSha': (value['Config'].get('Labels') or {}).get('org.opencontainers.image.revision'),
+                             'running': value['State']['Running'],
+                             'health': value['State'].get('Health', {}).get('Status')})
+        database = inspect('beacon-postgres')
+        env = dict(v.split('=', 1) for v in database['Config']['Env'])
+        query = "SELECT json_build_object('live',count(*) FILTER(WHERE status='LIVE'),'next',min(scheduled_at) FILTER(WHERE status='SCHEDULED' AND NOT is_test AND scheduled_at>=now()),'within24h',count(*) FILTER(WHERE status='SCHEDULED' AND NOT is_test AND scheduled_at>=now() AND scheduled_at<=now()+interval '24 hours')) FROM scheduled_sessions"
+        agenda = json.loads(run(['docker', 'exec', 'beacon-postgres', 'psql', '-X', '-v', 'ON_ERROR_STOP=1',
+                                 '-U', env['POSTGRES_USER'], '-d', env['POSTGRES_DB'], '-Atqc', query]))
+        return {'expectedSourceSha': source, 'services': services, 'agenda': agenda,
+                'observedAt': dt.datetime.now(dt.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}
+
+
 def main(args):
-    if os.geteuid() != 0 or len(args) != 2 or args[0] not in ('build', 'status', 'admit', '_worker') or not SHA.fullmatch(args[1]):
-        raise RuntimeError('usage: hb-live-candidate build|status|admit SHA40')
+    if os.geteuid() != 0 or len(args) != 2 or args[0] not in ('build', 'status', 'admit', 'readback', '_worker') or not SHA.fullmatch(args[1]):
+        raise RuntimeError('usage: hb-live-candidate build|status|admit|readback SHA40')
     os.umask(0o077)
     safe(Path(__file__).absolute()); safe(ROOT, True)
     verb, source = args; directory = ROOT / source
+    if verb == 'readback': return readback(source)
     if verb == 'status':
         safe(directory, True)
         result = directory / 'result.json'

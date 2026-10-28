@@ -143,7 +143,9 @@ inside it. Validate/adopt the same sudoers template above only for appointed
 operators. Helpers, permits, logs and recovery snapshots remain root-private.
 
 The additional exact helper supports `build SHA40`, `status SHA40` and
-`admit SHA40`. It accepts only the current protected `release` head, a uniquely
+`admit SHA40`, plus `readback SHA40` for a bounded runtime/agenda snapshot.
+The snapshot exposes only selected container/image/source identities, health and
+non-PII scheduling counts; it contains no environment or raw diagnostics. It accepts only the current protected `release` head, a uniquely
 merged PR and the successful GitHub Actions `delivery-gate-release` on that
 PR's exact head. Admission additionally verifies the trusted gate workflow/event/base,
 the actual current CI attempt and its GitHub Actions aggregate check, and equality
@@ -182,6 +184,7 @@ wakeup, root shell, runner activation or automatic production promotion is added
 Receiving sequence over the operator's existing SSH route:
 
 ```text
+sudo -n /usr/local/sbin/hb-live-candidate readback SHA40
 sudo -n /usr/local/sbin/hb-live-candidate build SHA40
 sudo -n /usr/local/sbin/hb-live-candidate status SHA40
 sudo -n /usr/local/sbin/hb-live-candidate admit SHA40
