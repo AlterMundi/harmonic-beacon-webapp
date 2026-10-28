@@ -164,3 +164,29 @@ The exact role transition and audit commit together under locked identity rows;
 a mismatched prior role fails closed and replay creates no second audit. Retain
 private before/after evidence and the public redacted receipt in the owning issue.
 No deployment, restart, event creation or device-consent bypass is needed.
+
+### Exact runtime operator generations
+
+The root broker inspects the selected running app and its immutable image's baked
+source before selecting executable bytes. An installed `runtimes/<source SHA40>`
+generation must have an exact-source private manifest and verified bundle; malformed
+or incomplete generations fail closed. Only an absent generation may use the
+preserved legacy bundle's explicit compatibility list. Existing credential profiles,
+normal API authorization/audit and the fixed environment boundary remain unchanged.
+
+`hb-live-candidate` compiles the operator from its exact checked-out source through
+the newly built immutable image, without production env, network or Docker socket.
+The compiler has a90-second inner deadline,512MiB/one CPU/128PID limits and8MiB
+file ceiling. Admission rechecks its retained digest and publishes an immutable
+root-private generation under the existing app lock before rotating the app permit.
+An existing differing generation is never overwritten. Compilation/admission failure
+preserves the old permit and executable recovery generations.
+
+Generations are bounded to64SHA namespaces, at most8MiB per bundle, with one fixed
+pending publication slot. The ceiling stops admission visibly. Root retirement must
+first prove a namespace is absent from every actual container and current/retained
+recovery permit; preserve the legacy default and all referenced generations. Archive
+and verify required recovery bytes before any deliberate retirement. This is an
+explicit maintenance path, never automatic broad deletion. A pending slot after
+host interruption requires inspection; a generation published before a later app
+permit failure is safe to reuse only with matching verified bytes.

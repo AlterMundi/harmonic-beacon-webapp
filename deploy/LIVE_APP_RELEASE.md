@@ -215,3 +215,11 @@ grant is not acceptance: the receiving operator must exercise build, admission
 and staging recovery using its own authenticated route before autonomous delivery
 is claimed. Listen has a separate root-owner delivery path; this helper cannot
 build/admit or replace Listen, Account, workers, media or databases.
+
+Candidate admission also requires its exact-source operator bundle. Install the
+reviewed `hb-operator-root.py` alongside the candidate helper; existing app permits
+and legacy operator bundle remain unchanged. See
+[operator runtime generations](../docs/ops/OPERATOR_ACCESS.md#exact-runtime-operator-generations).
+Old build results without a recorded operator digest cannot be admitted. Qualification
+of the delegated Staff API requires an actual bounded receiving-route request; a
+merged helper or healthy application alone does not prove broker compatibility.
