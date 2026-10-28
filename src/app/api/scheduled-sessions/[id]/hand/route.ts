@@ -7,7 +7,8 @@ import {
     raiseHand,
     type HandState,
 } from '@/lib/hand-queue';
-import { resolveRoomPrincipal } from '@/lib/room-entitlement';
+import { resolveRoomViewer } from '@/lib/room-entitlement';
+import { isSameOriginLiveRequest } from '@/lib/account-rp';
 import {
     declineStageInvitation,
     leaveStage,
@@ -17,10 +18,10 @@ import {
 export const dynamic = 'force-dynamic';
 
 /**
- * The attendee side of the WS3-02 hand queue. `resolveRoomPrincipal` is the
- * same entitlement gate the token route uses, so only the entitled attendee
- * of this event can touch their own hand — staff and other sessions' tickets
- * are rejected there. The response carries no PII, matching the console.
+ * The caller-owned hand queue, including staff using the participant view.
+ * The read-only viewer gate validates the same identity/event entitlement as
+ * tokens, without materializing a participant or a facilitator preflight grant.
+ * Raising a hand never publishes or grants stage permission.
  */
 
 type HandResponse = {
@@ -43,8 +44,8 @@ function serialize(state: HandState): HandResponse {
     };
 }
 
-async function resolveAttendee(request: NextRequest, sessionId: string) {
-    const entitlement = await resolveRoomPrincipal(request, sessionId);
+async function resolveHandOwner(request: NextRequest, sessionId: string) {
+    const entitlement = await resolveRoomViewer(request, sessionId);
     if (!entitlement.ok) {
         return {
             error: NextResponse.json(
@@ -53,8 +54,10 @@ async function resolveAttendee(request: NextRequest, sessionId: string) {
             ),
         };
     }
-    // Hands are an attendee control; staff operate the queue from the console.
-    if (!entitlement.principal.ticketEntitlementId) {
+    const { principal } = entitlement;
+    if ((!principal.ticketEntitlementId && !principal.staffUserId) ||
+        principal.session.status !== 'LIVE' ||
+        (principal.staffUserId && request.method !== 'GET' && !isSameOriginLiveRequest(request))) {
         return {
             error: NextResponse.json(
                 { error: 'Insufficient permissions' },
@@ -62,7 +65,7 @@ async function resolveAttendee(request: NextRequest, sessionId: string) {
             ),
         };
     }
-    return { principal: entitlement.principal };
+    return { principal };
 }
 
 function handErrorResponse(error: unknown): NextResponse {
@@ -95,7 +98,7 @@ export async function GET(
     { params }: { params: Promise<{ id: string }> },
 ) {
     const { id } = await params;
-    const { principal, error } = await resolveAttendee(request, id);
+    const { principal, error } = await resolveHandOwner(request, id);
     if (!principal) {
         return error;
     }
@@ -116,7 +119,7 @@ export async function POST(
     { params }: { params: Promise<{ id: string }> },
 ) {
     const { id } = await params;
-    const { principal, error } = await resolveAttendee(request, id);
+    const { principal, error } = await resolveHandOwner(request, id);
     if (!principal) {
         return error;
     }
@@ -125,6 +128,8 @@ export async function POST(
             scheduledSessionId: id,
             participantIdentity: principal.identity,
             ticketEntitlementId: principal.ticketEntitlementId,
+            staffUserId: principal.staffUserId,
+            displayName: principal.displayName,
         });
         return NextResponse.json(serialize(state));
     } catch (failure) {
@@ -138,7 +143,7 @@ export async function DELETE(
     { params }: { params: Promise<{ id: string }> },
 ) {
     const { id } = await params;
-    const { principal, error } = await resolveAttendee(request, id);
+    const { principal, error } = await resolveHandOwner(request, id);
     if (!principal) {
         return error;
     }
@@ -159,10 +164,14 @@ export async function PATCH(
     { params }: { params: Promise<{ id: string }> },
 ) {
     const { id } = await params;
-    const { principal, error } = await resolveAttendee(request, id);
+    const { principal, error } = await resolveHandOwner(request, id);
     if (!principal) {
         return error;
     }
+    // Staff voluntary exit/decline retains the existing self_leave path, its
+    // assignment exception, audited actor and version fence. No ordinary
+    // attendee demotion is extended to a protected facilitator.
+    if (principal.staffUserId) return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 });
 
     let body: { action?: unknown; expectedGrantVersion?: unknown };
     try {

@@ -6,9 +6,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
     headers: vi.fn(),
     localNavigationIdentity: vi.fn(),
+    pathname: '/',
 }));
 
 vi.mock('next/headers', () => ({ headers: mocks.headers }));
+vi.mock('next/navigation', () => ({ usePathname: () => mocks.pathname }));
 vi.mock('next/font/google', () => ({
     Syne: () => ({ variable: '--font-syne' }),
     Space_Mono: () => ({ variable: '--font-space-mono' }),
@@ -60,6 +62,7 @@ describe('root layout Account navigation hint', () => {
     afterEach(() => {
         cleanup();
         vi.clearAllMocks();
+        mocks.pathname = '/';
         delete process.env.BEACON_ACCOUNT_ENABLED;
     });
 
@@ -145,5 +148,17 @@ describe('root layout Account navigation hint', () => {
         expect(screen.getByTestId('local-account-menu')).toHaveTextContent('Production Tester');
         expect(screen.getByTestId('staff-mode-access')).toHaveAttribute('data-role', 'ADMIN');
         expect(screen.getByTestId('staff-mode-access')).toHaveAttribute('data-active-role', 'attendee');
+    });
+
+    it('keeps an available staff role out of the participant room chrome', async () => {
+        process.env.BEACON_ACCOUNT_ENABLED = 'true';
+        mocks.pathname = '/session/event-1';
+        mocks.headers.mockResolvedValue(new Headers({ host: 'live.harmonicbeacon.com' }));
+        mocks.localNavigationIdentity.mockResolvedValue({ issuer: 'https://account.harmonicbeacon.com', displayName: 'Team participant', staffRole: null, availableStaffRole: 'FACILITATOR_OP' });
+        render(await RootLayout({ children: <main>The room</main> }), { container: document });
+        expect(screen.queryByTestId('global-navigation')).toBeNull();
+        expect(screen.queryByTestId('staff-mode-access')).toBeNull();
+        expect(screen.getByRole('main')).toHaveTextContent('The room');
+        expect(screen.getByTestId('identity-cache-boundary')).toBeInTheDocument();
     });
 });

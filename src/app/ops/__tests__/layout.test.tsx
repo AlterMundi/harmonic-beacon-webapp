@@ -9,7 +9,8 @@ vi.mock('next/link', () => ({
 vi.mock('next/headers', () => ({
     cookies: vi.fn().mockResolvedValue({ get: () => ({ value: 'staff-token' }) }),
 }));
-vi.mock('next/navigation', () => ({ redirect: vi.fn() }));
+const navigation = vi.hoisted(() => ({ pathname: '/ops/events' }));
+vi.mock('next/navigation', () => ({ redirect: vi.fn(), usePathname: () => navigation.pathname }));
 vi.mock('@/lib/ops-auth', () => ({
     resolveStaffByToken: vi.fn().mockResolvedValue({
         id: 'fac-op-1',
@@ -30,7 +31,7 @@ import OpsLayout from '../layout';
 import { LocaleProvider } from '@/context/LocaleContext';
 
 describe('staff layout', () => {
-    afterEach(cleanup);
+    afterEach(() => { cleanup(); navigation.pathname = '/ops/events'; });
 
     it('has one stable event hub entry without a second identity control', async () => {
         render(<LocaleProvider initialLocale="es">{await OpsLayout({ children: <p>child</p> })}</LocaleProvider>);
@@ -41,5 +42,13 @@ describe('staff layout', () => {
         expect(screen.queryByRole('link', { name: /Room|Spotlight/ })).toBeNull();
         expect(screen.queryByTestId('identity')).toBeNull();
         expect(document.querySelectorAll('summary')).toHaveLength(0);
+    });
+
+    it('keeps the staff room without the separate operations-site navigation', async () => {
+        navigation.pathname = '/ops/events/event-1';
+        render(<LocaleProvider initialLocale="es">{await OpsLayout({ children: <p>Room controls</p> })}</LocaleProvider>);
+        expect(screen.queryByRole('navigation')).toBeNull();
+        expect(screen.queryByTestId('nav-links')).toBeNull();
+        expect(screen.getByText('Room controls')).toBeVisible();
     });
 });

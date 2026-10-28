@@ -30,6 +30,8 @@ function participant(overrides: Record<string, unknown> = {}) {
         raisedAt: firstRaise,
         publishGrantedAt: null,
         publishRevokedAt: null,
+        grantVersion: 0,
+        grantReconcileNeeded: false,
         ...overrides,
     };
 }
@@ -100,6 +102,18 @@ describe('hand queue', () => {
         );
     });
 
+    it('records the own staff row and name without creating a publication grant', async () => {
+        const { raiseHand } = await import('../hand-queue');
+        const state = await raiseHand({ scheduledSessionId: 'event-1', participantIdentity: 'staff-identity',
+            ticketEntitlementId: null, staffUserId: 'staff-1', displayName: 'Team participant' });
+        const { create, update } = mocks.upsert.mock.calls[0][0];
+        expect(create).toMatchObject({ staffUserId: 'staff-1', ticketEntitlementId: null, displayName: 'Team participant' });
+        expect(create).not.toHaveProperty('publishGrantedAt');
+        expect(create).not.toHaveProperty('grantVersion');
+        expect(update).toEqual({});
+        expect(state.canPublish).toBe(false);
+    });
+
     it('treats a raised hand with an active grant as on stage, not in the queue', async () => {
         mocks.findUnique.mockResolvedValue(participant({
             publishGrantedAt: new Date('2026-08-01T15:11:00Z'),
@@ -114,6 +128,21 @@ describe('hand queue', () => {
         expect(state.queuePosition).toBeNull();
         expect(state.canPublish).toBe(true);
         expect(mocks.count).not.toHaveBeenCalled();
+    });
+
+    it.each(['get', 'raise', 'lower'] as const)('%s never exposes an unreconciled grant as publication authority', async action => {
+        const pending = participant({ publishGrantedAt: firstRaise, grantReconcileNeeded: true, grantVersion: 7 });
+        mocks.findUnique.mockResolvedValue(pending);
+        mocks.upsert.mockResolvedValue(pending);
+        mocks.update.mockResolvedValue({ ...pending, raisedAt: null });
+        const queue = await import('../hand-queue');
+        const input = { scheduledSessionId: 'event-1', participantIdentity: 'staff-identity', ticketEntitlementId: null, staffUserId: 'staff-1' };
+        const state = action === 'get' ? await queue.getHandState(input)
+            : action === 'raise' ? await queue.raiseHand(input) : await queue.lowerHand(input);
+        expect(state).toMatchObject({ canPublish: false, grantVersion: 7, queuePosition: null });
+        expect(mocks.count).not.toHaveBeenCalled(); // Durable occupancy remains reserved.
+        const reads = [...mocks.findUnique.mock.calls, ...mocks.upsert.mock.calls, ...mocks.update.mock.calls];
+        for (const [query] of reads) expect(query.select).toMatchObject({ grantReconcileNeeded: true });
     });
 
     it('lowers a raised hand and is idempotent when no hand is up', async () => {

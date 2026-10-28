@@ -60,17 +60,19 @@ function reportTestErrors(value: unknown): JsonObject[] {
 
 const publicProjects = new Set(['chromium-account', 'android-chrome-account', 'firefox-account', 'iphone-webkit-account']);
 const publicSpecFiles = new Set(['tests/continuity-navigation.spec.ts', 'account-fixture/rp.spec.ts']);
+const publicHelperFiles = new Set(['helpers/audio-readiness.ts', 'helpers/continuity-stack.ts', 'helpers/media-probe.ts', 'account-fixture/browser.ts']);
 function publicProject(value: unknown): string {
     return typeof value === 'string' && publicProjects.has(value) ? value : '<redacted>';
 }
 
-function publicSpecFile(value: unknown): string {
+function publicSourceFile(value: unknown, allowed: Set<string>): string {
     if (typeof value !== 'string') return '<redacted>';
     const normalized = value.replaceAll('\\', '/').replace(/^e2e\//, '');
-    const match = [...publicSpecFiles].find(spec =>
+    const match = [...allowed].find(spec =>
         normalized === spec || normalized.endsWith(`/e2e/${spec}`));
     return match ? `e2e/${match}` : '<redacted>';
 }
+const publicSpecFile = (value: unknown) => publicSourceFile(value, publicSpecFiles);
 
 /** Public CI diagnostics contain only source-controlled identifiers and result state. */
 export function summarizePlaywrightFailureReport(value: unknown) {
@@ -78,7 +80,7 @@ export function summarizePlaywrightFailureReport(value: unknown) {
     const rootErrors = reportTestErrors(report.errors);
     const stats = reportObject(report.stats);
     const unexpected = reportInteger(stats.unexpected);
-    const failures: Array<{ project: string; file: string; line: number; column: number; classification: string }> = [];
+    const failures: Array<{ project: string; file: string; line: number; column: number; classification: string; role?: string; helperLocation?: ReportLocation }> = [];
     const visit = (suiteValue: unknown, depth = 0) => {
         if (depth > 32) invalidReport();
         const suite = reportObject(suiteValue);
@@ -115,12 +117,27 @@ export function summarizePlaywrightFailureReport(value: unknown) {
                     ? '<redacted>'
                     : publicSpecFile(terminal.errorLocation.file);
                 const useTerminalLocation = file !== '<redacted>' && terminalFile === file;
+                // Preserve the owning spec location, while identifying only
+                // reviewed source helpers and the fixed role parameter. Never
+                // publish a report title, raw stack, message or private prefix.
+                const role = file !== '<redacted>' && typeof spec.title === 'string'
+                    ? /^live continuity without capture: full-stack (ATTENDEE|OPERATOR) /.exec(spec.title)?.[1]
+                    : undefined;
+                const locations = [
+                    ...(terminal.errorLocation === undefined ? [] : [terminal.errorLocation]),
+                    ...terminal.errors.flatMap(error => error.location === undefined ? [] : [reportLocation(error.location)]),
+                ];
+                const helperLocation = file === '<redacted>' ? undefined : locations.map(location => ({
+                    ...location, file: publicSourceFile(location.file, publicHelperFiles),
+                })).find(location => location.file !== '<redacted>');
                 failures.push({
                     project: publicProject(test.projectName),
                     file,
                     line: useTerminalLocation ? terminal.errorLocation!.line : line,
                     column: useTerminalLocation ? terminal.errorLocation!.column : column,
                     classification,
+                    ...(role === undefined ? {} : { role }),
+                    ...(helperLocation === undefined ? {} : { helperLocation }),
                 });
             }
         }
