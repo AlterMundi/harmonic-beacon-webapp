@@ -32,11 +32,11 @@ rejects an Account-enabled runtime; do not disable Account to update an app.
 When a candidate adds a public route, install its reviewed exact Nginx location
 on isolated staging first, test the actual HTTPS boundary, then apply the same
 bounded location to production with `nginx -t` and a reload. A reload acknowledges
-the master signal; wait up to20seconds for the new route's exact expected status
+the master signal; wait up to 20 seconds for the new route's exact expected status
 and privacy/CORS headers before the remaining boundary checks. An immediate
-probe can still see the prior worker configuration (observed404→401 during the
-profile-route delivery). An unauthenticated private profile probe expects401,
-then wrong Origin403, wrong method405 and unknown/internal routes404. Keep a
+probe can still see the prior worker configuration (observed 404 → 401 during the
+profile-route delivery). An unauthenticated private profile probe expects 401,
+then wrong Origin 403, wrong method 405 and unknown/internal routes 404. Keep a
 copy of the prior vhost and restore/test/reload it if qualification fails; app
 activation does not update host Nginx.
 
