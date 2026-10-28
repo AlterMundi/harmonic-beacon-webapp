@@ -88,9 +88,13 @@ class AdmissionTests(unittest.TestCase):
             with self.subTest(key=key), self.assertRaises(RuntimeError):m.qualify(S,fetch)
 
     def test_reject_broader_service_changes(self):
-        for path in ('Dockerfile', 'package-lock.json', 'prisma/schema.prisma', 'services/tapestry/a.ts', 'docker-compose.yml'):
+        for path in ('Dockerfile', 'package-lock.json', 'prisma/schema.prisma', 'services/tapestry/a.ts', 'docker-compose.yml', 'scripts/live-production/unreviewed-helper.ts'):
             with patch.object(m, 'run', side_effect=[b'', path.encode()]), self.subTest(path=path):
                 with self.assertRaises(RuntimeError): m.compatible(S, P, Path('/fixed'))
+
+    def test_accept_packaged_exact_account_utility_without_host_installation(self):
+        with patch.object(m, 'run', side_effect=[b'', b'scripts/live-production/promote-event-manager.ts\nscripts/live-production/promote-event-manager.test.ts\n']):
+            m.compatible(S, P, Path('/fixed'))
 
     def test_accept_app_and_operator_docs_without_broadening_runtime(self):
         with patch.object(m, 'run', side_effect=[b'', b'src/app/page.tsx\ndeploy/hb-live-candidate.py\ndocs/ops/x.md\n']):

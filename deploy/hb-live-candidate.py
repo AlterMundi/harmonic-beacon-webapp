@@ -139,7 +139,10 @@ def compatible(source, prior, directory):
          'https://github.com/' + REPO + '.git', prior], timeout=300)
     paths = run(['git', '-C', str(directory), 'diff', '--name-only', prior, source]).decode().splitlines()
     allowed = ('src/', 'docs/', 'e2e/', 'deploy/', '.agents/skills/', 'scripts/ops/__tests__/')
-    if not paths or any(not p.startswith(allowed) and p != 'scripts/beacon-staff-api.py' for p in paths):
+    operational = ('scripts/beacon-staff-api.py',
+                   'scripts/live-production/promote-event-manager.ts',
+                   'scripts/live-production/promote-event-manager.test.ts')
+    if not paths or any(not p.startswith(allowed) and p not in operational for p in paths):
         raise RuntimeError('source requires a broader delivery adapter')
 
 

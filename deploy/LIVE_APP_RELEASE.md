@@ -153,7 +153,10 @@ of the merged source tree with that qualified head. Fixed GitHub HTTPS reads and
 independently verify caller-supplied identities. Neither caller paths, Docker
 arguments, image files, source archives, environments nor arbitrary commands
 are accepted. App-only compatibility rejects changed dependencies, migrations,
-build/Compose definitions and media services. Broader changes use their owning
+build/Compose definitions and media services. The two existing packaged operator
+utilities (Staff API client and exact-account role adjustment, including its
+test) may travel with a qualified app source; this never installs or executes
+them on the host or changes their separate authority. Broader changes use their owning
 reviewed adapters rather than weakening this restriction.
 
 `build` starts a named finite host screen job and returns. GNU screen must
