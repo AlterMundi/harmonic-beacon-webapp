@@ -238,7 +238,9 @@ for (const role of ['ATTENDEE', 'OPERATOR'] as const) {
                 await expect(exit).toBeFocused();
                 await expectSamePlayingMedia(surface);
                 expect(logouts).toBe(0);
-                await exit.click(); await page.keyboard.press('Escape');
+                await exit.click();
+                await expect(page.getByRole('alertdialog')).toBeVisible();
+                await page.keyboard.press('Escape');
                 await expect(exit).toBeFocused();
                 await expectSamePlayingMedia(surface);
                 expectMediaContinuity(before, await settledContinuity(surface));
