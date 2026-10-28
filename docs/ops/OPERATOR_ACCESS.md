@@ -148,3 +148,19 @@ user installations such as `~/.local/bin`. A command missing from an Incus
 non-login shell does not establish that the body lacks it. Reuse and test its
 existing authenticated CLI before installing another copy or touching credentials.
 Use explicit paths in the receiving binding when shell discovery differs.
+
+### Exact existing-account facilitator role adjustment
+
+The root-only `scripts/live-production/promote-event-manager.ts` remains separate
+from delegated Staff API access. It requires an exact enabled canonical Account
+issuer/subject, binding and staff user in its private request; it never creates or
+rebinds identities. Default expected prior role is OPERATOR. An explicitly
+authorized ADMIN-to-FACILITATOR_OP adjustment must additionally set
+`previousRole: "ADMIN"` in that root-private request. The deployed policy gives
+these two roles the same global staff capabilities, while FACILITATOR_OP alone
+receives facilitator treatment on assigned events. No analytics grant changes.
+Run the dry-run first and then `--apply` with the existing explicit opt-in.
+The exact role transition and audit commit together under locked identity rows;
+a mismatched prior role fails closed and replay creates no second audit. Retain
+private before/after evidence and the public redacted receipt in the owning issue.
+No deployment, restart, event creation or device-consent bypass is needed.

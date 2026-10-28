@@ -7,12 +7,13 @@ import pg from 'pg';
 export function parsePromotion(value: unknown) {
     const v = value as Record<string, unknown>;
     if (!v || typeof v !== 'object' || Array.isArray(v) ||
-        Object.keys(v).sort().join(',') !== 'accountSubject,bindingId,staffUserId' ||
+        !['accountSubject,bindingId,staffUserId','accountSubject,bindingId,previousRole,staffUserId'].includes(Object.keys(v).sort().join(',')) ||
+        (v.previousRole !== undefined && !['OPERATOR','ADMIN'].includes(v.previousRole as string)) ||
         ![v.bindingId, v.staffUserId].every(id => typeof id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) ||
         typeof v.accountSubject !== 'string' || !v.accountSubject || v.accountSubject.length > 255 || /\s/.test(v.accountSubject)) {
         throw new Error('Invalid private promotion request');
     }
-    return {staffUserId: v.staffUserId as string, bindingId: v.bindingId as string, accountSubject: v.accountSubject};
+    return {staffUserId: v.staffUserId as string, bindingId: v.bindingId as string, accountSubject: v.accountSubject, previousRole: (v.previousRole ?? 'OPERATOR') as 'OPERATOR' | 'ADMIN'};
 }
 
 export async function promoteEventManager(db: pg.PoolClient, input: ReturnType<typeof parsePromotion>, apply: boolean) {
@@ -25,14 +26,15 @@ export async function promoteEventManager(db: pg.PoolClient, input: ReturnType<t
             FOR UPDATE OF u,b`, [input.staffUserId, input.bindingId, input.accountSubject]);
         const row = result.rows[0];
         if (result.rowCount !== 1 || row.disabled_at || row.binding_disabled ||
-            !['OPERATOR', 'FACILITATOR_OP'].includes(row.role)) throw new Error('Current staff binding does not match promotion request');
+            ![input.previousRole, 'FACILITATOR_OP'].includes(row.role)) throw new Error('Current staff binding does not match promotion request');
         if (row.role === 'FACILITATOR_OP') { await db.query('ROLLBACK'); return 'already-enabled'; }
         if (!apply) { await db.query('ROLLBACK'); return 'would-enable'; }
-        await db.query("UPDATE users SET role='FACILITATOR_OP', updated_at=now() WHERE id=$1 AND role='OPERATOR'", [input.staffUserId]);
+        const changed = await db.query('UPDATE users SET role=\'FACILITATOR_OP\', updated_at=now() WHERE id=$1 AND role=$2::"StaffRole"', [input.staffUserId,input.previousRole]);
+        if (changed.rowCount !== 1) throw new Error('Expected prior role changed');
         await db.query(`INSERT INTO audit_logs (id,action,target_type,target_id,reason,metadata,created_at)
             VALUES (gen_random_uuid(),'staff.event_manager.enabled','staff_user',$1,
             'explicit_owner_authorization', $2::jsonb, now())`, [input.staffUserId,
-            JSON.stringify({previousRole:'OPERATOR',newRole:'FACILITATOR_OP',source:'promote-event-manager'})]);
+            JSON.stringify({previousRole:input.previousRole,newRole:'FACILITATOR_OP',source:'promote-event-manager'})]);
         await db.query('COMMIT');
         return 'enabled';
     } catch (error) { await db.query('ROLLBACK'); throw error; }
