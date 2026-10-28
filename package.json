@@ -34,11 +34,11 @@
     "account:mail-worker": "tsx scripts/process-account-mail-outbox.ts --watch"
   },
   "dependencies": {
-    "@better-auth/oauth-provider": "1.6.30",
+    "@better-auth/oauth-provider": "1.7.14",
     "@maxmind/geoip2-node": "^7.1.0",
     "@prisma/adapter-pg": "^7.9.1",
     "@prisma/client": "^7.9.1",
-    "better-auth": "1.6.30",
+    "better-auth": "1.7.14",
     "dotenv": "^17.2.4",
     "hls.js": "1.6.17",
     "jose": "6.1.3",
