@@ -6,6 +6,25 @@ import { observeLivePresence } from '@/lib/live-presence';
 
 describe('durable Live presence', () => {
     beforeEach(() => vi.clearAllMocks());
+    it('does not let a retried old heartbeat move a newer lease backwards', async () => {
+        const newer = new Date('2026-10-29T10:00:10Z');
+        const tx = { $queryRaw: vi.fn().mockResolvedValue([{ id: 'participant-1' }]), livePresenceInterval: {
+            findFirst: vi.fn().mockResolvedValue({ id: 'interval-1', generation: 1, lastHeartbeatAt: newer }),
+            update: vi.fn().mockResolvedValue({ id: 'interval-1', generation: 1 }), create: vi.fn(),
+        } };
+        prismaMock.$transaction.mockImplementation((fn: (value: typeof tx) => unknown) => fn(tx));
+        await observeLivePresence({ scheduledSessionId: 'event-1', participantIdentity: 'person', now: new Date('2026-10-29T10:00:00Z') });
+        expect(tx.livePresenceInterval.update).toHaveBeenCalledWith(expect.objectContaining({ data: { lastHeartbeatAt: newer } }));
+    });
+    it('does not reopen history when an older request retries after a newer departure', async () => {
+        const tx = { $queryRaw: vi.fn().mockResolvedValue([{ id: 'participant-1' }]), livePresenceInterval: {
+            findFirst: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce({ generation: 2, endedAt: new Date('2026-10-29T10:00:10Z') }),
+            create: vi.fn(),
+        } };
+        prismaMock.$transaction.mockImplementation((fn: (value: typeof tx) => unknown) => fn(tx));
+        await expect(observeLivePresence({ scheduledSessionId: 'event-1', participantIdentity: 'person', now: new Date('2026-10-29T10:00:00Z') })).resolves.toBeNull();
+        expect(tx.livePresenceInterval.create).not.toHaveBeenCalled();
+    });
     it('uses server time and advances one interval instead of accepting client duration', async () => {
         const interval = { id: 'interval-1', generation: 2, lastHeartbeatAt: new Date('2026-08-29T09:59:50Z') };
         const tx = {

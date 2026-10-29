@@ -19,6 +19,16 @@
 .hb-room-workspace { display: grid; grid-template-columns: minmax(0, 1fr) 360px; grid-template-rows: auto auto; align-items: start; gap: 20px; padding-top: 20px; }
 .hb-room-scene { grid-area: 2 / 1; display: flex; min-width: 0; flex-direction: column; align-items: center; gap: 20px; padding: 20px; background: linear-gradient(160deg, #241e16, #16120d 70%); border: 1px solid var(--border-subtle); border-radius: 20px; }
 .hb-room-scene > [data-testid="stage-layout"] { width: 100%; }
+.hb-tapestry-viewport { height: 240px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.hb-device-check header p:last-child { margin-top: 20px; max-width: 62ch; line-height: 1.6; color: var(--text-secondary); }
+.hb-device-check-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr)); gap: 20px; }
+.hb-device-check label { display: block; margin: 12px 0 8px; }
+.hb-device-check select { width: 100%; min-height: 44px; padding: 10px; background: var(--night); color: var(--paper); border: 1px solid var(--border-subtle); border-radius: 8px; font-size: 16px; }
+.hb-device-check progress { display: block; width: 100%; height: 24px; accent-color: var(--gold); margin-top: 24px; }
+.hb-device-check video { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: contain; background: #000; border-radius: 12px; margin: 20px 0; }
+.hb-device-check .event-button { margin-top: 16px; min-height: 44px; }
+.hb-device-check-actions { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 24px; }
+.hb-room, .hb-staff-workspace { overflow-anchor: none; }
 .hb-room-scene [data-scene="empty"] .terminal-state { min-height: 160px; padding: 24px 12px; }
 .hb-room-scene > .w-full.max-w-sm { width: 100%; max-width: 100%; }
 .hb-room-scene .crossfader, .hb-room-scene input[type="range"] { min-height: 44px; }

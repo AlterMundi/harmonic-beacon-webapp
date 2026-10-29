@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import { prisma } from '@/lib/db';
+import { presenceTransaction } from '@/lib/presence-transaction';
 
 export const LIVE_PRESENCE_HEARTBEAT_MS = 20_000;
 export const LIVE_PRESENCE_GRACE_MS = 45_000;
@@ -12,7 +13,7 @@ export async function observeLivePresence(input: {
     now?: Date;
 }): Promise<{ id: string; generation: number } | null> {
     const now = input.now ?? new Date();
-    return prisma.$transaction(async (tx) => {
+    return presenceTransaction(async (tx) => {
         const participants = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
             SELECT "id" FROM "session_participants"
             WHERE "scheduled_session_id"=${input.scheduledSessionId}::uuid
@@ -48,15 +49,18 @@ export async function observeLivePresence(input: {
             return tx.livePresenceInterval.update({
                 where: { id: open.id },
                 data: {
-                    lastHeartbeatAt: now,
+                    // A serialization retry may follow a newer request. Never
+                    // move its lease backwards or before the interval start.
+                    lastHeartbeatAt: new Date(Math.max(now.getTime(), open.lastHeartbeatAt.getTime())),
                     ...(input.reconnect ? { reconnectCount: { increment: 1 } } : {}),
                 },
                 select: { id: true, generation: true },
             });
         }
         const latest = await tx.livePresenceInterval.findFirst({
-            where: { participantId: participant.id }, orderBy: { generation: 'desc' }, select: { generation: true },
+            where: { participantId: participant.id }, orderBy: { generation: 'desc' }, select: { generation: true, endedAt: true },
         });
+        if (latest?.endedAt && latest.endedAt >= now) return null;
         return tx.livePresenceInterval.create({
             data: {
                 scheduledSessionId: input.scheduledSessionId,
@@ -64,10 +68,11 @@ export async function observeLivePresence(input: {
                 generation: (latest?.generation ?? 0) + 1,
                 startedAt: now,
                 lastHeartbeatAt: now,
+                reconnectCount: input.reconnect ? 1 : 0,
             },
             select: { id: true, generation: true },
         });
-    }, { isolationLevel: 'Serializable' });
+    });
 }
 
 export async function closeLivePresence(input: {

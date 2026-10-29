@@ -49,6 +49,9 @@ describe('ThumbnailSender', () => {
         await waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(2));
         view.rerender(<ThumbnailSender sessionId="session-1" connected isPublishing compact />);
         await waitFor(() => expect(stops[1]).toHaveBeenCalledOnce());
+        // The explicit exit opts out while still a publisher. A subsequent
+        // permission event can arrive before the leave HTTP response.
+        view.rerender(<ThumbnailSender sessionId="session-1" connected isPublishing compact cameraOffSignal={1} />);
         view.rerender(<ThumbnailSender sessionId="session-1" connected isPublishing={false} compact cameraOffSignal={1} />);
         expect(getUserMedia).toHaveBeenCalledTimes(2);
         fireEvent.click(screen.getByRole('button', { name: 'Turn camera on · Tapestry camera' }));

@@ -35,6 +35,14 @@ beforeEach(() => {
 });
 
 describe('ops tapestry route', () => {
+    it('reports an empty initial roster for an authorized DB session still awaiting its first frame', async () => {
+        staffOk();
+        mocks.fetch.mockResolvedValue(new Response(JSON.stringify({ error: 'unknown_session' }), { status: 404 }));
+        const response = await GET(createRequest('http://x'), mockParams({ id: SESSION_ID }));
+        expect(response.status).toBe(200);
+        expect(await response.json()).toEqual({ participants: [] });
+        expect(response.headers.get('cache-control')).toBe('private, no-store');
+    });
     it('GET proxies the participants list for staff', async () => {
         staffOk();
         mocks.fetch.mockResolvedValue(new Response(JSON.stringify({ participants: ['tp-a', 'tp-b'] }), { status: 200 }));

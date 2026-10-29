@@ -60,4 +60,16 @@ describe('Live presence heartbeat', () => {
             scheduledSessionId: 'event-1', participantIdentity: 'opaque-person', reason: 'left',
         });
     });
+
+    it('reports a failed heartbeat without claiming acceptance or exposing internal errors', async () => {
+        const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+        mocks.observeLivePresence.mockRejectedValueOnce(new Error('private query details'));
+        const response = await POST(request({ state: 'connected' }), { params: Promise.resolve({ id: 'event-1' }) });
+        expect(response.status).toBe(503);
+        expect(response.headers.get('cache-control')).toBe('private, no-store');
+        expect(response.headers.get('retry-after')).toBe('1');
+        await expect(response.json()).resolves.toEqual({ accepted: false, error: 'presence_unavailable' });
+        expect(log).toHaveBeenCalledWith('[live-presence]', 'write_unavailable');
+        log.mockRestore();
+    });
 });

@@ -27,7 +27,6 @@ import StaffPublicationAccess from "@/components/session/StaffPublicationAccess"
 import RoomSidebar, { type RoomPerson } from "@/components/session/RoomSidebar";
 import RoomLanguageControl from "@/components/session/RoomLanguageControl";
 import ShareEventButton from "@/components/events/ShareEventButton";
-import SessionGuidance from "@/components/session/SessionGuidance";
 import SessionIdentityGate from "@/components/session/SessionIdentityGate";
 import StageLayout, { type StagePublisherView } from "@/components/session/StageLayout";
 import ThumbnailSender from "@/components/session/ThumbnailSender";
@@ -277,17 +276,6 @@ function SessionRoom() {
         hasLiveStream,
     } = useAudio();
 
-    useEffect(() => {
-        if (!embeddedInCockpit || window.parent === window) return;
-        const target = document.querySelector('main');
-        if (!target) return;
-        const report = () => window.parent.postMessage({ type: 'hb-room-height', sessionId: id,
-            height: Math.ceil(target.getBoundingClientRect().height) }, window.location.origin);
-        const observer = new ResizeObserver(report);
-        observer.observe(target); report();
-        return () => observer.disconnect();
-    }, [embeddedInCockpit, id]);
-
     const [sessionInfo, setSessionInfo] = useState<SessionInfo | null>(null);
     const [isConnected, setIsConnected] = useState(false);
     const [isConnecting, setIsConnecting] = useState(true);
@@ -332,6 +320,24 @@ function SessionRoom() {
     const [stageExitBusy, setStageExitBusy] = useState(false);
     const [stageExitError, setStageExitError] = useState<string | null>(null);
     const [tapestryCameraOffSignal, setTapestryCameraOffSignal] = useState(0);
+
+    useEffect(() => {
+        if (!embeddedInCockpit || window.parent === window || isConnecting || connectionError || disconnectState) return;
+        // Observe connected content, not the replaced 100vh loading screen.
+        // Its height must not depend on the iframe viewport we are resizing.
+        const target = document.querySelector('.hb-room-shell');
+        if (!target) return;
+        let previousHeight = 0;
+        const report = () => {
+            const height = Math.ceil(target.getBoundingClientRect().height);
+            if (height === previousHeight || height < 1) return;
+            previousHeight = height;
+            window.parent.postMessage({ type: 'hb-room-height', sessionId: id, height }, window.location.origin);
+        };
+        const observer = new ResizeObserver(report);
+        observer.observe(target); report();
+        return () => observer.disconnect();
+    }, [embeddedInCockpit, id, isConnecting, connectionError, disconnectState]);
 
     const roomRef = useRef<Room | null>(null);
     // Keep ownership by track so an unsubscribe can remove the exact DOM node
@@ -641,6 +647,10 @@ function SessionRoom() {
         stageExitInFlightRef.current = true;
         setStageExitBusy(true);
         setStageExitError(null);
+        // Revoke thumbnail auto-capture on the explicit leave gesture, before
+        // a server permission event can make us audience ahead of its HTTP
+        // response. Otherwise that interval can reopen the camera on exit.
+        setTapestryCameraOffSignal(value => value + 1);
         try {
             const response = await fetch(principalKind === 'staff'
                 ? `/api/ops/sessions/${id}/stage` : `/api/scheduled-sessions/${id}/hand`, {
@@ -676,7 +686,6 @@ function SessionRoom() {
             setCanPublish(false);
             setIsCameraOn(false);
             setIsMicOn(false);
-            setTapestryCameraOffSignal(value => value + 1);
             setStageExitConfirming(false);
         } catch (failure) {
             console.error('Failed to leave the stage:', redactErrorDetail(failure));
@@ -1688,10 +1697,6 @@ function SessionRoom() {
 
                     <ThumbnailTapestry sessionId={id} />
 
-                    {/* Listening guidance: a quiet disclosure above the
-                        controls it explains. Presentational only — opening it
-                        never remounts the Room or touches audio state. */}
-                    <SessionGuidance copy={copy.session.guidance} className="w-full max-w-sm" />
 
 
                 </div>
@@ -1947,9 +1952,7 @@ function SessionEntryGate({ sessionId }: { sessionId: string }) {
                             </p>
                         )}
                     </section>
-                    {/* Guidance waits outside the live region: the disclosure
-                        toggling must not be announced as a door-state change. */}
-                    <SessionGuidance copy={copy.session.guidance} className="w-full max-w-md" />
+                    <a href={`/devices?next=${encodeURIComponent(`/session/${sessionId}`)}`} className="event-button event-button--secondary">{locale === 'es' ? 'Probar micrófono, cámara y sonido' : 'Check microphone, camera and sound'}</a>
                 </div>
             </main>
         );

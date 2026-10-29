@@ -13,6 +13,15 @@ function render(ui: ReactNode, initialLocale: 'es' | 'en' = 'en') {
 afterEach(() => cleanup());
 
 describe('ThumbnailTapestry', () => {
+    it('treats an explicitly empty compositor as waiting without creating an image blob or an error', async () => {
+        URL.createObjectURL = vi.fn();
+        global.fetch = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+        const view = render(<ThumbnailTapestry sessionId="session-1" staffOnly />);
+        await waitFor(() => expect(fetch).toHaveBeenCalledOnce());
+        expect(view.getByText('Waiting for snapshots.')).toBeInTheDocument();
+        expect(view.getByRole('status')).toBeEmptyDOMElement();
+        expect(URL.createObjectURL).not.toHaveBeenCalled();
+    });
     it('omits cookies when loading the public composite', async () => {
         URL.createObjectURL = vi.fn(() => 'blob:tapestry');
         URL.revokeObjectURL = vi.fn();

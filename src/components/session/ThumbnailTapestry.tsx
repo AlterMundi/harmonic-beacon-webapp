@@ -184,6 +184,7 @@ function ThumbnailTapestryView({
             // all others are revoked exactly once before the cycle returns.
             const candidates: Array<{ url: string; revision: string | null; hands: HandsSnapshot }> = [];
             let chosen: (typeof candidates)[number] | null = null;
+            let waiting = false;
 
             for (let attempt = 0; attempt < MAX_CORRELATION_ATTEMPTS; attempt += 1) {
                 if (!alive || !polling || myGeneration !== generation) break;
@@ -194,6 +195,7 @@ function ThumbnailTapestryView({
                         credentials: staffOnly ? 'same-origin' : 'omit',
                         signal,
                     });
+                    if (compositeRes.status === 204) { waiting = true; break; }
                     if (!compositeRes.ok) break; // keep previous image; hands still refresh below
                     const revision = compositeRes.headers.get('x-tapestry-revision');
                     const blob = await compositeRes.blob();
@@ -235,7 +237,7 @@ function ThumbnailTapestryView({
             }
 
             if (!chosen) {
-                setStale(true);
+                setStale(!waiting || publishedUrl !== null);
                 // Composite unavailable: keep the previous image, still
                 // refresh names so departures retire them.
                 if (staffOnly) return;
@@ -321,13 +323,14 @@ function ThumbnailTapestryView({
     const src = view?.compositeUrl ?? null;
     return <section aria-label={labels.label} className="w-full">
         <h2 className="mb-2 text-sm font-medium text-[var(--cream)]">{labels.label}</h2>
+        <div className="hb-tapestry-viewport">
         {src ? (
             <div className="relative inline-block max-w-full">
                 {/* The composite is sized to the active participant set; render
                     at natural size (capped by the container) instead of
                     stretching. Percentage-positioned tags scale with it. */}
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={src} onError={() => setStale(true)} alt={labels.latestAlt} className="block max-w-full rounded-lg border border-[var(--border-subtle)]" />
+                <img src={src} onError={() => setStale(true)} alt={labels.latestAlt} className="block max-h-56 max-w-full rounded-lg border border-[var(--border-subtle)]" />
                 {overlayHands.length > 0 && layout ? (
                     <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden rounded-lg">
                         {overlayHands.map((hand) => (
@@ -347,11 +350,10 @@ function ThumbnailTapestryView({
                 ) : null}
             </div>
         ) : <p className="text-xs text-[var(--text-muted)]">{labels.waiting}</p>}
-        {stale ? <p role="status" className="mt-2 text-xs text-[var(--warning)]">{src ? labels.stale : labels.unavailable}</p> : null}
-        {names.length > 0 ? (
-            <p aria-live="polite" className="mt-2 text-xs text-[var(--gold)]">
-                {labels.raisedHands.replace('{names}', names.join(', '))}
+        </div>
+        <p role="status" className="mt-2 min-h-6 text-xs text-[var(--warning)]">{stale ? (src ? labels.stale : labels.unavailable) : ''}</p>
+            <p aria-live="polite" className="mt-2 min-h-6 text-xs text-[var(--gold)]">
+                {names.length > 0 ? labels.raisedHands.replace('{names}', names.join(', ')) : ''}
             </p>
-        ) : null}
     </section>;
 }
