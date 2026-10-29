@@ -72,4 +72,21 @@ describe('GET /api/tapestry/[sessionId]', () => {
         expect(response.status).toBe(200);
         expect(response.headers.get('x-tapestry-revision')).toBeNull();
     });
+
+    it('waits without an error only for a DB-known session absent from the ephemeral compositor', async () => {
+        const { GET } = await import('../route');
+        global.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: 'unknown_session' }), { status: 404 }));
+        const waiting = await GET(new NextRequest('http://localhost/api/tapestry/session-1'), context);
+        expect(waiting.status).toBe(204);
+        expect(waiting.headers.get('cache-control')).toBe('no-store');
+        expect(await waiting.text()).toBe('');
+        findUnique.mockResolvedValueOnce(null);
+        expect((await GET(new NextRequest('http://localhost/api/tapestry/session-1'), context)).status).toBe(404);
+    });
+
+    it.each([404, 500, 503])('retains real upstream failures (%i)', async status => {
+        const { GET } = await import('../route');
+        global.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: 'unexpected_failure' }), { status }));
+        expect((await GET(new NextRequest('http://localhost/api/tapestry/session-1'), context)).status).toBe(status === 404 ? 404 : 502);
+    });
 });

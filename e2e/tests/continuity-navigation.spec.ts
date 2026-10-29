@@ -118,7 +118,11 @@ for (const role of ['ATTENDEE', 'OPERATOR'] as const) {
 }
 
 async function globalListenLink(page: Page) {
-    const links = page.locator('hb-global-nav a[href*="listen.harmonicbeacon.com"]').filter({ visible: true });
+    // A fresh parent may expose its light-DOM fallback just before the pinned
+    // component upgrades to shadow DOM. Select the accessible link after that
+    // upgrade; a fallback node can otherwise turn hidden between lookup/click.
+    await page.waitForFunction(() => Boolean(customElements.get('hb-global-nav')));
+    const links = page.locator('hb-global-nav').getByRole('link', { name: /^(?:Listen|Escuchar)$/ });
     const toggle = page.locator('hb-global-nav .toggle');
     // A confirmed cockpit exit reloads the parent document. Wait for either
     // the desktop links or mobile toggle to render before choosing the path.

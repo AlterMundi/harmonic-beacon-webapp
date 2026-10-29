@@ -62,6 +62,9 @@ export async function GET(
                 signal: AbortSignal.timeout(3_000),
             },
         );
+        if (response.status === 404 && (await response.clone().json().catch(() => null))?.error === 'unknown_session') {
+            return NextResponse.json({ participants: [] }, { headers: { 'cache-control': 'private, no-store' } });
+        }
         if (!response.ok) {
             return NextResponse.json({ error: 'Tapestry unavailable' }, { status: response.status === 404 ? 404 : 502 });
         }

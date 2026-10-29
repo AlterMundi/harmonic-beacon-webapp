@@ -47,6 +47,7 @@ export default function ProfileDashboard({ profile, accountHref }: { profile: Pr
                     </li>)}</ul></EventSchedule>}
             </section>
             <aside className="hb-profile-aside">
+                <section className="hb-profile-card"><h2>{es ? 'Antes del encuentro' : 'Before the meeting'}</h2><p>{es ? 'Comprobá tu micrófono, cámara y sonido.' : 'Check your microphone, camera and sound.'}</p><Link href="/devices" className="event-button event-button--secondary">{es ? 'Probar dispositivos' : 'Check devices'}</Link></section>
                 <section className="hb-profile-card" aria-labelledby="profile-hours-heading">
                     <h2 id="profile-hours-heading">{es ? 'Tu tiempo compartido' : 'Your shared time'}</h2>
                     <div className="hb-profile-hours">{profile.seconds === null ? '—' : new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(profile.seconds / 3600)} <span aria-hidden="true">h</span></div>
