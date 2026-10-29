@@ -16,7 +16,7 @@ describe('ThumbnailTapestry', () => {
     it('treats an explicitly empty compositor as waiting without creating an image blob or an error', async () => {
         URL.createObjectURL = vi.fn();
         global.fetch = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
-        const view = render(<ThumbnailTapestry sessionId="session-1" staffOnly />);
+        const view = render(<ThumbnailTapestry sessionId="session-1" staffOnly stableFrame />);
         await waitFor(() => expect(fetch).toHaveBeenCalledOnce());
         expect(view.getByText('Waiting for snapshots.')).toBeInTheDocument();
         expect(view.getByRole('status')).toBeEmptyDOMElement();

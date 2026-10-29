@@ -1695,7 +1695,7 @@ function SessionRoom() {
                         </p>
                     ) : null}
 
-                    <ThumbnailTapestry sessionId={id} />
+                    <ThumbnailTapestry sessionId={id} stableFrame />
 
 
 
