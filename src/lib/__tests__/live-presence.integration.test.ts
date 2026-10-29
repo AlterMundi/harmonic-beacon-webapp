@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { prisma } from '@/lib/db';
 import { observeLivePresence } from '@/lib/live-presence';
@@ -34,5 +35,30 @@ integration('Live presence PostgreSQL concurrency', () => {
         const rows = await prisma.livePresenceInterval.findMany({ where: { scheduledSessionId: sessionId } });
         expect(rows).toHaveLength(1);
         expect(rows[0]).toMatchObject({ generation: 1, endedAt: null, reconnectCount: 5 });
+    });
+    it('recovers a real row-lock snapshot conflict with a concurrent participant update', async () => {
+        const writer = new pg.Client({ connectionString: process.env.DATABASE_URL });
+        await writer.connect();
+        try {
+            await writer.query('BEGIN');
+            await writer.query('UPDATE session_participants SET display_name=$2 WHERE scheduled_session_id=$1', [sessionId, 'Updated fixture']);
+            const observation = observeLivePresence({ scheduledSessionId: sessionId, participantIdentity: 'presence-fixture' })
+                .then(value => ({ ok: true, value }), () => ({ ok: false }));
+            let blocked = false;
+            for (let i = 0; i < 100; i += 1) {
+                const [result] = await prisma.$queryRaw<Array<{ blocked: boolean }>>`SELECT EXISTS (
+                    SELECT 1 FROM pg_stat_activity WHERE datname=current_database()
+                    AND wait_event_type='Lock' AND query LIKE ${'%FROM "session_participants"%'}
+                ) AS blocked`;
+                if (result.blocked) { blocked = true; break; }
+                await new Promise(resolve => setTimeout(resolve, 10));
+            }
+            await writer.query('COMMIT');
+            expect(blocked, 'the presence snapshot must precede the competing commit').toBe(true);
+            expect(await observation).toMatchObject({ ok: true, value: { generation: 1 } });
+            expect(await prisma.livePresenceInterval.count({ where: { scheduledSessionId: sessionId } })).toBe(1);
+        } finally {
+            await writer.query('ROLLBACK'); await writer.end();
+        }
     });
 });

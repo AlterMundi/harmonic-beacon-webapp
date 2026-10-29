@@ -22,6 +22,8 @@ room outcome; issue126 retains its broader in-room switching/physical matrix.
   Ambiguous commit/connection errors are never replayed. Older observations
   cannot move heartbeat timestamps backwards or reopen a newer closed interval.
   Exhaustion returns private503 with a bounded, non-identifying log category.
+  Both direct COMMIT adapter errors and P2010-wrapped row-lock conflicts require
+  the exact typed `TransactionWriteConflict` cause; arbitrary P2010 is not retried.
 - Confirming a scene exit disables automatic tapestry capture before the server
   can deliver a permission change ahead of its HTTP response. Returning to the
   audience cannot start another camera request behind that exit gesture.
@@ -54,4 +56,6 @@ retry and converges five requests to one interval after it. It proves this
 writer defect; missing request attribution means the38 log records observed
 on October28 cannot all be assigned to this caller or a visible user failure.
 Browser emulation proves lifecycle and geometry, not actual speaker audibility.
+The row-update contention regression separately forces the presence snapshot to
+wait on an uncommitted participant update and verifies convergence after its commit.
 Deployment provenance and recovery belong in the single issue469 receipt.

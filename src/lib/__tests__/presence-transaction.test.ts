@@ -19,7 +19,13 @@ describe('presence transaction recovery', () => {
         await expect(presenceTransaction(vi.fn())).rejects.toBe(failure);
         expect(mock.$transaction).toHaveBeenCalledTimes(5);
     });
-    it.each([new Error('connection lost after commit'), new Error('TransactionWriteConflict'), Object.assign(new Error('constraint'), { name: 'DriverAdapterError', cause: { kind: 'UniqueConstraintViolation' } })])('never replays an unknown or ambiguous outcome', async error => {
+    it('replays an explicitly wrapped row-lock serialization rejection', async () => {
+        const failure = new Prisma.PrismaClientKnownRequestError('raw query rejected', { code: 'P2010', clientVersion: '7.9.1', meta: { driverAdapterError: conflict() } });
+        mock.$transaction.mockRejectedValueOnce(failure).mockResolvedValueOnce('accepted');
+        await expect(presenceTransaction(vi.fn())).resolves.toBe('accepted');
+        expect(mock.$transaction).toHaveBeenCalledTimes(2);
+    });
+    it.each([new Error('connection lost after commit'), new Error('TransactionWriteConflict'), Object.assign(new Error('constraint'), { name: 'DriverAdapterError', cause: { kind: 'UniqueConstraintViolation' } }), new Prisma.PrismaClientKnownRequestError('raw query failed', { code: 'P2010', clientVersion: '7.9.1', meta: { driverAdapterError: Object.assign(new Error('connection failed'), { name: 'DriverAdapterError', cause: { kind: 'ConnectionClosed' } }) } })])('never replays an unknown or ambiguous outcome', async error => {
         mock.$transaction.mockRejectedValue(error);
         await expect(presenceTransaction(vi.fn())).rejects.toBe(error);
         expect(mock.$transaction).toHaveBeenCalledTimes(1);
