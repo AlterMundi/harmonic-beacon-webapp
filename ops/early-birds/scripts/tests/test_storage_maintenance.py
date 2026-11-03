@@ -12,6 +12,15 @@ spec.loader.exec_module(m)
 
 
 class RetentionTests(unittest.TestCase):
+    def test_removal_uses_exact_id_for_untagged_and_single_tag_images(self):
+        for tags in (None, [], ['owned:old']):
+            with patch.object(m, 'run') as command:
+                m.remove_image({'Id': 'sha256:exact', 'RepoTags': tags})
+                command.assert_called_once_with('docker', 'image', 'rm', 'sha256:exact', timeout=120)
+        with patch.object(m, 'run') as command:
+            m.remove_image({'Id': 'sha256:exact', 'RepoTags': ['owned:one', 'owned:two']})
+            command.assert_called_once_with('docker', 'image', 'rm', 'owned:one', 'owned:two', timeout=120)
+
     def test_reviewed_never_overrides_used_or_explicit_recovery(self):
         images = self.images()
         for i in images:

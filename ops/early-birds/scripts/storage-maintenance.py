@@ -402,6 +402,13 @@ def archive_image(image, budget_used):
     return compressed.stat().st_size
 
 
+def remove_image(candidate):
+    # No --force: Docker refuses a newly container-bound image.
+    tags = candidate.get('RepoTags') or []
+    refs = [candidate['Id']] if len(tags) <= 1 else tags
+    run('docker', 'image', 'rm', *refs, timeout=120)
+
+
 def maintain():
     private_directory(STATE)
     private_directory(STATE/'docker-config')
@@ -444,12 +451,7 @@ def maintain():
             eligible, _ = selection(current, current_used, time.time(), reviewed=reviewed_retirement(current, time.time()))
             if not any(i['Id'] == candidate['Id'] and i['RepoTags'] == candidate['RepoTags'] for i in eligible):
                 raise RuntimeError('image references changed after archive')
-            # No --force. Docker also refuses removal if a container appeared meanwhile.
-            if len(candidate['RepoTags'] or []) <= 1:
-                run('docker', 'image', 'rm', candidate['Id'], timeout=120)
-            else:
-                # Immutable SHA tags only; mutable tags are excluded by selection.
-                run('docker', 'image', 'rm', *candidate['RepoTags'], timeout=120)
+            remove_image(candidate)
             retired.append(candidate['Id'])
         return {'cacheRecordsRetired': cache, 'imagesRetired': retired, 'incompleteArchives': incomplete, 'rootFreeRatio': free_ratio()}
     except BlockingIOError:
