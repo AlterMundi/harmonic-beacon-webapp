@@ -521,3 +521,44 @@ at `/var/lib/harmonic-beacon/storage-relief-diagnostics/cadvisor.log`. Install
 `tmpfiles.d/harmonic-beacon-storage-diagnostics.conf` in `/etc/tmpfiles.d/` and
 verify the existing `systemd-tmpfiles-clean.timer`; the diagnostic directory
 contains only that replaceable file, never manifests or recovery state.
+
+
+### Finite reviewed retirement of superseded image generations
+
+An empty automatic retention plan does not certify capacity recovery. Unknown
+names and untagged images remain protected by default. Docker29 containerd image
+inspection can report compressed sizes while `docker system df -v` reports larger
+unpacked usage; shared build-cache sizes are not additional reclaimable capacity.
+Do not prune shared cache just to make its total disappear.
+
+For an authorized capacity repair, the operator may create root-owned0600
+`/var/lib/harmonic-beacon/storage-maintenance/reviewed-retirement.json`:
+
+```json
+{"schema":"hb.reviewed-retirement/v1","createdAt":1793687000,"expiresAt":1793773400,"reason":"Owner-reviewed superseded generations; source and actual recovery references checked","images":[{"imageId":"sha256:<64 lowercase hex digits>","tags":[]}]}
+```
+
+Use actual Unix times and exact immutable IDs/current tag lists. Keep at most32
+entries,16KiB and a seven-day maximum authorization lifetime. This is an explicit
+reviewed inventory, never wildcard orphan collection. Inspect image provenance,
+current running/stopped containers, all owning release state and recovery permits
+before selecting it. No source-host cleanup authority follows from this route.
+Do not include private supplier images without their own operating authority.
+
+This narrow exception permits archiving selected images at least14days old even
+when legacy tags, missing tags or newest-three namespace defaults would pin them.
+Container bindings and actual recovery IDs still win. The maintainer also pins
+legacy app/migration permits and state, including untagged prior images. Unknown
+or changed tags, unsafe custody and malformed plans refuse collection. Expired
+plans become inert; already-absent images are never recreated. Normal cleanup
+continues to hold service/build locks and retire at most two images per run,
+after verified archive/load/checksum, through non-forced Docker removal. Untagged
+images are archived and restored by immutable ID. Existing archive size/age and
+separate-data reserve bounds remain enforced.
+
+Run through the existing maintenance service in a named finite target job when
+multiple bounded passes are necessary. Preserve logs and terminal status. Verify
+unchanged container IDs/images, recovery artifacts, actual filesystem free space,
+Prometheus rule recovery and higher resolved Alerts revisions before closing the
+incident. Preserve the reviewed plan with the operation receipt; remove its
+active selection after the finite operation ends. Do not lower alert thresholds.

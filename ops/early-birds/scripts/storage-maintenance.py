@@ -19,6 +19,13 @@ STATE = Path('/var/lib/harmonic-beacon/storage-maintenance')
 METRICS = Path('/var/lib/harmonic-beacon/metrics/storage-maintenance.prom')
 DELIVERY_STATE = Path('/var/lib/harmonic-beacon')
 APP_PERMIT = Path('/etc/harmonic-beacon/live-app-release/permit.json')
+REVIEWED = STATE/'reviewed-retirement.json'
+LEGACY_RECOVERY = [
+    Path('/etc/harmonic-beacon/app-bridge/permit.json'),
+    Path('/etc/harmonic-beacon/migration-bridge-v2/permit.json'),
+    DELIVERY_STATE/'app-bridge/state.json',
+    DELIVERY_STATE/'migration-bridge-v2/state.json',
+]
 REPOSITORIES = {
     'harmonic-beacon/account', 'harmonic-beacon/live', 'harmonic-beacon/live-staging',
     'harmonic-beacon/app', 'harmonic-beacon/tapestry', 'harmonic-beacon/tapestry-staging',
@@ -81,7 +88,7 @@ def created(image):
     return dt.datetime.fromisoformat(image['Created'].replace('Z', '+00:00')).timestamp()
 
 
-def rollback_protection(images, used):
+def rollback_protection(images, used, reviewed=frozenset()):
     """Resolve rollback refs from delivery evidence, not image creation order."""
     by_tag = {tag: image['Id'] for image in images if not image.get('Unavailable')
               for tag in image.get('RepoTags') or []}
@@ -159,6 +166,18 @@ def rollback_protection(images, used):
                 raise RuntimeError('Live app recovery image missing')
             protected.update((candidate, previous))
             covered.update({candidate, previous}.intersection(used))
+    # Old app/migration helpers still retain exact prior-image recovery.
+    # These pins apply even to an explicitly reviewed retirement.
+    def image_ids(value):
+        if isinstance(value, dict):
+            return set().union(*(image_ids(v) for v in value.values()), set())
+        if isinstance(value, list):
+            return set().union(*(image_ids(v) for v in value), set())
+        return {value} if isinstance(value, str) and re.fullmatch("sha256:[a-f0-9]{64}", value) else set()
+    for path in LEGACY_RECOVERY:
+        if os.path.lexists(path):
+            value = safe_json(path)
+            protected.update(image_ids(value))
     supported = set()
     for repo in REPOSITORIES:
         active = {i['Id'] for i in images if i.get('Running') and
@@ -168,18 +187,18 @@ def rollback_protection(images, used):
     # Repositories without authoritative rollback bindings remain protected.
     for image in images:
         repos = {tag.rsplit(':', 1)[0] for tag in image.get('RepoTags') or []}
-        if not repos.issubset(supported):
+        if image['Id'] not in reviewed and not repos.issubset(supported):
             protected.add(image['Id'])
     return protected
 
 
-def selection(images, used, now, rollback_ids=None):
-    protected = set(used) | (rollback_protection(images, used) if rollback_ids is None else set(rollback_ids))
+def selection(images, used, now, rollback_ids=None, reviewed=frozenset()):
+    protected = set(used) | (rollback_protection(images, used, reviewed) if rollback_ids is None else set(rollback_ids))
     groups = {repo: [] for repo in REPOSITORIES}
     for image in images:
         tags = image.get('RepoTags') or []
         repos = {tag.rsplit(':', 1)[0] for tag in tags}
-        if (not tags or not repos.issubset(REPOSITORIES)
+        if image['Id'] not in reviewed and (not tags or not repos.issubset(REPOSITORIES)
                 or any(not re.fullmatch('[a-f0-9]{7}|[a-f0-9]{40}' +
                                       ('|rollback-[a-f0-9]{40}' if t.rsplit(':', 1)[0] == 'harmonic-beacon/live' else ''),
                                       t.rsplit(':', 1)[1]) for t in tags)):
@@ -187,9 +206,54 @@ def selection(images, used, now, rollback_ids=None):
         for repo in repos.intersection(REPOSITORIES):
             groups[repo].append(image)
     for members in groups.values():
-        protected.update(i['Id'] for i in sorted(members, key=created, reverse=True)[:KEEP_IMAGES])
+        protected.update(i['Id'] for i in sorted(members, key=created, reverse=True)[:KEEP_IMAGES]
+                         if i['Id'] not in reviewed)
     eligible = [i for i in images if i['Id'] not in protected and now-created(i) >= MIN_IMAGE_AGE]
     return sorted(eligible, key=created), protected
+
+
+def safe_json(path):
+    info = path.lstat()
+    if (not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o077
+            or info.st_nlink != 1 or info.st_size > 16384):
+        raise RuntimeError('unsafe private recovery/retirement record')
+    return json.loads(path.read_text())
+
+
+def reviewed_retirement(images, now):
+    """A finite operator-reviewed exact inventory, never an automatic orphan prune."""
+    if not os.path.lexists(REVIEWED):
+        return frozenset()
+    value = safe_json(REVIEWED)
+    if (set(value) != {'schema', 'createdAt', 'expiresAt', 'reason', 'images'}
+            or value['schema'] != 'hb.reviewed-retirement/v1'
+            or not isinstance(value['createdAt'], int) or not isinstance(value['expiresAt'], int)
+            or not 0 < value['expiresAt']-value['createdAt'] <= 7*86400
+            or value['createdAt'] > now+60
+            or not isinstance(value['reason'], str) or not 1 <= len(value['reason']) <= 500
+            or not isinstance(value['images'], list) or not 1 <= len(value['images']) <= 32):
+        raise RuntimeError('invalid reviewed retirement')
+    if now >= value['expiresAt']:
+        return frozenset()
+    current = {i['Id']: i for i in images}
+    selected = set()
+    for record in value['images']:
+        if (not isinstance(record, dict) or set(record) != {'imageId', 'tags'}
+                or not isinstance(record['imageId'], str)
+                or not re.fullmatch('sha256:[a-f0-9]{64}', record['imageId'])
+                or not isinstance(record['tags'], list)
+                or len(record['tags']) > 16
+                or not all(isinstance(t, str) and 1 <= len(t) <= 256 for t in record['tags'])
+                or record['imageId'] in selected):
+            raise RuntimeError('invalid reviewed image')
+        selected.add(record['imageId'])
+        image = current.get(record['imageId'])
+        if image is None:
+            continue  # Already retired; no replay or restoration.
+        if (image.get('Unavailable') or sorted(image.get('RepoTags') or []) != sorted(record['tags'])
+                or now-created(image) < 14*86400):
+            raise RuntimeError('reviewed image changed or is too recent')
+    return frozenset(selected)
 
 
 def free_ratio():
@@ -299,7 +363,7 @@ def archive_image(image, budget_used):
         raise RuntimeError('archive retention budget reached')
     private_directory(directory)
     tar = directory/'image.tar'
-    run('docker', 'image', 'save', '-o', str(tar), *image['RepoTags'], timeout=900)
+    run('docker', 'image', 'save', '-o', str(tar), *(image['RepoTags'] or [image_id]), timeout=900)
     count = 0
     with tarfile.open(tar, 'r|') as stream:
         for member in stream:
@@ -311,7 +375,7 @@ def archive_image(image, budget_used):
     if count < 2:
         raise RuntimeError('archive has no verifiable content-addressed image')
     run('docker', 'image', 'load', '-i', str(tar), timeout=900)
-    restored = json.loads(run('docker', 'image', 'inspect', *image['RepoTags']))
+    restored = json.loads(run('docker', 'image', 'inspect', *(image['RepoTags'] or [image_id])))
     if any(item['Id'] != image_id for item in restored):
         raise RuntimeError('restored image identity mismatch')
     run('zstd', '-T2', '-3', '--quiet', str(tar), timeout=900)
@@ -338,6 +402,13 @@ def archive_image(image, budget_used):
     return compressed.stat().st_size
 
 
+def remove_image(candidate):
+    # No --force: Docker refuses a newly container-bound image.
+    tags = candidate.get('RepoTags') or []
+    refs = [candidate['Id']] if len(tags) <= 1 else tags
+    run('docker', 'image', 'rm', *refs, timeout=120)
+
+
 def maintain():
     private_directory(STATE)
     private_directory(STATE/'docker-config')
@@ -357,7 +428,7 @@ def maintain():
             raise RuntimeError('archive disk not mounted')
         private_directory(ARCHIVES)
         images, used = inventory()
-        candidates, protected = selection(images, used, time.time())
+        candidates, protected = selection(images, used, time.time(), reviewed=reviewed_retirement(images, time.time()))
         budget = expire_archives(protected, time.time())
         cache = cache_cleanup()
         retired = []
@@ -367,7 +438,7 @@ def maintain():
                 break
             # Refresh both protection and tags immediately before archive and removal.
             current, current_used = inventory()
-            eligible, _ = selection(current, current_used, time.time())
+            eligible, _ = selection(current, current_used, time.time(), reviewed=reviewed_retirement(current, time.time()))
             matching = [i for i in eligible if i['Id'] == candidate['Id'] and i['RepoTags'] == candidate['RepoTags']]
             if not matching:
                 continue
@@ -377,15 +448,10 @@ def maintain():
                 continue
             budget += archived
             current, current_used = inventory()
-            eligible, _ = selection(current, current_used, time.time())
+            eligible, _ = selection(current, current_used, time.time(), reviewed=reviewed_retirement(current, time.time()))
             if not any(i['Id'] == candidate['Id'] and i['RepoTags'] == candidate['RepoTags'] for i in eligible):
                 raise RuntimeError('image references changed after archive')
-            # No --force. Docker also refuses removal if a container appeared meanwhile.
-            if len(candidate['RepoTags']) == 1:
-                run('docker', 'image', 'rm', candidate['Id'], timeout=120)
-            else:
-                # Immutable SHA tags only; mutable tags are excluded by selection.
-                run('docker', 'image', 'rm', *candidate['RepoTags'], timeout=120)
+            remove_image(candidate)
             retired.append(candidate['Id'])
         return {'cacheRecordsRetired': cache, 'imagesRetired': retired, 'incompleteArchives': incomplete, 'rootFreeRatio': free_ratio()}
     except BlockingIOError:
@@ -401,7 +467,7 @@ def main():
     args = parser.parse_args()
     if not args.apply:
         images, used = inventory()
-        candidates, protected = selection(images, used, time.time())
+        candidates, protected = selection(images, used, time.time(), reviewed=reviewed_retirement(images, time.time()))
         print(json.dumps({'rootFreeRatio': free_ratio(), 'targetFreeRatio': TARGET_FREE,
                           'protectedImages': len(protected), 'eligibleImages': [i['Id'] for i in candidates]}, indent=2))
         return

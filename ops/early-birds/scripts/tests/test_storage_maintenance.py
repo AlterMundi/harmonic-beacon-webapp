@@ -12,6 +12,49 @@ spec.loader.exec_module(m)
 
 
 class RetentionTests(unittest.TestCase):
+    def test_removal_uses_exact_id_for_untagged_and_single_tag_images(self):
+        for tags in (None, [], ['owned:old']):
+            with patch.object(m, 'run') as command:
+                m.remove_image({'Id': 'sha256:exact', 'RepoTags': tags})
+                command.assert_called_once_with('docker', 'image', 'rm', 'sha256:exact', timeout=120)
+        with patch.object(m, 'run') as command:
+            m.remove_image({'Id': 'sha256:exact', 'RepoTags': ['owned:one', 'owned:two']})
+            command.assert_called_once_with('docker', 'image', 'rm', 'owned:one', 'owned:two', timeout=120)
+
+    def test_reviewed_never_overrides_used_or_explicit_recovery(self):
+        images = self.images()
+        for i in images:
+            i['RepoTags'] = ['legacy-app:rollback']
+        ids = {i['Id'] for i in images}
+        eligible, protected = m.selection(images, {images[0]['Id']}, 1800000000,
+                                          {images[1]['Id']}, reviewed=ids)
+        self.assertNotIn(images[0], eligible)
+        self.assertNotIn(images[1], eligible)
+        self.assertIn(images[2], eligible)
+
+    def test_legacy_permit_pins_untagged_reviewed_image(self):
+        images = self.images()
+        images[0]['RepoTags'] = []
+        record = Mock()
+        with tempfile.TemporaryDirectory() as directory, patch.object(m, 'DELIVERY_STATE', Path(directory)), patch.object(m, 'APP_PERMIT') as permit, patch.object(m, 'LEGACY_RECOVERY', [record]), patch.object(m.os.path, 'lexists', return_value=True), patch.object(m, 'safe_json', return_value={'prior': images[0]['Id']}):
+            permit.exists.return_value = False
+            protected = m.rollback_protection(images, set(), {images[0]['Id']})
+        self.assertIn(images[0]['Id'], protected)
+
+    def test_reviewed_record_requires_root_custody_age_and_unchanged_tags(self):
+        images = self.images()
+        value = {'schema': 'hb.reviewed-retirement/v1', 'createdAt': 1800000000,
+                 'expiresAt': 1800003600, 'reason': 'Owner-reviewed obsolete generation',
+                 'images': [{'imageId': images[0]['Id'], 'tags': images[0]['RepoTags']}]}
+        with patch.object(m.os.path, 'lexists', return_value=True), patch.object(m, 'safe_json', return_value=value):
+            self.assertEqual(m.reviewed_retirement(images, 1800000000), {images[0]['Id']})
+            self.assertFalse(m.reviewed_retirement(images, 1800003600))
+            images[0]['RepoTags'] = ['changed:tag']
+            with self.assertRaises(RuntimeError): m.reviewed_retirement(images, 1800000000)
+        with tempfile.TemporaryDirectory() as directory:
+            link = Path(directory)/'record'; link.symlink_to(Path(directory)/'absent')
+            with self.assertRaises(RuntimeError): m.safe_json(link)
+
     def test_path_trigger_does_not_watch_delivery_locks(self):
         unit = Path(__file__).parents[2]/"systemd/harmonic-beacon-storage-maintenance.path"
         watched = [Path(line.split("=", 1)[1]) for line in unit.read_text().splitlines()
