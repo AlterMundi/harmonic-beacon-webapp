@@ -1,6 +1,6 @@
 # Harmonic Beacon — Web
 
-The web portal for the Harmonic Beacon ecosystem. A 24/7 continuous broadcast of natural harmonics, paired with curated overlays, delivered through the web app at `beacon.altermundi.net`. Public marketing lives at `harmonicbeacon.com`.
+The web portal for the Harmonic Beacon ecosystem. Continuous listening lives at `listen.harmonicbeacon.com`, scheduled interactive sessions at `live.harmonicbeacon.com`, and identity at `account.harmonicbeacon.com`. Public marketing lives at `harmonicbeacon.com`. See [`deploy/platform-services.json`](deploy/platform-services.json) and the [operating contract](docs/ops/OPERATING_CONTRACT.md) for service ownership and delivery lanes.
 
 Harmonic Beacon is a product of **AlterMundi**. It is framed publicly as an instrument for *Harmonic Information Theory* and pairs the listening experience with an opt-in research protocol.
 
@@ -20,7 +20,7 @@ Index of all documentation: **[docs/README.md](./docs/README.md)**.
 - **Next.js 16** (App Router) + React 19 + TypeScript
 - **PostgreSQL** via Prisma 7
 - **Durable PostgreSQL sessions** for ticket-bound attendees and seeded staff roles
-- **LiveKit** for the live beacon (WebRTC, room `beacon`, primary publisher `beacon01`)
+- **LiveKit** for scheduled interactive Live sessions; Listen uses its separate HTTP audio stream.
 - **HTTP range requests** for on-demand meditation playback (`src/lib/stream-file.ts`)
 - **Docker Compose** for production deploy (see `deploy/`)
 - **Vitest** for testing
