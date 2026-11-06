@@ -73,7 +73,7 @@ describe('Account cross-product logout completion', () => {
             returnTo: null,
         }));
         fireEvent.click(screen.getAllByRole('button', {
-            name: locale === 'es' ? 'Crear cuenta' : 'Create account',
+            name: locale === 'es' ? 'Registrate' : 'Register',
         })[0]);
         const password = screen.getByLabelText(locale === 'es' ? 'Contraseña' : 'Password');
         expect(password).toHaveAttribute('minlength', '8');
@@ -90,7 +90,7 @@ describe('Account cross-product logout completion', () => {
             locale: 'en',
             returnTo: null,
         }));
-        fireEvent.click(screen.getAllByRole('button', { name: 'Create account' })[0]);
+        fireEvent.click(screen.getByRole('button', { name: 'Register' }));
         const password = screen.getByLabelText('Password');
         fireEvent.change(password, { target: { value: '1234567' } });
         fireEvent.submit(password.closest('form')!);
@@ -108,7 +108,7 @@ describe('Account cross-product logout completion', () => {
             locale: 'en',
             returnTo: null,
         }));
-        fireEvent.click(screen.getAllByRole('button', { name: 'Create account' })[0]);
+        fireEvent.click(screen.getByRole('button', { name: 'Register' }));
         const password = screen.getByLabelText('Password');
         const repeated = screen.getByLabelText('Repeat password');
         fireEvent.change(password, { target: { value: '12345678' } });
@@ -129,7 +129,7 @@ describe('Account cross-product logout completion', () => {
 
     it.each([
         ['en' as const, 'Check your email', 'If the request is eligible, check your email to continue.', 'Go to sign in'],
-        ['es' as const, 'Revisá tu correo', 'Si la solicitud es elegible, revisá tu correo para continuar.', 'Ir al ingreso'],
+        ['es' as const, 'Revisá tu correo', 'Si la solicitud es elegible, revisá tu correo para continuar.', 'Iniciar sesión'],
     ])('submits an eight-character %s signup and replaces the form with focused confirmation', async (
         locale, heading, copy, returnLabel,
     ) => {
@@ -144,7 +144,7 @@ describe('Account cross-product logout completion', () => {
             returnTo: null,
         }));
         const createLabel = locale === 'es' ? 'Crear cuenta' : 'Create account';
-        fireEvent.click(screen.getAllByRole('button', { name: createLabel })[0]);
+        fireEvent.click(screen.getByRole('button', { name: locale === 'es' ? 'Registrate' : 'Register' }));
         fireEvent.change(screen.getByLabelText(locale === 'es' ? 'Nombre real (privado)' : 'Real name (private)'), { target: { value: 'Test Person' } });
         fireEvent.change(screen.getByLabelText(locale === 'es' ? 'Nombre preferido' : 'Preferred name'), { target: { value: 'Test Listener' } });
         fireEvent.change(screen.getByLabelText(locale === 'es' ? 'Correo' : 'Email'), { target: { value: 'listener@example.invalid' } });
@@ -184,7 +184,7 @@ describe('Account cross-product logout completion', () => {
             locale: 'en',
             returnTo: null,
         }));
-        fireEvent.click(screen.getAllByRole('button', { name: 'Create account' })[0]);
+        fireEvent.click(screen.getByRole('button', { name: 'Register' }));
         fireEvent.change(screen.getByLabelText('Real name (private)'), { target: { value: 'Test Person' } });
         fireEvent.change(screen.getByLabelText('Preferred name'), { target: { value: 'Test Listener' } });
         fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'listener@example.invalid' } });
@@ -215,7 +215,7 @@ describe('Account cross-product logout completion', () => {
             locale: 'en',
             returnTo: null,
         }));
-        fireEvent.click(screen.getAllByRole('button', { name: 'Create account' })[0]);
+        fireEvent.click(screen.getByRole('button', { name: 'Register' }));
         fireEvent.change(screen.getByLabelText('Real name (private)'), { target: { value: 'Test Person' } });
         fireEvent.change(screen.getByLabelText('Preferred name'), { target: { value: 'Test Listener' } });
         fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'listener@example.invalid' } });
@@ -239,7 +239,7 @@ describe('Account cross-product logout completion', () => {
             locale: 'en',
             returnTo: null,
         }));
-        fireEvent.click(screen.getAllByRole('button', { name: 'Create account' })[0]);
+        fireEvent.click(screen.getByRole('button', { name: 'Register' }));
         fireEvent.change(screen.getByLabelText('Real name (private)'), { target: { value: 'Test Person' } });
         fireEvent.change(screen.getByLabelText('Preferred name'), { target: { value: 'Test Listener' } });
         fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'listener@example.invalid' } });
@@ -259,7 +259,7 @@ describe('Account cross-product logout completion', () => {
         expect(screen.queryByRole('button', { name: 'Create account' })).toBeNull();
         expect(fetchMock).toHaveBeenCalledOnce();
         fireEvent.click(screen.getByRole('button', { name: 'Go to sign in' }));
-        expect(screen.getAllByRole('button', { name: 'Sign in' })).toHaveLength(2);
+        expect(screen.getAllByRole('button', { name: 'Sign in' })).toHaveLength(1);
     });
 
     it('blocks a signed-in password change when the repeated value differs', () => {

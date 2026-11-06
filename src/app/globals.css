@@ -157,8 +157,6 @@ hb-global-nav:not(:defined) > [slot="account-menu"] { display: none; }
 }
 .account-inline { margin-top: 1rem; }
 .account-return { width: fit-content; margin-top: 1rem; }
-.account-mode { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
-.account-mode button[aria-pressed="true"] { color: #16120d; background: #c9a24e; }
 .account-muted, .account-message { color: rgba(244, 238, 226, .7); line-height: 1.55; }
 
 /* Account home: personal activity first, credentials disclosed on demand. */
@@ -174,6 +172,13 @@ hb-global-nav:not(:defined) > [slot="account-menu"] { display: none; }
 .account-welcome-copy > p:not(.account-eyebrow) { font-size: 1.0625rem; line-height: 1.65; color: #d2c9ba; max-width: 36ch; }
 .account-text-link { display: inline-flex; gap: .5rem; align-items: center; min-height: 44px; margin-top: 1rem; color: #d6b363; text-underline-offset: .3em; }
 .account-access-card { width: 100%; box-shadow: 0 .8rem 3rem rgba(0, 0, 0, .2); }
+.account-access-options { min-width: 0; }
+.account-access-card > h2 { font-size: 1.875rem; margin: 0 0 1.25rem; }
+.account-access-card > h2:focus { outline: none; }
+.account-registration-prompt { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: .25rem .5rem; margin-top: 1rem; color: #d2c9ba; line-height: 1.5; }
+.account-registration-prompt button { min-height: 44px; padding: .5rem .15rem; border: 0; background: transparent; color: #e0bd69; font-size: 1rem; cursor: pointer; text-decoration: underline; text-underline-offset: .25em; }
+.account-registration-prompt button:focus-visible { outline: 2px solid #e0bd69; outline-offset: 3px; }
+.account-registration-prompt button:disabled { opacity: .55; cursor: wait; }
 .account-divider { display: flex; align-items: center; gap: .75rem; margin: 1.25rem 0 0; font-size: .875rem; color: #bfb5a5; }
 .account-divider::before, .account-divider::after { content: ''; height: 1px; flex: 1; background: rgba(201, 162, 78, .22); }
 .account-profile-header { margin-bottom: 2rem; }
@@ -204,7 +209,9 @@ hb-global-nav:not(:defined) > [slot="account-menu"] { display: none; }
 .account-security .account-grid { padding-bottom: 1rem; }
 @media (max-width: 700px) {
   .account-welcome { grid-template-columns: minmax(0, 1fr); gap: 1.5rem; }
-  .account-welcome-copy h1 { max-width: 18ch; font-size: 2.65rem; margin-block: .5rem .75rem; }
+  .account-welcome-copy h1 { max-width: 18ch; font-size: 2.25rem; margin-block: 0 .75rem; }
+  .account-welcome-copy > p:not(.account-eyebrow) { font-size: 1rem; line-height: 1.5; margin-bottom: 0; }
+  .account-access-card > h2 { font-size: 1.625rem; }
   .account-welcome-copy .account-text-link { margin-top: 0; }
   .account-residence { align-items: start; flex-direction: column; }
   .account-residence > a { width: 100%; }

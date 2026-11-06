@@ -92,8 +92,15 @@ export default function AccountClient({
     const feedbackRef = useRef<HTMLParagraphElement>(null);
     const signupConfirmationRef = useRef<HTMLElement>(null);
     const signInEmailRef = useRef<HTMLInputElement>(null);
+    const authHeadingRef = useRef<HTMLHeadingElement>(null);
     const signInFocusRequested = useRef(false);
     const credentialSubmissionInFlight = useRef(false);
+
+    useEffect(() => {
+        if (mode === 'signin') return;
+        authHeadingRef.current?.focus({ preventScroll: true });
+        authHeadingRef.current?.scrollIntoView?.({ block: 'nearest' });
+    }, [mode]);
 
     useEffect(() => {
         if (editingProfile) preferredNameRef.current?.focus({ preventScroll: true });
@@ -311,7 +318,6 @@ export default function AccountClient({
 
     if (!session && signupAccepted) return (
         <div className="account-welcome"><header className="account-welcome-copy">
-            <p className="account-eyebrow">Harmonic Beacon</p>
             <h1>{es ? 'Bienvenido a Harmonic Beacon' : 'Welcome to Harmonic Beacon'}</h1>
             <p>{es ? 'Una cuenta para Beacon y PsicopoMPo.' : 'One account for Beacon and PsicopoMPo.'}</p>
         </header><div className="account-card">
@@ -327,7 +333,7 @@ export default function AccountClient({
                 <p>{message}</p>
             </section>
             <button className="account-primary" type="button" onClick={returnToSignIn}>
-                {es ? 'Ir al ingreso' : 'Go to sign in'}
+                {es ? 'Iniciar sesión' : 'Go to sign in'}
             </button>
         </div></div>
     );
@@ -335,22 +341,21 @@ export default function AccountClient({
     if (!session) return (
         <div className="account-welcome">
             <header className="account-welcome-copy">
-                <p className="account-eyebrow">Harmonic Beacon</p>
                 <h1>{es ? 'Bienvenido a Harmonic Beacon' : 'Welcome to Harmonic Beacon'}</h1>
                 <p>{es ? 'Una cuenta para escuchar Beacon, participar en encuentros y acceder a PsicopoMPo.' : 'One account to listen to Beacon, join events and access PsicopoMPo.'}</p>
-                <a className="account-text-link" href="https://harmonicbeacon.com">{es ? 'Conocer Harmonic Beacon' : 'Explore Harmonic Beacon'} <span aria-hidden="true">↗</span></a>
             </header>
+        <div className="account-access-options">
         <div className="account-card account-access-card">
-            <div className="account-mode" role="group" aria-label={es ? 'Acción de cuenta' : 'Account action'}>
-                <button type="button" disabled={busy} aria-pressed={mode === 'signin'} onClick={() => selectMode('signin')}>{es ? 'Ingresar' : 'Sign in'}</button>
-                <button type="button" disabled={busy} aria-pressed={mode === 'signup'} onClick={() => selectMode('signup')}>{es ? 'Crear cuenta' : 'Create account'}</button>
-            </div>
-            <div className="account-providers">
+            <h2 id="account-auth-heading" ref={authHeadingRef} tabIndex={-1}>{mode === 'signup'
+                ? (es ? 'Crear cuenta' : 'Create account')
+                : mode === 'forgot' ? (es ? 'Recuperar contraseña' : 'Reset password')
+                    : (es ? 'Iniciar sesión' : 'Sign in')}</h2>
+            {mode !== 'forgot' && <div className="account-providers">
                 {providers.google && <button disabled={busy} onClick={() => social('google')}>{es ? 'Continuar con Google' : 'Continue with Google'}</button>}
                 {providers.apple && <button disabled={busy} onClick={() => social('apple')}>{es ? 'Continuar con Apple' : 'Continue with Apple'}</button>}
-            </div>
-            {(providers.google || providers.apple) && <p className="account-divider"><span>{es ? 'o con tu correo' : 'or with your email'}</span></p>}
-            <form onSubmit={submitCredentials} className="account-form" aria-busy={busy} onInvalid={(event) => {
+            </div>}
+            {mode !== 'forgot' && (providers.google || providers.apple) && <p className="account-divider"><span>{es ? 'o con tu correo' : 'or with your email'}</span></p>}
+            <form key={mode} onSubmit={submitCredentials} className="account-form" aria-labelledby="account-auth-heading" aria-busy={busy} onInvalid={(event) => {
                 const input = event.target;
                 if (input instanceof HTMLInputElement &&
                     (input.name === 'password' || input.name === 'confirmPassword') &&
@@ -395,14 +400,26 @@ export default function AccountClient({
                 {mode === 'signup' && <p id="account-password-policy" className="account-muted">{passwordHint}</p>}
                 <p ref={feedbackRef} className="account-message" role="status" aria-live="polite" tabIndex={-1} hidden={!message}>{message}</p>
                 <button className="account-primary" disabled={busy}>{mode === 'signin'
-                    ? (es ? 'Ingresar' : 'Sign in')
+                    ? (es ? 'Iniciar sesión' : 'Sign in')
                     : mode === 'signup'
                         ? busy ? (es ? 'Creando…' : 'Creating…') : (es ? 'Crear cuenta' : 'Create account')
                         : (es ? 'Enviar correo' : 'Send reset email')}</button>
             </form>
-            <button className="account-link" type="button" onClick={() => selectMode(mode === 'forgot' ? 'signin' : 'forgot')}>
-                {mode === 'forgot' ? (es ? 'Volver al ingreso' : 'Back to sign in') : (es ? '¿Olvidaste tu contraseña?' : 'Forgot password?')}
-            </button>
+            {mode === 'signin' && <button className="account-link" type="button" disabled={busy} onClick={() => selectMode('forgot')}>
+                {es ? '¿Olvidaste tu contraseña?' : 'Forgot password?'}
+            </button>}
+        </div>
+            <div className="account-registration-prompt">
+                {mode === 'signin' ? <>
+                    <span>{es ? '¿No tenés cuenta?' : 'Don’t have an account?'}</span>
+                    <button type="button" disabled={busy} onClick={() => selectMode('signup')}>{es ? 'Registrate' : 'Register'}</button>
+                </> : <>
+                    {mode === 'signup' && <span>{es ? '¿Ya tenés cuenta?' : 'Already have an account?'}</span>}
+                    <button type="button" disabled={busy} onClick={returnToSignIn}>{mode === 'forgot'
+                        ? (es ? 'Volver a iniciar sesión' : 'Back to sign in')
+                        : (es ? 'Iniciá sesión' : 'Sign in')}</button>
+                </>}
+            </div>
         </div></div>
     );
 

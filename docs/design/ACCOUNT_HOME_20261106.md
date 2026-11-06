@@ -8,6 +8,9 @@ candidate, not evidence of a production deployment.
 
 - Use “Bienvenido a Harmonic Beacon” / “Welcome to Harmonic Beacon” on Account
   and the public Listen entry. Keep the sign-in action near the introduction.
+- Sai's correction: show Google and email sign-in as entry choices; keep the
+  separate “¿No tenés cuenta? Registrate” prompt outside the sign-in card.
+  Registration opens its own form with a clear return to sign-in, without tabs.
 - Use the preferred name as the signed-in page heading. The pencil reveals a
   small editor; preserve the private real name, profile revision conflicts and
   signed OAuth profile-completion continuation. Keep edits on network failure.
