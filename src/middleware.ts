@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import {
+    accountEnvironment,
     accountOrigin,
     isAccountHost,
     isCurrentAccountHost,
@@ -137,7 +138,9 @@ export default function middleware(request: NextRequest): NextResponse {
                         : request.headers.get('accept-language')?.toLowerCase().startsWith('es') ? 'es' : 'en';
             forwarded.set('x-hb-account-locale', accountLocale);
             forwarded.set('x-nonce', nonce);
-            const csp = `default-src 'self'; script-src 'self' 'nonce-${nonce}' 'strict-dynamic'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-src 'self' https://listen.harmonicbeacon.com https://earlybirds-staging.harmonicbeacon.com https://live.harmonicbeacon.com https://live-staging.harmonicbeacon.com; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'`;
+            const summaryOrigin = accountEnvironment() === 'staging'
+                ? 'https://earlybirds-staging.harmonicbeacon.com' : 'https://listen.harmonicbeacon.com';
+            const csp = `default-src 'self'; script-src 'self' 'nonce-${nonce}' 'strict-dynamic'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ${summaryOrigin}; frame-src 'self' https://listen.harmonicbeacon.com https://earlybirds-staging.harmonicbeacon.com https://live.harmonicbeacon.com https://live-staging.harmonicbeacon.com; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'`;
             forwarded.set('Content-Security-Policy', csp);
             const response = pathname === '/'
                 ? NextResponse.rewrite(new URL('/account', request.url), { request: { headers: forwarded } })

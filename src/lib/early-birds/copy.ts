@@ -4,7 +4,7 @@ import type { ListenerMembershipPresentation } from './membership-presentation';
 export const earlyBirdCopy = {
     es: {
         eyebrow: 'HARMONIC BEACON · LISTENER',
-        title: 'Recuerda tu centro armónico.',
+        title: 'Bienvenido a Harmonic Beacon',
         intro: 'Un campo armónico continuo, compartido alrededor del mundo.',
         signInGoogle: 'Continuar con Google',
         signInApple: 'Continuar con Apple',
@@ -95,7 +95,7 @@ export const earlyBirdCopy = {
     },
     en: {
         eyebrow: 'HARMONIC BEACON · LISTENER',
-        title: 'Remember your harmonic center.',
+        title: 'Welcome to Harmonic Beacon',
         intro: 'A continuous harmonic field, shared across the world.',
         signInGoogle: 'Continue with Google',
         signInApple: 'Continue with Apple',

@@ -14,7 +14,7 @@ beforeEach(() => {
 });
 describe('credentialed profile read boundary', () => {
     it('rejects other sites and cross-environment reads without resolving a session', async () => {
-        for (const origin of ['https://evil.example', 'null', 'https://live-staging.harmonicbeacon.com']) expect((await GET(request(undefined, origin))).status).toBe(403);
+        for (const origin of ['https://evil.example', 'null', 'https://live-staging.harmonicbeacon.com', 'https://account-staging.harmonicbeacon.com', 'https://account.harmonicbeacon.com.evil.example']) expect((await GET(request(undefined, origin))).status).toBe(403);
         expect(m.session).not.toHaveBeenCalled(); expect(m.summary).not.toHaveBeenCalled();
     });
     it('never makes an unavailable service or missing session look like Free', async () => {
@@ -29,4 +29,13 @@ describe('credentialed profile read boundary', () => {
         expect(m.summary).toHaveBeenCalledWith('own-account', 'https://account.harmonicbeacon.com');
     });
     it('is inert on another product host', async () => { expect((await GET(request('account.harmonicbeacon.com'))).status).toBe(404); expect(m.session).not.toHaveBeenCalled(); });
+    it.each([
+        ['listen.harmonicbeacon.com', 'https://account.harmonicbeacon.com'],
+        ['earlybirds-staging.harmonicbeacon.com', 'https://account-staging.harmonicbeacon.com'],
+    ])('allows the corresponding Account origin on %s', async (host, origin) => {
+        const response = await GET(request(host, origin));
+        expect(response.status).toBe(200);
+        expect(response.headers.get('Access-Control-Allow-Origin')).toBe(origin);
+        expect(response.headers.get('Vary')).toBe('Origin');
+    });
 });

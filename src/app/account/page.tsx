@@ -5,6 +5,7 @@ import AccountClient from '@/components/account/AccountClient';
 import { currentAccountSession } from '@/lib/account/auth';
 import { ACCOUNT_NAV_RETURN_TO, accountSocialProviderConfiguration, isAccountHost } from '@/lib/account/config';
 import { requestBrowserLocale } from '@/lib/i18n-server';
+import { accountHomeContext } from '@/lib/account/home-context';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,13 +22,9 @@ export default async function AccountPage({ searchParams }: {
     const returnTo = rawReturnTo && ACCOUNT_NAV_RETURN_TO.has(rawReturnTo) ? rawReturnTo : null;
     const session = await currentAccountSession(new Headers(incoming));
     const providers = accountSocialProviderConfiguration();
+    const home = session ? accountHomeContext(session.user.id) : null;
     return (
-        <main className="account-shell">
-            <header className="account-hero">
-                <a href="https://harmonicbeacon.com" className="account-brand">Harmonic Beacon</a>
-                <p className="account-eyebrow">{locale === 'es' ? 'Cuenta' : 'Account'}</p>
-                <h1>{locale === 'es' ? 'Tu identidad Beacon' : 'Your Beacon identity'}</h1>
-            </header>
+        <main className={`account-shell ${session ? 'account-shell--home' : 'account-shell--welcome'}`}>
             <AccountClient
                 initialSession={session ? {
                     user: session.user,
@@ -36,6 +33,7 @@ export default async function AccountPage({ searchParams }: {
                 providers={{ google: Boolean(providers.google), apple: Boolean(providers.apple) }}
                 locale={locale}
                 returnTo={returnTo}
+                home={home}
             />
         </main>
     );

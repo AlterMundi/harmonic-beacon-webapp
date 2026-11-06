@@ -315,4 +315,41 @@ describe('Account cross-product logout completion', () => {
         });
         expect(await screen.findByRole('status')).toHaveTextContent('Profile updated. Try continuing again.');
     });
+
+    it('opens name editing with the pencil, preserves revision, then shows the saved name', async () => {
+        window.history.replaceState({}, '', '/account');
+        const fetchMock = vi.fn().mockResolvedValue(Response.json({ displayName: 'New name', realName: 'Private name', revision: 5 }));
+        vi.stubGlobal('fetch', fetchMock);
+        render(createElement(AccountClient, {
+            initialSession: { user: { email: 'test@example.invalid', emailVerified: true, accessMethod: 'google' }, profile: { displayName: 'Original name', realName: 'Private name', revision: 4 } },
+            providers: { google: true, apple: false }, locale: 'en', returnTo: null,
+        }));
+        expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Original name');
+        expect(screen.queryByLabelText('Real name (private)')).not.toBeInTheDocument();
+        await userEvent.click(screen.getByRole('button', { name: 'Edit my name' }));
+        const name = screen.getByLabelText('Preferred name');
+        expect(name).toHaveFocus();
+        fireEvent.change(name, { target: { value: 'New name' } });
+        await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+        await waitFor(() => expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('New name'));
+        expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ displayName: 'New name', realName: 'Private name', revision: 4 });
+        expect(screen.queryByLabelText('Real name (private)')).not.toBeInTheDocument();
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Edit my name' })).toHaveFocus());
+    });
+
+    it('keeps edits after a network failure and allows cancelling without changing the name', async () => {
+        window.history.replaceState({}, '', '/account');
+        vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')));
+        render(createElement(AccountClient, {
+            initialSession: { user: { email: null, emailVerified: true, accessMethod: 'apple' }, profile: { displayName: 'Original', realName: 'Private', revision: 1 } },
+            providers: { google: false, apple: true }, locale: 'en', returnTo: null,
+        }));
+        await userEvent.click(screen.getByRole('button', { name: 'Edit my name' }));
+        fireEvent.change(screen.getByLabelText('Preferred name'), { target: { value: 'Draft' } });
+        await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+        expect(await screen.findByRole('status')).toHaveTextContent('Your changes are still in the form');
+        expect(screen.getByLabelText('Preferred name')).toHaveValue('Draft');
+        await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+        expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Original');
+    });
 });

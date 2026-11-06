@@ -69,7 +69,7 @@ describe('EarlyBird public landing', () => {
         expect(container.querySelector('.listener-public-hero > .listener-field')).toBeInTheDocument();
         expect(container.querySelector('.listener-public-hero .listener-access__card'))
             .toContainElement(screen.getByRole('link', { name: 'Sign in or create an account' }));
-        expect(screen.getByRole('heading', { name: 'Remember your harmonic center.' }))
+        expect(screen.getByRole('heading', { name: 'Welcome to Harmonic Beacon' }))
             .toBeInTheDocument();
         expect(screen.queryByText('Listen within the time available to your account')).not.toBeInTheDocument();
         expect(screen.queryByText('An optional introduction before entering the Beacon')).not.toBeInTheDocument();

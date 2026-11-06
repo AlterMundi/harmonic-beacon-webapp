@@ -8,6 +8,7 @@ import {
     accountPasswordLengthValid,
 } from '@/lib/account/password-policy';
 import { AccountPasswordField } from './AccountPasswordField';
+import { AccountListeningCard, AccountPsicopompoCard, AccountResidence, type AccountHome } from './AccountActivity';
 
 type AccountSession = {
     user: { email: string | null; emailVerified: boolean; accessMethod: 'email' | 'google' | 'apple' };
@@ -51,11 +52,13 @@ export default function AccountClient({
     providers,
     locale,
     returnTo,
+    home = null,
 }: {
     initialSession: AccountSession | null;
     providers: { google: boolean; apple: boolean };
     locale: 'es' | 'en';
     returnTo: string | null;
+    home?: AccountHome | null;
 }) {
     const es = locale === 'es';
     const passwordHint = es
@@ -80,6 +83,10 @@ export default function AccountClient({
     const [mode, setMode] = useState<'signin' | 'signup' | 'forgot'>('signin');
     const [message, setMessage] = useState('');
     const [busy, setBusy] = useState(false);
+    const [editingProfile, setEditingProfile] = useState(Boolean(initialSession && !initialSession.profile.realName));
+    const [profileBusy, setProfileBusy] = useState(false);
+    const editButtonRef = useRef<HTMLButtonElement>(null);
+    const preferredNameRef = useRef<HTMLInputElement>(null);
     const [signupAccepted, setSignupAccepted] = useState(false);
     const [feedbackFocusRevision, setFeedbackFocusRevision] = useState(0);
     const feedbackRef = useRef<HTMLParagraphElement>(null);
@@ -87,6 +94,15 @@ export default function AccountClient({
     const signInEmailRef = useRef<HTMLInputElement>(null);
     const signInFocusRequested = useRef(false);
     const credentialSubmissionInFlight = useRef(false);
+
+    useEffect(() => {
+        if (editingProfile) preferredNameRef.current?.focus({ preventScroll: true });
+    }, [editingProfile]);
+
+    function closeProfileEditor() {
+        setEditingProfile(false);
+        requestAnimationFrame(() => editButtonRef.current?.focus({ preventScroll: true }));
+    }
 
     useEffect(() => {
         if (feedbackFocusRevision === 0) return;
@@ -206,34 +222,41 @@ export default function AccountClient({
 
     async function saveProfile(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
-        if (!session) return;
+        if (!session || profileBusy) return;
         const displayName = String(new FormData(event.currentTarget).get('displayName') ?? '');
         const realName = String(new FormData(event.currentTarget).get('realName') ?? '');
-        const response = await post('/api/account/profile', locale, {
-            displayName, realName, revision: session.profile.revision,
-        });
-        const result = await response.json().catch(() => null) as AccountSession['profile'] | null;
-        if (response.ok && result) {
-            setSession({ ...session, profile: result });
-            const pendingOAuth = oauthQuery();
-            if (pendingOAuth) {
-                const continued = await post('/api/account/auth/oauth2/continue', locale, {
-                    postLogin: true, oauth_query: pendingOAuth,
-                });
-                const continuation = await continued.json().catch(() => null) as {
-                    redirect?: string; status?: string;
-                } | null;
-                if (continued.ok && continuation?.status === 'continued' && continuation.redirect) {
-                    window.location.replace(continuation.redirect);
+        setProfileBusy(true);
+        setMessage('');
+        try {
+            const response = await post('/api/account/profile', locale, {
+                displayName, realName, revision: session.profile.revision,
+            });
+            const result = await response.json().catch(() => null) as AccountSession['profile'] | null;
+            if (response.ok && result) {
+                setSession({ ...session, profile: result });
+                const pendingOAuth = oauthQuery();
+                if (pendingOAuth) {
+                    const continued = await post('/api/account/auth/oauth2/continue', locale, {
+                        postLogin: true, oauth_query: pendingOAuth,
+                    });
+                    const continuation = await continued.json().catch(() => null) as {
+                        redirect?: string; status?: string;
+                    } | null;
+                    if (continued.ok && continuation?.status === 'continued' && continuation.redirect) {
+                        window.location.replace(continuation.redirect);
+                        return;
+                    }
+                    setMessage(es
+                        ? 'Perfil actualizado. Volvé a intentar continuar.'
+                        : 'Profile updated. Try continuing again.');
                     return;
                 }
-                setMessage(es
-                    ? 'Perfil actualizado. Volvé a intentar continuar.'
-                    : 'Profile updated. Try continuing again.');
-                return;
-            }
-            setMessage(es ? 'Perfil actualizado.' : 'Profile updated.');
-        } else setMessage(response.status === 409 ? (es ? 'El perfil cambió en otro lugar. Recargá y reintentá.' : 'Profile changed elsewhere. Reload and retry.') : (es ? 'No se pudo actualizar el perfil.' : 'Profile could not be updated.'));
+                setMessage(es ? 'Perfil actualizado.' : 'Profile updated.');
+                closeProfileEditor();
+            } else setMessage(response.status === 409 ? (es ? 'El perfil cambió en otro lugar. Recargá y reintentá.' : 'Profile changed elsewhere. Reload and retry.') : (es ? 'No se pudo actualizar el perfil.' : 'Profile could not be updated.'));
+        } catch {
+            setMessage(es ? 'No se pudo guardar. Tus cambios siguen en el formulario; intentá nuevamente.' : 'Could not save. Your changes are still in the form; try again.');
+        } finally { setProfileBusy(false); }
     }
 
     async function changePassword(event: FormEvent<HTMLFormElement>) {
@@ -287,7 +310,11 @@ export default function AccountClient({
     }
 
     if (!session && signupAccepted) return (
-        <div className="account-card">
+        <div className="account-welcome"><header className="account-welcome-copy">
+            <p className="account-eyebrow">Harmonic Beacon</p>
+            <h1>{es ? 'Bienvenido a Harmonic Beacon' : 'Welcome to Harmonic Beacon'}</h1>
+            <p>{es ? 'Una cuenta para Beacon y PsicopoMPo.' : 'One account for Beacon and PsicopoMPo.'}</p>
+        </header><div className="account-card">
             <section
                 ref={signupConfirmationRef}
                 className="account-signup-confirmation"
@@ -302,11 +329,18 @@ export default function AccountClient({
             <button className="account-primary" type="button" onClick={returnToSignIn}>
                 {es ? 'Ir al ingreso' : 'Go to sign in'}
             </button>
-        </div>
+        </div></div>
     );
 
     if (!session) return (
-        <div className="account-card">
+        <div className="account-welcome">
+            <header className="account-welcome-copy">
+                <p className="account-eyebrow">Harmonic Beacon</p>
+                <h1>{es ? 'Bienvenido a Harmonic Beacon' : 'Welcome to Harmonic Beacon'}</h1>
+                <p>{es ? 'Una cuenta para escuchar Beacon, participar en encuentros y acceder a PsicopoMPo.' : 'One account to listen to Beacon, join events and access PsicopoMPo.'}</p>
+                <a className="account-text-link" href="https://harmonicbeacon.com">{es ? 'Conocer Harmonic Beacon' : 'Explore Harmonic Beacon'} <span aria-hidden="true">↗</span></a>
+            </header>
+        <div className="account-card account-access-card">
             <div className="account-mode" role="group" aria-label={es ? 'Acción de cuenta' : 'Account action'}>
                 <button type="button" disabled={busy} aria-pressed={mode === 'signin'} onClick={() => selectMode('signin')}>{es ? 'Ingresar' : 'Sign in'}</button>
                 <button type="button" disabled={busy} aria-pressed={mode === 'signup'} onClick={() => selectMode('signup')}>{es ? 'Crear cuenta' : 'Create account'}</button>
@@ -315,6 +349,7 @@ export default function AccountClient({
                 {providers.google && <button disabled={busy} onClick={() => social('google')}>{es ? 'Continuar con Google' : 'Continue with Google'}</button>}
                 {providers.apple && <button disabled={busy} onClick={() => social('apple')}>{es ? 'Continuar con Apple' : 'Continue with Apple'}</button>}
             </div>
+            {(providers.google || providers.apple) && <p className="account-divider"><span>{es ? 'o con tu correo' : 'or with your email'}</span></p>}
             <form onSubmit={submitCredentials} className="account-form" aria-busy={busy} onInvalid={(event) => {
                 const input = event.target;
                 if (input instanceof HTMLInputElement &&
@@ -368,23 +403,39 @@ export default function AccountClient({
             <button className="account-link" type="button" onClick={() => selectMode(mode === 'forgot' ? 'signin' : 'forgot')}>
                 {mode === 'forgot' ? (es ? 'Volver al ingreso' : 'Back to sign in') : (es ? '¿Olvidaste tu contraseña?' : 'Forgot password?')}
             </button>
-        </div>
+        </div></div>
     );
 
     return (
-        <div className="account-grid">
-            <section className="account-card">
-                <p className="account-eyebrow">{es ? 'Sesión iniciada' : 'Signed in'}</p>
-                <h2>{session.profile.displayName}</h2>
-                <p className="account-muted">{es ? 'Método de acceso' : 'Access method'}: {session.user.accessMethod === 'email' ? session.user.email : session.user.accessMethod}</p>
-                <form onSubmit={saveProfile} className="account-form">
-                    <label>{es ? 'Nombre real (privado)' : 'Real name (private)'}<input name="realName" defaultValue={session.profile.realName ?? ''} required maxLength={120} autoComplete="name" /></label>
-                    <label>{es ? 'Nombre preferido' : 'Preferred name'}<input name="displayName" defaultValue={session.profile.displayName} required maxLength={60} autoComplete="nickname" /></label>
-                    <button>{es ? 'Guardar perfil' : 'Save profile'}</button>
+        <div className="account-home">
+            <header className="account-profile-header">
+                <p className="account-eyebrow">{es ? 'Mi cuenta' : 'My account'}</p>
+                <div className="account-name-row"><h1>{session.profile.displayName}</h1>
+                    <button ref={editButtonRef} type="button" className="account-edit-name" disabled={profileBusy} aria-label={es ? 'Editar mi nombre' : 'Edit my name'} aria-expanded={editingProfile} aria-controls="account-profile-editor" onClick={() => { setMessage(''); setEditingProfile(value => !value); }}>
+                        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="m14.5 5.5 4 4M4 20l4.5-1 12-12a2.8 2.8 0 0 0-4-4l-12 12L4 20Z" /></svg>
+                    </button>
+                </div>
+                <p className="account-muted">{es ? 'Tu actividad y tus experiencias en Harmonic Beacon.' : 'Your activity and experiences in Harmonic Beacon.'}</p>
+                {returnTo && <a className="account-secondary account-return" href={returnTo}>{es ? 'Volver al producto' : 'Return to product'} <span aria-hidden="true">↗</span></a>}
+            </header>
+            {editingProfile && <section className="account-card account-profile-editor" id="account-profile-editor" aria-label={es ? 'Editar perfil' : 'Edit profile'}>
+                <h2>{es ? 'Cómo querés que te llamemos' : 'What would you like to be called?'}</h2>
+                <form onSubmit={saveProfile} className="account-form" aria-busy={profileBusy}>
+                    <label>{es ? 'Nombre preferido' : 'Preferred name'}<input ref={preferredNameRef} name="displayName" defaultValue={session.profile.displayName} disabled={profileBusy} required minLength={1} maxLength={60} autoComplete="nickname" /></label>
+                    <label>{es ? 'Nombre real (privado)' : 'Real name (private)'}<input name="realName" defaultValue={session.profile.realName ?? ''} disabled={profileBusy} required minLength={1} maxLength={120} autoComplete="name" /></label>
+                    <p className="account-muted">{es ? 'Tu nombre preferido es el que se muestra. Tu nombre real permanece privado.' : 'Your preferred name is displayed. Your real name stays private.'}</p>
+                    <div className="account-card-actions"><button className="account-primary" disabled={profileBusy}>{profileBusy ? (es ? 'Guardando…' : 'Saving…') : (es ? 'Guardar cambios' : 'Save changes')}</button>
+                        <button type="button" disabled={profileBusy} onClick={closeProfileEditor}>{es ? 'Cancelar' : 'Cancel'}</button></div>
                 </form>
-            </section>
+            </section>}
+            {message && <p className="account-message account-feedback" role="status">{message}</p>}
+            {home && <div className="account-grid"><AccountListeningCard home={home} locale={locale} /><AccountPsicopompoCard locale={locale} /></div>}
+            <AccountResidence locale={locale} />
+            <details className="account-security">
+                <summary>{es ? 'Acceso y seguridad' : 'Sign-in and security'}</summary>
+                <div className="account-grid">
             {session.user.accessMethod === 'email' && <section className="account-card">
-                <h2>{es ? 'Seguridad' : 'Security'}</h2>
+                <h2>{es ? 'Contraseña y correo' : 'Password and email'}</h2>
                 <form onSubmit={changePassword} className="account-form">
                     <AccountPasswordField label={es ? 'Contraseña actual' : 'Current password'} showLabel={showPassword} hideLabel={hidePassword} name="currentPassword" required autoComplete="current-password" />
                     <AccountPasswordField label={es ? 'Contraseña nueva' : 'New password'} showLabel={showPassword} hideLabel={hidePassword} name="newPassword" required minLength={ACCOUNT_PASSWORD_MIN_LENGTH} maxLength={ACCOUNT_PASSWORD_MAX_LENGTH} aria-describedby="account-new-password-policy" autoComplete="new-password" />
@@ -400,13 +451,14 @@ export default function AccountClient({
             </section>}
             <section className="account-card">
                 <h2>{es ? 'Sesiones' : 'Sessions'}</h2>
+                <p className="account-muted">{es ? 'Ingresaste con' : 'Signed in with'} {session.user.accessMethod === 'email' ? session.user.email : session.user.accessMethod === 'google' ? 'Google' : 'Apple'}.</p>
                 <div className="account-actions">
                     <button onClick={() => logout('/api/account/logout/current')}>{es ? 'Cerrar sesión aquí' : 'Sign out here'}</button>
                     <button onClick={() => logout('/api/account/logout/all')}>{es ? 'Cerrar sesión en todos lados' : 'Sign out everywhere'}</button>
                 </div>
-                {message && <p className="account-message" role="status">{message}</p>}
             </section>
-            {returnTo && <a className="account-primary account-return" href={returnTo}>{es ? 'Volver al producto' : 'Return to product'}</a>}
+                </div>
+            </details>
         </div>
     );
 }

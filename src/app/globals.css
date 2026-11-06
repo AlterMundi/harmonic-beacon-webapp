@@ -57,7 +57,7 @@ hb-global-nav:not(:defined) > [slot="account-menu"] { display: none; }
    product styling remain untouched. */
 .account-shell {
   min-height: 100svh;
-  padding: clamp(5rem, 10vw, 8rem) clamp(1rem, 5vw, 4rem) 3rem;
+  padding: clamp(2rem, 5vw, 4rem) clamp(1rem, 5vw, 4rem) 3rem;
   color: var(--hb-bone, #f4eee2);
   background:
     radial-gradient(circle at 50% 0%, rgba(201, 162, 78, 0.14), transparent 42rem),
@@ -68,7 +68,7 @@ hb-global-nav:not(:defined) > [slot="account-menu"] { display: none; }
 .account-hero, .account-grid { width: min(64rem, 100%); margin-inline: auto; }
 .account-hero { margin-bottom: 2rem; }
 .account-brand, .account-link { color: #c9a24e; text-decoration: none; }
-.account-eyebrow { color: #c9a24e; text-transform: uppercase; letter-spacing: .16em; font-size: .72rem; }
+.account-eyebrow { color: #d6b363; text-transform: uppercase; letter-spacing: .12em; font-size: .875rem; }
 .account-hero h1, .account-card h1, .account-card h2 {
   margin: .4rem 0;
   font-family: var(--font-cormorant), Georgia, serif;
@@ -101,7 +101,7 @@ hb-global-nav:not(:defined) > [slot="account-menu"] { display: none; }
 }
 .account-grid .account-card { width: 100%; }
 .account-form, .account-providers, .account-actions { display: grid; gap: .75rem; margin-top: 1rem; }
-.account-form label { display: grid; gap: .35rem; font-size: .82rem; color: rgba(244, 238, 226, .78); }
+.account-form label { display: grid; gap: .35rem; font-size: .875rem; color: rgba(244, 238, 226, .84); }
 .account-form input {
   min-height: 44px;
   padding: .7rem .8rem;
@@ -109,6 +109,8 @@ hb-global-nav:not(:defined) > [slot="account-menu"] { display: none; }
   background: #16120d;
   border: 1px solid rgba(244, 238, 226, .22);
   border-radius: 10px;
+  font-size: 1rem;
+  min-width: 0;
 }
 .account-password-field { position: relative; display: block; }
 .account-password-field input { width: 100%; min-width: 0; padding-right: 3.35rem; }
@@ -158,6 +160,55 @@ hb-global-nav:not(:defined) > [slot="account-menu"] { display: none; }
 .account-mode { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
 .account-mode button[aria-pressed="true"] { color: #16120d; background: #c9a24e; }
 .account-muted, .account-message { color: rgba(244, 238, 226, .7); line-height: 1.55; }
+
+/* Account home: personal activity first, credentials disclosed on demand. */
+.account-home, .account-welcome { width: min(65rem, 100%); margin-inline: auto; }
+.account-welcome { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: clamp(2rem, 6vw, 5rem); align-items: start; }
+.account-welcome-copy { padding-block: clamp(0rem, 3vw, 2rem); }
+.account-welcome-copy h1, .account-profile-header h1, .account-residence h2 {
+  font-family: var(--font-cormorant), Georgia, serif;
+  font-weight: 500;
+  line-height: 1.08;
+}
+.account-welcome-copy h1 { font-size: clamp(2.65rem, 5vw, 3.65rem); margin: 1rem 0 1.25rem; max-width: 14ch; }
+.account-welcome-copy > p:not(.account-eyebrow) { font-size: 1.0625rem; line-height: 1.65; color: #d2c9ba; max-width: 36ch; }
+.account-text-link { display: inline-flex; gap: .5rem; align-items: center; min-height: 44px; margin-top: 1rem; color: #d6b363; text-underline-offset: .3em; }
+.account-access-card { width: 100%; box-shadow: 0 .8rem 3rem rgba(0, 0, 0, .2); }
+.account-divider { display: flex; align-items: center; gap: .75rem; margin: 1.25rem 0 0; font-size: .875rem; color: #bfb5a5; }
+.account-divider::before, .account-divider::after { content: ''; height: 1px; flex: 1; background: rgba(201, 162, 78, .22); }
+.account-profile-header { margin-bottom: 2rem; }
+.account-name-row { display: flex; align-items: center; gap: .75rem; }
+.account-profile-header h1 { margin: .3rem 0; font-size: clamp(2.5rem, 5vw, 3.5rem); overflow-wrap: anywhere; min-width: 0; }
+.account-edit-name { display: inline-grid; place-items: center; flex-shrink: 0; width: 44px; height: 44px; border: 1px solid rgba(201, 162, 78, .4); border-radius: 50%; color: #d6b363; cursor: pointer; background: transparent; }
+.account-edit-name:hover { background: rgba(201, 162, 78, .12); }
+.account-home :is(a, button, summary):focus-visible, .account-welcome a:focus-visible { outline: 2px solid #e0bd69; outline-offset: 4px; }
+.account-profile-editor { width: min(40rem, 100%); margin-bottom: 1.5rem; }
+.account-profile-editor h2 { font-size: 1.875rem; }
+.account-home .account-card h2 { font-size: 1.875rem; line-height: 1.15; }
+.account-home .account-card { box-shadow: none; }
+.account-hours { font-size: clamp(2.5rem, 5vw, 3.5rem); font-weight: 500; line-height: 1.15; font-variant-numeric: tabular-nums; margin: 1.25rem 0 .5rem; }
+.account-hours span { font-size: 1rem; font-weight: 400; color: #d2c9ba; }
+.account-membership { display: flex; flex-wrap: wrap; gap: .4rem 1rem; align-items: baseline; padding-block: 1rem; border-top: 1px solid rgba(201, 162, 78, .22); }
+.account-membership span, .account-product-status { font-size: .875rem; color: #d6b363; }
+.account-card-actions { display: flex; gap: .5rem 1rem; align-items: center; flex-wrap: wrap; margin-top: 1.25rem; }
+.account-secondary { display: inline-flex; align-items: center; justify-content: center; gap: .75rem; min-height: 44px; padding: .7rem 1rem; border: 1px solid rgba(201, 162, 78, .45); border-radius: 999px; color: #f4eee2; font-size: 1rem; text-decoration: none; text-align: center; }
+.account-secondary:hover { background: rgba(201, 162, 78, .1); }
+.account-card .account-link { border: none; padding-inline: .5rem; text-decoration: underline; text-underline-offset: .25em; }
+.account-feedback { padding: 1rem; border: 1px solid rgba(201, 162, 78, .4); border-radius: 12px; margin-bottom: 1.5rem; }
+.account-residence { display: flex; gap: 1.5rem 2rem; justify-content: space-between; align-items: center; padding: clamp(1.25rem, 3vw, 2rem); margin-top: 1.5rem; border: 1px solid rgba(201, 162, 78, .3); border-radius: 18px; background: linear-gradient(115deg, rgba(201, 162, 78, .1), rgba(201, 162, 78, .02)); }
+.account-residence h2 { font-size: clamp(1.875rem, 3vw, 2.4rem); margin: .5rem 0; }
+.account-residence p:not(.account-eyebrow) { color: #d2c9ba; line-height: 1.6; max-width: 48ch; margin-bottom: 0; }
+.account-residence > a { flex-shrink: 0; }
+.account-security { margin-top: 2rem; border-top: 1px solid rgba(201, 162, 78, .24); }
+.account-security > summary { padding-block: 1.25rem; min-height: 56px; cursor: pointer; font-size: 1rem; color: #d2c9ba; }
+.account-security .account-grid { padding-bottom: 1rem; }
+@media (max-width: 700px) {
+  .account-welcome { grid-template-columns: minmax(0, 1fr); gap: 1.5rem; }
+  .account-welcome-copy h1 { max-width: 18ch; font-size: 2.65rem; margin-block: .5rem .75rem; }
+  .account-welcome-copy .account-text-link { margin-top: 0; }
+  .account-residence { align-items: start; flex-direction: column; }
+  .account-residence > a { width: 100%; }
+}
 .account-signup-confirmation {
   display: grid;
   justify-items: center;
@@ -2186,14 +2237,17 @@ html[data-hb-listener-identity-stale='1'] body {
   text-align: center;
 }
 
+.listener-public-hero__copy > p:first-child { font-size: .875rem; }
+.listener-access__card .listener-button { font-size: 1rem; letter-spacing: normal; text-transform: none; }
+
 .listener-public-hero__copy h1 {
-  max-width: 15ch;
+  max-width: 18ch;
   margin: 0.7rem auto 0;
   color: var(--hb-bone);
   font-family: var(--hb-font-serif);
-  font-size: clamp(2.35rem, 6.2vw, 4.5rem);
+  font-size: clamp(2.35rem, 5vw, 3.5rem);
   font-weight: 400;
-  line-height: 0.9;
+  line-height: 1.05;
 }
 
 .listener-public-hero__copy > p:nth-child(3) {
@@ -2206,7 +2260,7 @@ html[data-hb-listener-identity-stale='1'] body {
 
 .listener-access {
   width: min(100%, 31rem);
-  margin: clamp(6rem, 16vh, 10rem) auto 0;
+  margin: 1.75rem auto 0;
   padding: 0;
   scroll-margin-top: 2rem;
 }
@@ -2886,7 +2940,7 @@ html[data-hb-listener-identity-stale='1'] body {
   }
 
   .listener-public-altar {
-    min-height: calc(100dvh - 5.5rem);
+    min-height: 0;
     padding: 1.1rem 0.9rem;
     border-radius: 1.65rem 1.65rem 0.9rem 0.9rem;
   }
@@ -2897,11 +2951,11 @@ html[data-hb-listener-identity-stale='1'] body {
     opacity: 0.4;
   }
 
-  .listener-public-hero__copy h1 { font-size: clamp(2.25rem, 13vw, 3.5rem); }
+  .listener-public-hero__copy h1 { font-size: clamp(2.25rem, 10vw, 3rem); }
 
   .listener-access {
     width: min(100%, 30rem);
-    margin: clamp(5.25rem, 15vh, 8rem) auto 0;
+    margin: 1.5rem auto 0;
   }
 
   .listener-shell__frame--home > .listener-static-field .listener-field {
