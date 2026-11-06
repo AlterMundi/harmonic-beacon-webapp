@@ -54,6 +54,18 @@ describe('middleware', () => {
         }
 
         it.each([
+            ['https://account.harmonicbeacon.com', 'https://listen.harmonicbeacon.com', 'https://earlybirds-staging.harmonicbeacon.com'],
+            ['https://account-staging.harmonicbeacon.com', 'https://earlybirds-staging.harmonicbeacon.com', 'https://listen.harmonicbeacon.com'],
+        ])('permits only the matching Listener summary in Account CSP for %s', (accountOrigin, allowed, denied) => {
+            vi.stubEnv('BEACON_ACCOUNT_RUNTIME', '1');
+            vi.stubEnv('BEACON_ACCOUNT_BASE_URL', accountOrigin);
+            const response = middleware(request('/account', undefined, new URL(accountOrigin).hostname));
+            const connect = response.headers.get('Content-Security-Policy')?.split(';').find(part => part.trim().startsWith('connect-src'));
+            expect(connect?.trim()).toBe(`connect-src 'self' ${allowed}`);
+            expect(connect).not.toContain(denied);
+        });
+
+        it.each([
             '/', '/account', '/verify-email', '/reset-password',
             '/assets/hb-global-nav.js',
             '/.well-known/openid-configuration', '/api/account/health/ready',

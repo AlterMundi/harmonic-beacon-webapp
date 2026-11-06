@@ -10,13 +10,15 @@ export async function GET(request: Request): Promise<Response> {
     const incoming = new Headers(request.headers);
     const staging = isListenerStagingHost(incoming);
     if ((!staging && !isCanonicalListenerHost(incoming)) || !earlyBirdsEnabled()) return new Response(null, { status: 404 });
-    const allowedOrigin = staging ? 'https://live-staging.harmonicbeacon.com' : 'https://live.harmonicbeacon.com';
-    // Only the corresponding Live environment may read this credentialed response.
+    const allowedOrigins = staging
+        ? ['https://live-staging.harmonicbeacon.com', 'https://account-staging.harmonicbeacon.com']
+        : ['https://live.harmonicbeacon.com', 'https://account.harmonicbeacon.com'];
+    // Exact product origins in the same environment; never reflect an arbitrary caller.
     const origin = incoming.get('origin');
-    if (origin !== allowedOrigin) return new Response(null, { status: 403 });
+    if (!origin || !allowedOrigins.includes(origin)) return new Response(null, { status: 403 });
     const headers = {
         'Cache-Control': 'private, no-store', Vary: 'Origin',
-        'Access-Control-Allow-Origin': allowedOrigin,
+        'Access-Control-Allow-Origin': origin,
         'Access-Control-Allow-Credentials': 'true',
         'X-Content-Type-Options': 'nosniff',
     };

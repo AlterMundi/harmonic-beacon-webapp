@@ -159,7 +159,7 @@ export default function EarlyBirdLanding(props: Props) {
                                     onClick={() => markListenerOAuthAttempt()}
                                     className="listener-button listener-button--secondary w-full"
                                 >
-                                    {locale === 'es' ? 'Ingresar o crear una cuenta' : 'Sign in or create an account'}
+                                    {locale === 'es' ? 'Iniciar sesión' : 'Sign in'}
                                 </a>
                                 {props.syntheticTeamEntryAvailable && (
                                     <SyntheticTeamEntryForm

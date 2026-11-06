@@ -49,7 +49,7 @@ describe('EarlyBird public landing', () => {
 
     it('delegates provider-neutral sign-in to Account and marks a local OAuth attempt', async () => {
         renderLanding({ invitationAvailable: true });
-        const signIn = screen.getByRole('link', { name: 'Sign in or create an account' });
+        const signIn = screen.getByRole('link', { name: 'Sign in' });
         expect(signIn).toHaveAttribute('href', '/api/account/login');
         expect(screen.queryByText(/Continue with Google|Continue with Apple/)).not.toBeInTheDocument();
         await userEvent.click(signIn);
@@ -68,8 +68,8 @@ describe('EarlyBird public landing', () => {
         expect(container.querySelector('.listener-public-altar .listener-field')).not.toBeInTheDocument();
         expect(container.querySelector('.listener-public-hero > .listener-field')).toBeInTheDocument();
         expect(container.querySelector('.listener-public-hero .listener-access__card'))
-            .toContainElement(screen.getByRole('link', { name: 'Sign in or create an account' }));
-        expect(screen.getByRole('heading', { name: 'Remember your harmonic center.' }))
+            .toContainElement(screen.getByRole('link', { name: 'Sign in' }));
+        expect(screen.getByRole('heading', { name: 'Welcome to Harmonic Beacon' }))
             .toBeInTheDocument();
         expect(screen.queryByText('Listen within the time available to your account')).not.toBeInTheDocument();
         expect(screen.queryByText('An optional introduction before entering the Beacon')).not.toBeInTheDocument();
@@ -82,7 +82,7 @@ describe('EarlyBird public landing', () => {
         renderLanding();
         expect(screen.queryByText(/Continue with Google|Continue with Apple/)).not.toBeInTheDocument();
         expect(screen.queryByLabelText('Email address')).not.toBeInTheDocument();
-        expect(screen.getByRole('link', { name: 'Sign in or create an account' }))
+        expect(screen.getByRole('link', { name: 'Sign in' }))
             .toHaveAttribute('href', '/api/account/login');
     });
 
@@ -143,7 +143,7 @@ describe('EarlyBird public landing', () => {
         expect(screen.getByRole('alert')).toHaveTextContent(detail);
         expect(screen.getByRole('link', { name: 'Try again' })).toHaveAttribute('href', '/listener');
         expect(screen.queryByText(/daily time|first listen/i)).toBeNull();
-        expect(screen.queryByRole('link', { name: 'Sign in or create an account' })).toBeNull();
+        expect(screen.queryByRole('link', { name: 'Sign in' })).toBeNull();
         expect(screen.queryByLabelText('Email address')).toBeNull();
     });
 
@@ -153,7 +153,7 @@ describe('EarlyBird public landing', () => {
             .toEqual(expect.arrayContaining([
                 expect.objectContaining({ href: expect.stringMatching(/\/listener$/) }),
             ]));
-        expect(screen.queryByRole('link', { name: 'Sign in or create an account' })).toBeNull();
+        expect(screen.queryByRole('link', { name: 'Sign in' })).toBeNull();
         expect(screen.getByRole('button', { name: 'Sign out' })).toBeEnabled();
     });
 

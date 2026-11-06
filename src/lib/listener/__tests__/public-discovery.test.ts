@@ -59,8 +59,8 @@ describe('Listener public discovery', () => {
     });
 
     it.each([
-        ['es', 'Harmonic Beacon · Recuerda tu centro armónico.', 'Un campo armónico continuo, compartido alrededor del mundo.'],
-        ['en', 'Harmonic Beacon · Remember your harmonic center.', 'A continuous harmonic field, shared across the world.'],
+        ['es', 'Bienvenido a Harmonic Beacon · Listen', 'Un campo armónico continuo, compartido alrededor del mundo.'],
+        ['en', 'Welcome to Harmonic Beacon · Listen', 'A continuous harmonic field, shared across the world.'],
     ] as const)('builds complete %s metadata for the one canonical URL', (locale, title, description) => {
         const metadata = listenerPublicMetadata(locale);
 

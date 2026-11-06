@@ -10,11 +10,11 @@ export const LISTENER_CANONICAL_URL = `${LISTENER_PUBLIC_ORIGIN}/`;
 
 const localizedMetadata: Record<UiLocale, { title: string; description: string }> = {
     es: {
-        title: 'Harmonic Beacon · Recuerda tu centro armónico.',
+        title: 'Bienvenido a Harmonic Beacon · Listen',
         description: 'Un campo armónico continuo, compartido alrededor del mundo.',
     },
     en: {
-        title: 'Harmonic Beacon · Remember your harmonic center.',
+        title: 'Welcome to Harmonic Beacon · Listen',
         description: 'A continuous harmonic field, shared across the world.',
     },
 };

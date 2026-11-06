@@ -269,7 +269,7 @@ describe('Listener visual isolation from event surfaces (issues #213, #198)', ()
 
     it('the public landing actions use listener button classes and keep one contextual primary action', () => {
         const anonymous = renderLanding();
-        expect(screen.getByRole('link', { name: 'Sign in or create an account' }))
+        expect(screen.getByRole('link', { name: 'Sign in' }))
             .toHaveClass('listener-button', 'listener-button--secondary');
         expect(anonymous.container.innerHTML).not.toMatch(EVENT_VISUAL_CLASS);
         // Identity providers remain equivalent and do not compete with a product action.

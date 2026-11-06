@@ -73,7 +73,7 @@ describe('Account cross-product logout completion', () => {
             returnTo: null,
         }));
         fireEvent.click(screen.getAllByRole('button', {
-            name: locale === 'es' ? 'Crear cuenta' : 'Create account',
+            name: locale === 'es' ? 'Registrate' : 'Register',
         })[0]);
         const password = screen.getByLabelText(locale === 'es' ? 'Contraseña' : 'Password');
         expect(password).toHaveAttribute('minlength', '8');
@@ -90,7 +90,7 @@ describe('Account cross-product logout completion', () => {
             locale: 'en',
             returnTo: null,
         }));
-        fireEvent.click(screen.getAllByRole('button', { name: 'Create account' })[0]);
+        fireEvent.click(screen.getByRole('button', { name: 'Register' }));
         const password = screen.getByLabelText('Password');
         fireEvent.change(password, { target: { value: '1234567' } });
         fireEvent.submit(password.closest('form')!);
@@ -108,7 +108,7 @@ describe('Account cross-product logout completion', () => {
             locale: 'en',
             returnTo: null,
         }));
-        fireEvent.click(screen.getAllByRole('button', { name: 'Create account' })[0]);
+        fireEvent.click(screen.getByRole('button', { name: 'Register' }));
         const password = screen.getByLabelText('Password');
         const repeated = screen.getByLabelText('Repeat password');
         fireEvent.change(password, { target: { value: '12345678' } });
@@ -129,7 +129,7 @@ describe('Account cross-product logout completion', () => {
 
     it.each([
         ['en' as const, 'Check your email', 'If the request is eligible, check your email to continue.', 'Go to sign in'],
-        ['es' as const, 'Revisá tu correo', 'Si la solicitud es elegible, revisá tu correo para continuar.', 'Ir al ingreso'],
+        ['es' as const, 'Revisá tu correo', 'Si la solicitud es elegible, revisá tu correo para continuar.', 'Iniciar sesión'],
     ])('submits an eight-character %s signup and replaces the form with focused confirmation', async (
         locale, heading, copy, returnLabel,
     ) => {
@@ -144,7 +144,7 @@ describe('Account cross-product logout completion', () => {
             returnTo: null,
         }));
         const createLabel = locale === 'es' ? 'Crear cuenta' : 'Create account';
-        fireEvent.click(screen.getAllByRole('button', { name: createLabel })[0]);
+        fireEvent.click(screen.getByRole('button', { name: locale === 'es' ? 'Registrate' : 'Register' }));
         fireEvent.change(screen.getByLabelText(locale === 'es' ? 'Nombre real (privado)' : 'Real name (private)'), { target: { value: 'Test Person' } });
         fireEvent.change(screen.getByLabelText(locale === 'es' ? 'Nombre preferido' : 'Preferred name'), { target: { value: 'Test Listener' } });
         fireEvent.change(screen.getByLabelText(locale === 'es' ? 'Correo' : 'Email'), { target: { value: 'listener@example.invalid' } });
@@ -184,7 +184,7 @@ describe('Account cross-product logout completion', () => {
             locale: 'en',
             returnTo: null,
         }));
-        fireEvent.click(screen.getAllByRole('button', { name: 'Create account' })[0]);
+        fireEvent.click(screen.getByRole('button', { name: 'Register' }));
         fireEvent.change(screen.getByLabelText('Real name (private)'), { target: { value: 'Test Person' } });
         fireEvent.change(screen.getByLabelText('Preferred name'), { target: { value: 'Test Listener' } });
         fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'listener@example.invalid' } });
@@ -215,7 +215,7 @@ describe('Account cross-product logout completion', () => {
             locale: 'en',
             returnTo: null,
         }));
-        fireEvent.click(screen.getAllByRole('button', { name: 'Create account' })[0]);
+        fireEvent.click(screen.getByRole('button', { name: 'Register' }));
         fireEvent.change(screen.getByLabelText('Real name (private)'), { target: { value: 'Test Person' } });
         fireEvent.change(screen.getByLabelText('Preferred name'), { target: { value: 'Test Listener' } });
         fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'listener@example.invalid' } });
@@ -239,7 +239,7 @@ describe('Account cross-product logout completion', () => {
             locale: 'en',
             returnTo: null,
         }));
-        fireEvent.click(screen.getAllByRole('button', { name: 'Create account' })[0]);
+        fireEvent.click(screen.getByRole('button', { name: 'Register' }));
         fireEvent.change(screen.getByLabelText('Real name (private)'), { target: { value: 'Test Person' } });
         fireEvent.change(screen.getByLabelText('Preferred name'), { target: { value: 'Test Listener' } });
         fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'listener@example.invalid' } });
@@ -259,7 +259,7 @@ describe('Account cross-product logout completion', () => {
         expect(screen.queryByRole('button', { name: 'Create account' })).toBeNull();
         expect(fetchMock).toHaveBeenCalledOnce();
         fireEvent.click(screen.getByRole('button', { name: 'Go to sign in' }));
-        expect(screen.getAllByRole('button', { name: 'Sign in' })).toHaveLength(2);
+        expect(screen.getAllByRole('button', { name: 'Sign in' })).toHaveLength(1);
     });
 
     it('blocks a signed-in password change when the repeated value differs', () => {
@@ -314,5 +314,42 @@ describe('Account cross-product logout completion', () => {
             oauth_query: 'client_id=hb-live&exp=9999999999&sig=signed',
         });
         expect(await screen.findByRole('status')).toHaveTextContent('Profile updated. Try continuing again.');
+    });
+
+    it('opens name editing with the pencil, preserves revision, then shows the saved name', async () => {
+        window.history.replaceState({}, '', '/account');
+        const fetchMock = vi.fn().mockResolvedValue(Response.json({ displayName: 'New name', realName: 'Private name', revision: 5 }));
+        vi.stubGlobal('fetch', fetchMock);
+        render(createElement(AccountClient, {
+            initialSession: { user: { email: 'test@example.invalid', emailVerified: true, accessMethod: 'google' }, profile: { displayName: 'Original name', realName: 'Private name', revision: 4 } },
+            providers: { google: true, apple: false }, locale: 'en', returnTo: null,
+        }));
+        expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Original name');
+        expect(screen.queryByLabelText('Real name (private)')).not.toBeInTheDocument();
+        await userEvent.click(screen.getByRole('button', { name: 'Edit my name' }));
+        const name = screen.getByLabelText('Preferred name');
+        expect(name).toHaveFocus();
+        fireEvent.change(name, { target: { value: 'New name' } });
+        await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+        await waitFor(() => expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('New name'));
+        expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ displayName: 'New name', realName: 'Private name', revision: 4 });
+        expect(screen.queryByLabelText('Real name (private)')).not.toBeInTheDocument();
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Edit my name' })).toHaveFocus());
+    });
+
+    it('keeps edits after a network failure and allows cancelling without changing the name', async () => {
+        window.history.replaceState({}, '', '/account');
+        vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')));
+        render(createElement(AccountClient, {
+            initialSession: { user: { email: null, emailVerified: true, accessMethod: 'apple' }, profile: { displayName: 'Original', realName: 'Private', revision: 1 } },
+            providers: { google: false, apple: true }, locale: 'en', returnTo: null,
+        }));
+        await userEvent.click(screen.getByRole('button', { name: 'Edit my name' }));
+        fireEvent.change(screen.getByLabelText('Preferred name'), { target: { value: 'Draft' } });
+        await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+        expect(await screen.findByRole('status')).toHaveTextContent('Your changes are still in the form');
+        expect(screen.getByLabelText('Preferred name')).toHaveValue('Draft');
+        await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+        expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Original');
     });
 });
