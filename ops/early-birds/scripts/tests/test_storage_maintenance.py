@@ -12,6 +12,46 @@ spec.loader.exec_module(m)
 
 
 class RetentionTests(unittest.TestCase):
+    def owner_record(self, images):
+        return {'schema': 'hb.owner-recovery/v1', 'observedAt': 1700000000,
+                'evidence': 'Owning release readback', 'targets': [{
+                    'repository': 'harmonic-beacon/account',
+                    'candidateImageId': images[-1]['Id'], 'priorImageId': images[0]['Id']}]}
+
+    def test_owner_recovery_is_scoped_and_pins_both_images(self):
+        images = self.images(); images[-1]['Running'] = True
+        value = self.owner_record(images)
+        with patch.object(m.os.path, 'lexists', return_value=True), patch.object(m, 'safe_json', return_value=value):
+            pins, coverage = m.owner_recovery_protection(images, {images[-1]['Id']})
+        self.assertEqual(pins, {images[0]['Id'], images[-1]['Id']})
+        self.assertEqual(coverage, {'harmonic-beacon/account': {images[-1]['Id']}})
+        with patch.object(m.os.path, 'lexists', return_value=True), patch.object(m, 'safe_json', return_value=value):
+            self.assertEqual(m.owner_recovery_protection(images, set())[1], {})
+
+    def test_owner_pair_unlocks_only_its_account_namespace(self):
+        images = self.images(); images[-1]['Running'] = True
+        foreign = dict(images[1], Id='sha256:'+'f'*64,
+                       RepoTags=['harmonic-beacon/listener-identity-staging:'+'f'*40], Running=True)
+        images.append(foreign)
+        pair = {images[0]['Id'], images[-2]['Id']}
+        with tempfile.TemporaryDirectory() as directory, patch.object(m, 'DELIVERY_STATE', Path(directory)), patch.object(m, 'APP_PERMIT') as permit, patch.object(m, 'LEGACY_RECOVERY', []), patch.object(m, 'owner_recovery_protection', return_value=(pair, {'harmonic-beacon/account': {images[-2]['Id']}})):
+            permit.exists.return_value = False
+            protected = m.rollback_protection(images, {images[-2]['Id'], foreign['Id']})
+        self.assertTrue(pair.issubset(protected))
+        self.assertNotIn(images[1]['Id'], protected)
+        self.assertIn(foreign['Id'], protected)
+
+    def test_owner_recovery_refuses_missing_wrong_namespace_and_duplicate_pair(self):
+        images = self.images(); value = self.owner_record(images)
+        for mode in ('missing', 'namespace', 'duplicate', 'malformed'):
+            fixture = json.loads(json.dumps(value)); available = json.loads(json.dumps(images))
+            if mode == 'missing': available = available[1:]
+            if mode == 'namespace': available[0]['RepoTags'] = ['unrelated:old']
+            if mode == 'duplicate': fixture['targets'] *= 2
+            if mode == 'malformed': fixture['targets'][0]['candidateImageId'] = []
+            with patch.object(m.os.path, 'lexists', return_value=True), patch.object(m, 'safe_json', return_value=fixture):
+                with self.assertRaises(RuntimeError): m.owner_recovery_protection(available, set())
+
     def test_removal_uses_exact_id_for_untagged_and_single_tag_images(self):
         for tags in (None, [], ['owned:old']):
             with patch.object(m, 'run') as command:
@@ -36,7 +76,7 @@ class RetentionTests(unittest.TestCase):
         images = self.images()
         images[0]['RepoTags'] = []
         record = Mock()
-        with tempfile.TemporaryDirectory() as directory, patch.object(m, 'DELIVERY_STATE', Path(directory)), patch.object(m, 'APP_PERMIT') as permit, patch.object(m, 'LEGACY_RECOVERY', [record]), patch.object(m.os.path, 'lexists', return_value=True), patch.object(m, 'safe_json', return_value={'prior': images[0]['Id']}):
+        with tempfile.TemporaryDirectory() as directory, patch.object(m, 'DELIVERY_STATE', Path(directory)), patch.object(m, 'APP_PERMIT') as permit, patch.object(m, 'LEGACY_RECOVERY', [record]), patch.object(m.os.path, 'lexists', return_value=True), patch.object(m, 'safe_json', return_value={'prior': images[0]['Id']}), patch.object(m, 'owner_recovery_protection', return_value=(set(), {})):
             permit.exists.return_value = False
             protected = m.rollback_protection(images, set(), {images[0]['Id']})
         self.assertIn(images[0]['Id'], protected)

@@ -562,3 +562,36 @@ unchanged container IDs/images, recovery artifacts, actual filesystem free space
 Prometheus rule recovery and higher resolved Alerts revisions before closing the
 incident. Preserve the reviewed plan with the operation receipt; remove its
 active selection after the finite operation ends. Do not lower alert thresholds.
+
+
+### Owner/manual release recovery evidence and automatic retention
+
+A successful owner/manual release must leave its actual current/prior image
+references available to the existing storage maintainer. Helper transaction files
+must not be fabricated to describe a release performed outside that helper.
+Instead, the appointed operator may atomically write root-owned0600
+`/var/lib/harmonic-beacon/storage-maintenance/owner-recovery.json`:
+
+```json
+{"schema":"hb.owner-recovery/v1","observedAt":1794240000,"evidence":"Owning release receipt and actual target readback","targets":[{"repository":"harmonic-beacon/account","candidateImageId":"sha256:<current64hex>","priorImageId":"sha256:<retained64hex>"}]}
+```
+
+Use actual UTC Unix observation time, immutable Docker IDs and a maintained owning
+receipt. This is retention evidence, not release authorization, schema compatibility
+or proof of a restore drill. Read the actual running targets and owning recovery
+records first. Keep every still-required current/prior pair, at most16targets and
+16KiB total. Publish through the existing maintenance/service release locks, retain
+the preimage and read back the exact deployed bindings. Do not override active
+transactions or infer a recovery pair merely from image creation order.
+
+Both images must exist in the declared supported repository namespace; unsafe,
+malformed or missing evidence fails closed. Both IDs remain pinned, including
+before/after container replacement. Coverage is per repository and only a currently
+used running candidate unlocks normal historical collection in that repository.
+A different/new candidate, another namespace or an uncovered active staging image
+keeps its conservative protection. Normal age/newest-three/tag checks and verified
+archival still apply. Missing evidence is not healthy automatic retention: after a
+manual delivery, record the actual pair so obsolete source generations can expire
+without another CompAII intervention. Reconcile the one current evidence file at
+subsequent releases; do not append an unbounded history there. Keep historical
+receipts in their owning records and respect existing image-archive retention.
