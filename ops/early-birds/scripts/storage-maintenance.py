@@ -20,6 +20,7 @@ METRICS = Path('/var/lib/harmonic-beacon/metrics/storage-maintenance.prom')
 DELIVERY_STATE = Path('/var/lib/harmonic-beacon')
 APP_PERMIT = Path('/etc/harmonic-beacon/live-app-release/permit.json')
 REVIEWED = STATE/'reviewed-retirement.json'
+OWNER_RECOVERY = STATE/'owner-recovery.json'
 LEGACY_RECOVERY = [
     Path('/etc/harmonic-beacon/app-bridge/permit.json'),
     Path('/etc/harmonic-beacon/migration-bridge-v2/permit.json'),
@@ -86,6 +87,41 @@ def inventory():
 def created(image):
     # Docker timestamps may contain nanoseconds; ISO parser accepts/truncates them.
     return dt.datetime.fromisoformat(image['Created'].replace('Z', '+00:00')).timestamp()
+
+
+def owner_recovery_protection(images, used):
+    """Preserve observed owner/manual release pairs without forging helper state."""
+    if not os.path.lexists(OWNER_RECOVERY):
+        return set(), {}
+    value = safe_json(OWNER_RECOVERY)
+    if (not isinstance(value, dict)
+            or set(value) != {'schema', 'observedAt', 'evidence', 'targets'}
+            or value['schema'] != 'hb.owner-recovery/v1'
+            or type(value['observedAt']) is not int or value['observedAt'] <= 0
+            or value['observedAt'] > time.time()+60
+            or not isinstance(value['evidence'], str) or not 1 <= len(value['evidence']) <= 500
+            or not isinstance(value['targets'], list) or not 1 <= len(value['targets']) <= 16):
+        raise RuntimeError('invalid owner recovery evidence')
+    available = {i['Id']: i for i in images if not i.get('Unavailable')}
+    protected, coverage, seen = set(), {}, set()
+    for row in value['targets']:
+        if not isinstance(row, dict) or set(row) != {'repository', 'candidateImageId', 'priorImageId'}:
+            raise RuntimeError('invalid owner recovery target')
+        repo, candidate, prior = row['repository'], row['candidateImageId'], row['priorImageId']
+        if (not isinstance(repo, str) or repo not in REPOSITORIES
+                or any(not isinstance(v, str) or not re.fullmatch('sha256:[a-f0-9]{64}', v)
+                       for v in (candidate, prior)) or candidate == prior
+                or (repo, candidate) in seen):
+            raise RuntimeError('invalid owner recovery image pair')
+        seen.add((repo, candidate))
+        for image_id in (candidate, prior):
+            if image_id not in available or not any(
+                    t.rsplit(':', 1)[0] == repo for t in available[image_id].get('RepoTags') or []):
+                raise RuntimeError('owner recovery image missing or namespace mismatch')
+        protected.update((candidate, prior))
+        if candidate in used and available[candidate].get('Running'):
+            coverage.setdefault(repo, set()).add(candidate)
+    return protected, coverage
 
 
 def rollback_protection(images, used, reviewed=frozenset()):
@@ -178,11 +214,13 @@ def rollback_protection(images, used, reviewed=frozenset()):
         if os.path.lexists(path):
             value = safe_json(path)
             protected.update(image_ids(value))
+    owner_pins, owner_coverage = owner_recovery_protection(images, used)
+    protected.update(owner_pins)
     supported = set()
     for repo in REPOSITORIES:
         active = {i['Id'] for i in images if i.get('Running') and
                   any(t.rsplit(':', 1)[0] == repo for t in i.get('RepoTags') or [])}
-        if active and active.issubset(covered):
+        if active and active.issubset(covered | owner_coverage.get(repo, set())):
             supported.add(repo)
     # Repositories without authoritative rollback bindings remain protected.
     for image in images:
