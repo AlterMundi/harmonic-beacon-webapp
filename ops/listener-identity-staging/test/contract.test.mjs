@@ -101,9 +101,9 @@ test('staging selects only the two approved intros from the mounted immutable ar
   const app = source(APP);
   const manifest = source(path.join(ROOT, 'intro-artifacts.sha256'));
   assert.match(app, /EARLY_BIRDS_DROPIN_EN_PATH=\/media\/artifacts\/drop-ins\/amara-sol-en-r2-approved-aac320-v1\.m4a/);
-  assert.match(app, /EARLY_BIRDS_DROPIN_ES_PATH=\/media\/artifacts\/drop-ins\/amara-sol-es-r2-approved-aac320-v1\.m4a/);
+  assert.match(app, /EARLY_BIRDS_DROPIN_ES_PATH=\/media\/artifacts\/drop-ins\/amara-sol-es-r2-full-aac320-v2\.m4a/);
   assert.match(manifest, /^86ce75249b506277651e632a671787827ddfc394a9777c56d9f3987d4fb7cd59  drop-ins\/amara-sol-en-r2-approved-aac320-v1\.m4a$/m);
-  assert.match(manifest, /^4d4b0ecf472a8a1d50468d2e673521b2974c7989d3c6dabe43705e1b68007c5d  drop-ins\/amara-sol-es-r2-approved-aac320-v1\.m4a$/m);
+  assert.match(manifest, /^cceea57718629ce82954f24bd3be3ad76308bd8c2806d1a22ba5bc564ce7904a  drop-ins\/amara-sol-es-r2-full-aac320-v2\.m4a$/m);
 
   const unapproved = mutated(
     APP,
@@ -116,7 +116,7 @@ test('staging selects only the two approved intros from the mounted immutable ar
   );
   const sameLanguage = mutated(
     APP,
-    '/media/artifacts/drop-ins/amara-sol-es-r2-approved-aac320-v1.m4a',
+    '/media/artifacts/drop-ins/amara-sol-es-r2-full-aac320-v2.m4a',
     '/media/artifacts/drop-ins/amara-sol-en-r2-approved-aac320-v1.m4a',
   );
   assert.throws(

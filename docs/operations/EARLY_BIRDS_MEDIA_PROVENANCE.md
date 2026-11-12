@@ -108,3 +108,36 @@ channel change. Promotion changes only the immutable ES artifact path and
 recreates Listener. The Beacon origin, English intro, database and event audio
 remain unchanged. Rollback restores `amara-sol-es-r1-approved-aac320-v1.m4a`
 and recreates only Listener.
+
+## Spanish export-range correction — 2026-11-12
+
+Nicolás requested restoration of the truncated Spanish instructions. The old
+Spanish artifact itself ended at 454.500 s, exactly the English duration; the
+player already waits for each language's own audio `ended` event. The original
+Ardour session's export range ended at 454.500 s while its Spanish voice/vocoder
+regions continued to 504.820 s. This supersedes the Spanish artifact above.
+
+A disposable session copy extended only that export range. Original session
+SHA-256: `cfcb86437e46a3220eb35daf97119f5d575bd250c6b3cd4af58f06102573dfeb`.
+The original project, sources, routing, gain and plugins were preserved.
+Offline `ardour8-export -b 16 -s 48000` produced 24,231,360 stereo frames;
+WAV SHA-256: `440fe57f60756d7f0e973f9e70189d02a4f5919693141cad503b30de4cf09db4`.
+The common prefix differs slightly on re-render (difference RMS -52 dBFS,
+about -37 dB relative to signal); this is not a bit-identical extension.
+
+| Field | Value |
+|---|---|
+| Artifact | `amara-sol-es-r2-full-aac320-v2.m4a` |
+| SHA-256 | `cceea57718629ce82954f24bd3be3ad76308bd8c2806d1a22ba5bc564ce7904a` |
+| Bytes / duration | 17,912,329 / 504.820 s |
+| Format | AAC-LC, requested 320 kbit/s, 48 kHz stereo, fast-start M4A |
+
+Encoding uses `ffmpeg -i source.wav -map 0:a:0 -c:a aac -b:a 320k
+-movflags +faststart artifact.m4a`, without gain or normalization. Full AAC
+decode succeeded without errors. English remains the existing 454.500 s artifact.
+
+For future multilingual exports, compare each language's export range with its
+own final authored voice region, then verify both WAV and encoded duration and
+listen across the previous cut point and ending. A matching English duration
+is not evidence that Spanish is complete. Keep historical immutable artifacts
+for rollback; never replace bytes under an existing approved filename.

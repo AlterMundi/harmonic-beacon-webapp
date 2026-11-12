@@ -76,3 +76,26 @@ sessions. Therefore Account migration, Listener env activation and the public
 edge change belong to one maintenance boundary with fresh backups and rollback.
 This preparatory package does not perform that boundary and does not require a
 DNS record.
+
+## Media-only Spanish intro correction
+
+For an authorized immutable-media correction, no new app image or migration is
+needed. From a clean, root-owned reviewed release checkout, install the artifact
+named by `ops/listener-identity-staging/intro-artifacts.sha256` in the existing
+read-only media mount, verify its full decode and per-language duration, then run:
+
+```sh
+sudo python3 scripts/listener-account-production/replace-spanish-intro.py staging
+# Verify staging media/readiness before production.
+sudo python3 scripts/listener-account-production/replace-spanish-intro.py production
+```
+
+The helper takes the existing lifecycle lock, resolves the running Compose
+coordinates, verifies the manifest hash and exact current image, and changes
+only the Spanish path. It preserves a private previous env and receipt under
+`/var/lib/harmonic-beacon/listener-intro-repair`, recreates only the selected app,
+and restores the previous env/image on failure. No dependencies are started.
+Keep the prior immutable audio for rollback. Read back public readiness and
+private-route boundaries as well as the container's selected media. Retain one
+successful receipt per environment; retire superseded task copies after verified
+completion, preserving originals and the current rollback pair.
