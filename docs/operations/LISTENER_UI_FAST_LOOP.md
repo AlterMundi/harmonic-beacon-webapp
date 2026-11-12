@@ -67,7 +67,7 @@ with its container path:
 LISTENER_UI_PREVIEW_DROPIN_EN_PATH=/media/artifacts/drop-ins/amara-sol-en-r2-approved-aac320-v1.m4a \
 scripts/listener-ui-preview.sh start
 
-LISTENER_UI_PREVIEW_DROPIN_ES_PATH=/media/artifacts/drop-ins/amara-sol-es-r2-approved-aac320-v1.m4a \
+LISTENER_UI_PREVIEW_DROPIN_ES_PATH=/media/artifacts/drop-ins/amara-sol-es-r2-full-aac320-v2.m4a \
 scripts/listener-ui-preview.sh start
 ```
 
