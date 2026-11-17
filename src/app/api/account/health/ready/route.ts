@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/db';
+import { accountSigningKeyReady } from '@/lib/account/signing-key';
 import { accountAuthorityDatabaseReady } from '@/lib/account/authority-db';
 import {
     accountClientScopesCompatible,
@@ -61,9 +62,7 @@ export async function GET(request: Request): Promise<Response> {
                         row.postLogoutRedirectUris[0] === client.postLogoutRedirectUri
                     : row.postLogoutRedirectUris.length === 0));
         });
-        checks.jwks = await prisma.beaconJwks.count({ where: {
-            OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
-        } }) > 0;
+        checks.jwks = await accountSigningKeyReady();
     } catch { checks.clients = false; checks.jwks = false; }
     const ready = Object.values(checks).every(Boolean);
     const publicChecks = {
