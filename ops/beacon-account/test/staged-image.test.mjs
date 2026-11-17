@@ -41,14 +41,14 @@ for (const mode of ['missing', 'image', 'source', 'config', 'synthetic', 'failed
   });
 }
 
-for (const mode of ['qualified', 'changed-tag', 'missing-receipt', 'retag-after-receipt']) {
+for (const mode of ['qualified', 'staging-reuse', 'changed-tag', 'missing-receipt', 'retag-after-receipt']) {
   test(`production preflight consumes staging without a build: ${mode}`, t => {
     const f = fixture(t);
     const helper = fs.readFileSync(path.join(root, 'hb-account-delivery-root'), 'utf8');
     const preflight = helper.slice(helper.indexOf('\npreflight() {'), helper.indexOf('\ndeploy() {'));
     const script = `
 set -eu
-target=production
+target=${mode === 'staging-reuse' ? 'staging' : 'production'}
 sha=${base.source_sha}
 config_sha256=${base.config_contract_sha256}
 SOURCE_ROOT=/reviewed
@@ -59,12 +59,13 @@ account_require_internal_mail_network() { :; }
 account_capture_previous_runtime() { echo previous; }
 account_capture_previous_worker() { echo 1; }
 account_verify_running() { test "$*" = "staging $sha $sha 1"; echo stage >> "$TEST_DIR/order"; }
-docker() { echo ${base.artifact.image_id}; }
+docker() { if [ "$*" = "inspect beacon-account-account-staging-1 --format {{.Config.Image}}" ]; then echo harmonic-beacon/account:$sha; else echo ${base.artifact.image_id}; fi; }
 account_require_prepared_image() { test "$TEST_MODE" != changed-tag; test ! -f "$TEST_DIR/retagged"; }
 node() { test "$*" = "/reviewed/ops/beacon-account/delivery/select-staged-image.mjs /receipts $sha ${base.artifact.image_id} $config_sha256"; test "$TEST_MODE" != missing-receipt; echo receipt >> "$TEST_DIR/order"; }
 account_build_candidate() { echo forbidden-build; exit 90; }
 account_candidate_image_id() { echo ${base.artifact.image_id}; }
 account_check_production_migrations() { echo migrations >> "$TEST_DIR/order"; }
+account_backup_staging() { echo backup >> "$TEST_DIR/order"; echo "$TEST_DIR/backup"; }
 account_backup_production() { echo backup >> "$TEST_DIR/order"; echo "$TEST_DIR/backup"; }
 require_private_file() { :; }
 sha256sum() { echo ${'e'.repeat(64)}; }
@@ -77,10 +78,10 @@ preflight
     const r = spawnSync('/bin/bash', ['-c', script], {
       env: { ...process.env, TEST_MODE: mode, TEST_DIR: f.dir }, encoding: 'utf8',
     });
-    if (mode === 'qualified') {
+    if (mode === 'qualified' || mode === 'staging-reuse') {
       assert.equal(r.status, 0, r.stderr);
       assert.deepEqual(fs.readFileSync(path.join(f.dir, 'order'), 'utf8').trim().split('\n'),
-        ['stage', 'receipt', 'migrations', 'backup', 'restore', 'state']);
+        mode === 'staging-reuse' ? ['stage', 'receipt', 'backup', 'restore', 'state'] : ['stage', 'receipt', 'migrations', 'backup', 'restore', 'state']);
     } else assert.notEqual(r.status, 0);
   });
 }

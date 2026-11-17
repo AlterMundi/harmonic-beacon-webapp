@@ -163,7 +163,8 @@ no installation, dispatch, staging drill, or production operation.
 
 ### Reuse the qualified staging image
 
-Staging preflight builds the candidate. Production preflight never rebuilds it:
+Staging preflight builds a new candidate; an already active, qualified source is
+reused rather than rebuilt under its running tag. Production preflight never rebuilds it:
 it requires the exact healthy staging app/worker image, the unchanged commit tag,
 and a root-custodied successful runtime receipt binding the source SHA, image ID
 and configuration contract. Missing, synthetic, mismatched or unsafe evidence

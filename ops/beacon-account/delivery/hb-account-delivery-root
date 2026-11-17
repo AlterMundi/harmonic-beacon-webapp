@@ -874,7 +874,9 @@ preflight() {
   previous_worker="$(account_capture_previous_worker "$target" "$previous_sha")"
   # Migration inspection and backup use tools from this exact image, including
   # on a host which has never built the candidate. No migration or cutover here.
-  if [ "$target" = production ]; then
+  local staged_reference
+  staged_reference="$(docker inspect beacon-account-account-staging-1 --format '{{.Config.Image}}' 2>/dev/null || true)"
+  if [ "$target" = production ] || [ "$staged_reference" = "harmonic-beacon/account:$sha" ]; then
     account_verify_running staging "$sha" "$sha" 1
     HB_ACCOUNT_PREPARED_IMAGE_ID="$(docker inspect beacon-account-account-staging-1 --format '{{.Image}}')"
     account_require_prepared_image
