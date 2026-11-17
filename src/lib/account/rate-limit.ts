@@ -83,20 +83,29 @@ export async function consumeAccountRateLimit(input: {
             { kind: `${input.purpose}_email`, value: input.email.trim().toLowerCase(), max: input.maxPerEmail ?? 3 },
         ]),
     ];
-    try {
-        return await prisma.$transaction(async (transaction) => {
-            for (const key of keys) {
-                const allowed = await consumeBucket(transaction, {
-                    key: digestKey(key.kind, key.value, input.secret),
-                    kind: key.kind,
-                    max: key.max,
-                    now,
-                });
-                if (!allowed) return false;
-            }
-            return true;
-        }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
-    } catch {
-        return false;
+    // PostgreSQL may abort a serializable transaction when ordinary concurrent
+    // sign-ins touch the shared global bucket. Only retry that rolled-back
+    // transaction; a real quota denial or another database error stays closed.
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+        try {
+            return await prisma.$transaction(async (transaction) => {
+                for (const key of keys) {
+                    const allowed = await consumeBucket(transaction, {
+                        key: digestKey(key.kind, key.value, input.secret),
+                        kind: key.kind,
+                        max: key.max,
+                        now,
+                    });
+                    if (!allowed) return false;
+                }
+                return true;
+            }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+        } catch (error) {
+            if (!(error instanceof Prisma.PrismaClientKnownRequestError) ||
+                error.code !== 'P2034' || attempt === 5) return false;
+            await new Promise((resolve) => setTimeout(resolve,
+                10 * 2 ** attempt + Math.floor(Math.random() * 10)));
+        }
     }
+    return false;
 }
