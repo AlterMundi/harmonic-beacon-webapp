@@ -160,3 +160,15 @@ Activation is external to this change. An administrator/operator must:
 
 Until all applicable gates exist, the helper fails closed. This commit performs
 no installation, dispatch, staging drill, or production operation.
+
+### Reuse the qualified staging image
+
+Staging preflight builds a new candidate; an already active, qualified source is
+reused rather than rebuilt under its running tag. Production preflight never rebuilds it:
+it requires the exact healthy staging app/worker image, the unchanged commit tag,
+and a root-custodied successful runtime receipt binding the source SHA, image ID
+and configuration contract. Missing, synthetic, mismatched or unsafe evidence
+fails closed. Production still performs its own encrypted backup, isolated restore,
+migration inspection and normal post-cutover smoke. Keep the actual prior images.
+The read-only receipt export may wait up to ten seconds for a transient lifecycle
+lock; mutation verbs retain nonblocking exclusive admission.

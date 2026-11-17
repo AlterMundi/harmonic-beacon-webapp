@@ -183,7 +183,11 @@ finally:
 PY
   require_private_file "$lock_file"
   exec 9<>"$lock_file"
-  flock -n 9 || fail "another $target delivery is active"
+  if [ "$verb" = status ]; then
+    flock -w 10 9 || fail "another $target delivery is active"
+  else
+    flock -n 9 || fail "another $target delivery is active"
+  fi
   export HB_ACCOUNT_DELIVERY_LOCK_HELD=1
 }
 
@@ -870,8 +874,22 @@ preflight() {
   previous_worker="$(account_capture_previous_worker "$target" "$previous_sha")"
   # Migration inspection and backup use tools from this exact image, including
   # on a host which has never built the candidate. No migration or cutover here.
-  account_build_candidate
-  candidate_image_id="$(account_candidate_image_id)"
+  local staged_reference
+  staged_reference="$(docker inspect beacon-account-account-staging-1 --format '{{.Config.Image}}' 2>/dev/null || true)"
+  if [ "$target" = production ] || [ "$staged_reference" = "harmonic-beacon/account:$sha" ]; then
+    account_verify_running staging "$sha" "$sha" 1
+    HB_ACCOUNT_PREPARED_IMAGE_ID="$(docker inspect beacon-account-account-staging-1 --format '{{.Image}}')"
+    account_require_prepared_image
+    [ "$(docker inspect beacon-account-account-mail-worker-staging-1 --format '{{.Image}}')" = "$HB_ACCOUNT_PREPARED_IMAGE_ID" ] ||
+      fail 'staging worker and app artifact identities differ'
+    node "$SOURCE_ROOT/ops/beacon-account/delivery/select-staged-image.mjs" \
+      "$RECEIPT_DIR" "$sha" "$HB_ACCOUNT_PREPARED_IMAGE_ID" "$config_sha256"
+    candidate_image_id="$HB_ACCOUNT_PREPARED_IMAGE_ID"
+  else
+    account_build_candidate
+    candidate_image_id="$(account_candidate_image_id)"
+    HB_ACCOUNT_PREPARED_IMAGE_ID="$candidate_image_id"
+  fi
   [[ "$candidate_image_id" =~ ^sha256:[0-9a-f]{64}$ ]] || fail 'invalid built image identity'
   if [ "$target" = production ]; then
     account_check_production_migrations before
@@ -883,6 +901,7 @@ preflight() {
   backup_hash="$(sha256sum "$backup_path" | cut -d' ' -f1)"
   restore_mode="$(isolated_restore "$backup_path")"
   [ "$restore_mode" = isolated-ephemeral-postgres ] || fail 'missing full isolated restore proof'
+  account_require_prepared_image
   create_state preflight "$previous_sha" "$previous_worker" "$backup_path" "$backup_hash"
 }
 
