@@ -177,3 +177,20 @@ then revoking the old secret in Google Cloud. Rotate an Apple client-secret JWT
 before expiry using the same reviewed Team ID, Key ID, Services ID, and
 protected `.p8`; verify readiness and a real sign-in before retiring the old
 JWT. Key revocation and ordinary JWT rotation are separate operations.
+
+## Expired signing keys and social admission
+
+Account readiness renews an absent/expired signing key through Better Auth's
+server-only signing API before admitting relying-party login. The discarded
+one-second maintenance token contains no subject and uses a dedicated non-RP
+audience. It is never returned, logged or stored. Existing live keys are retained;
+old public keys keep the provider's verification grace period. The authority
+issuer marker must match before any renewal. This avoids a circular failure:
+Listener requires Account readiness before a sign-in that would otherwise renew
+the expired key. No credential, identity or session reset is required.
+
+Concurrent sign-ins can also contend on the global durable throttle bucket.
+Only rolled-back serialization conflicts are retried (six bounded attempts);
+real quota denials and unrelated database errors remain closed. Verify parallel
+social-start requests below quota return provider URLs, without approving any
+Google/Apple consent or borrowing a human account to manufacture acceptance.
