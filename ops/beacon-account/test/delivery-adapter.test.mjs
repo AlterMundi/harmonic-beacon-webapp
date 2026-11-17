@@ -51,6 +51,7 @@ for (const mode of ['cold', 'build-failure', 'wrong-sha']) {
 set -eu
 . "$1"
 target=staging
+sha=${SHA}
 BEACON_ACCOUNT_GIT_SHA=${SHA}
 BEACON_ACCOUNT_IMAGE_TAG=${SHA}
 HB_ACCOUNT_TRUSTED_SOURCE_SHA=${SHA}
