@@ -89,6 +89,26 @@ postgres('Account authority PostgreSQL invariants', () => {
         expect(outcomes.sort()).toEqual([false, true]);
     });
 
+    it('admits concurrent distinct sign-ins below the shared global quota', async () => {
+        const { consumeAccountRateLimit } = await import('../rate-limit');
+        const purpose = `pg-${suffix}-concurrent-admission`;
+        const outcomes = await Promise.all(Array.from({ length: 6 }, (_, index) =>
+            consumeAccountRateLimit({
+                request: new Request('https://account.harmonicbeacon.com/account', {
+                    headers: { origin: 'https://account.harmonicbeacon.com',
+                        'x-real-ip': `192.0.2.${index + 10}` },
+                }),
+                email: `concurrent-${index}-${suffix}@example.invalid`, purpose,
+                secret: `rate-${suffix}-secret-that-is-long-enough`,
+                maxPerEmail: 5, maxPerOrigin: 30, maxGlobal: 100,
+            })));
+        expect(outcomes).toEqual(Array(6).fill(true));
+        const global = await prisma.beaconAccountAuthThrottle.findFirstOrThrow({
+            where: { kind: `${purpose}_global` },
+        });
+        expect(global.attempts).toBe(6);
+    });
+
     it('short-circuits blocked low-cardinality buckets and cleans expired throttle rows', async () => {
         const { consumeAccountRateLimit } = await import('../rate-limit');
         const { cleanupAccountAuthorityRecords } = await import('../maintenance');
