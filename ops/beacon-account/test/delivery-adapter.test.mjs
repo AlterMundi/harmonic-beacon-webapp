@@ -68,6 +68,7 @@ account_compose() {
   touch "$TEST_DIR/image"
 }
 docker() {
+  if [ "$1" = inspect ]; then return 1; fi
   test -f "$TEST_DIR/image"
   test "$1 $2 $3" = 'image inspect harmonic-beacon/account:${SHA}'
   if [ "$5" = '{{.Id}}' ]; then echo sha256:${'0'.repeat(64)}; return; fi
@@ -93,6 +94,7 @@ preflight
 `, 'preflight-test', path.join(REPOSITORY, 'scripts/beacon-account/lib.sh')], {
       env: { ...process.env, TEST_DIR: directory, TEST_MODE: mode },
     });
+    assert.ok(fs.existsSync(path.join(directory, 'order')), result.stderr);
     const order = read(path.join(directory, 'order')).trim().split('\n');
     if (mode === 'cold') {
       assert.equal(result.status, 0, result.stderr);
