@@ -40,7 +40,7 @@ test('production uses the existing canonical Account deployment file', () => {
 });
 
 for (const mode of ['cold', 'build-failure', 'wrong-sha']) {
-  test(`production preflight candidate image: ${mode}`, (t) => {
+  test(`staging preflight candidate image: ${mode}`, (t) => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'account-cold-image-'));
     t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
     // Execute the actual preflight and real shared build function; synthetic
@@ -50,12 +50,13 @@ for (const mode of ['cold', 'build-failure', 'wrong-sha']) {
     const result = run('/bin/bash', ['-c', `
 set -eu
 . "$1"
-target=production
+target=staging
 BEACON_ACCOUNT_GIT_SHA=${SHA}
 BEACON_ACCOUNT_IMAGE_TAG=${SHA}
 HB_ACCOUNT_TRUSTED_SOURCE_SHA=${SHA}
 state_file() { printf '%s/state' "$TEST_DIR"; }
 load_account_library() { :; }
+account_require_prepared_image() { test -f "$TEST_DIR/image"; }
 account_require_internal_mail_network() { :; }
 account_capture_previous_runtime() { echo previous; }
 account_capture_previous_worker() { echo previous-worker; }
@@ -76,7 +77,7 @@ account_check_production_migrations() {
   test -f "$TEST_DIR/image"
   echo inspect-migrations >> "$TEST_DIR/order"
 }
-account_backup_production() {
+account_backup_staging() {
   test -f "$TEST_DIR/image"
   echo backup >> "$TEST_DIR/order"
   echo synthetic > "$TEST_DIR/backup"
@@ -94,7 +95,7 @@ preflight
     const order = read(path.join(directory, 'order')).trim().split('\n');
     if (mode === 'cold') {
       assert.equal(result.status, 0, result.stderr);
-      assert.deepEqual(order, ['build', 'inspect-migrations', 'backup', 'restore', 'state']);
+      assert.deepEqual(order, ['build', 'backup', 'restore', 'state']);
     } else {
       assert.notEqual(result.status, 0);
       assert.deepEqual(order, ['build']);
