@@ -1610,11 +1610,18 @@ function ListenerPlayerController({
         if (!backgroundListening || !('mediaSession' in navigator)) return;
         const session = navigator.mediaSession;
         const stop = () => stopTransport();
+        try {
+            session.setActionHandler('play', () => {
+                // A hardware Play action is explicit intent and must traverse
+                // our transport/presence path, not the browser's raw play().
+                if (livePreparedRef.current) startSelectedMode();
+            });
+        } catch { /* optional platform support */ }
         for (const action of ['pause', 'stop'] as const) {
             try { session.setActionHandler(action, stop); } catch { /* optional platform support */ }
         }
         return () => {
-            for (const action of ['pause', 'stop'] as const) {
+            for (const action of ['play', 'pause', 'stop'] as const) {
                 try { session.setActionHandler(action, null); } catch { /* optional platform support */ }
             }
         };
@@ -1674,6 +1681,17 @@ function ListenerPlayerController({
     useEffect(() => {
         const suspendForBackground = () => {
             if (document.visibilityState === 'visible' || backgroundSuspension.current) return;
+            // Stop may have begun a visible fade just before lock. Hidden
+            // pages suspend animation frames: finish that terminal action now.
+            if (!wantsLivePlayback.current && activeDrop.current === null) {
+                if (liveFadeFrame.current !== null) {
+                    cancelLiveFade();
+                    liveAudio.current?.pause();
+                    updateLiveState('paused');
+                }
+                if (dropFadeFrame.current !== null) pauseDropIns(true);
+                return;
+            }
             if (backgroundListeningRef.current) {
                 // Rendering is disposable; the existing audio, HLS and lease are not.
                 analysisProvider.current?.pauseAnalysis();
@@ -1860,6 +1878,7 @@ function ListenerPlayerController({
         deferLiveFade,
         dropAudio,
         reportPresence,
+        pauseDropIns,
         probeExistingLease,
         revalidateIdlePreparedSource,
         scheduleHlsRefill,

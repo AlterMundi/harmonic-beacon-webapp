@@ -805,6 +805,18 @@ describe('EarlyBird Listener player', () => {
         expect(play).toHaveBeenCalledTimes(1);
         expect(fetchMock.mock.calls.filter(([url]) => url === '/api/early-birds/stream/lease')).toHaveLength(1);
         await waitFor(() => expect(screen.getByRole('button', { name: 'Listen' })).toBeEnabled());
+        // Also finish a Stop whose visible fade loses animation frames at lock.
+        fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument());
+        const live = screen.getByLabelText('Beacon');
+        Object.defineProperty(live, 'paused', { value: false, configurable: true });
+        (live as HTMLAudioElement).volume = 0.7;
+        vi.spyOn(window, 'requestAnimationFrame').mockImplementation(() => 123);
+        const pausesBeforeFade = pause.mock.calls.length;
+        fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+        Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+        fireEvent(document, new Event('visibilitychange'));
+        expect(pause.mock.calls.length).toBeGreaterThan(pausesBeforeFade);
         cleanup();
         expect(handlers.get('stop')).toBeNull();
         delete (navigator as unknown as { mediaSession?: unknown }).mediaSession;
