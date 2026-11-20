@@ -810,6 +810,38 @@ describe('EarlyBird Listener player', () => {
         delete (navigator as unknown as { mediaSession?: unknown }).mediaSession;
     });
 
+    it('silences the audible intro when its background lease is displaced', async () => {
+        const pause = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
+        const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+        vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('');
+        let displaced = false;
+        vi.stubGlobal('fetch', vi.fn().mockImplementation((_url, init) => {
+            const body = JSON.parse(String(init?.body ?? '{}'));
+            if (displaced) return Promise.resolve(new Response(JSON.stringify({ reason: 'displaced' }), { status: 410 }));
+            return Promise.resolve(new Response(JSON.stringify({
+                leaseId: '00000000-0000-4000-8000-000000000003',
+                leaseGeneration: 1, presenceSequence: body.presenceSequence ?? 0,
+                leaseExpiresAt: '2099-08-06T12:03:00.000Z',
+                stream: { manifestUrl: '/synthetic.m3u8', expiresAt: '2099-08-06T12:03:00.000Z' },
+            }), { status: 200 }));
+        }));
+        render(<LocaleProvider initialLocale="en"><ListenerPlayer dropIns={{ es: null, en: '/intro.m4a' }} /></LocaleProvider>);
+        fireEvent.click(screen.getByRole('checkbox', { name: 'Keep listening with the screen off' }));
+        fireEvent.click(await screen.findByRole('button', { name: 'Listen' }));
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument());
+        const intro = screen.getByLabelText('Warm-up · English');
+        const callsBefore = play.mock.calls.length;
+        displaced = true;
+        Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+        fireEvent(document, new Event('visibilitychange'));
+        await waitFor(() => expect(hlsHarness.instances[0].destroy).toHaveBeenCalled());
+        await waitFor(() => expect(pause.mock.contexts).toContain(intro));
+        expect(screen.queryByRole('button', { name: 'Pause' })).toBeNull();
+        Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+        fireEvent(document, new Event('visibilitychange'));
+        expect(play.mock.calls.length).toBe(callsBefore);
+    });
+
     it('does not trust Chromium native HLS claims while preserving Apple native playback', () => {
         const audio = { canPlayType: () => 'maybe' } as unknown as HTMLAudioElement;
         expect(prefersNativeHls(audio, { vendor: 'Google Inc.' })).toBe(false);
