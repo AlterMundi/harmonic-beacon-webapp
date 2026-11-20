@@ -118,7 +118,7 @@ jobs:
           node scripts/check-image-codecs.mjs
           npx vitest run src/lib/__tests__/production-audit-guard.test.ts
       - name: Test the Listener reactive visualizer
-        run: npm test -- --run src/components/listener/reactive/__tests__ src/components/early-birds/__tests__/ListenerPlayer.test.tsx
+        run: npm test -- --run src/components/listener/reactive/__tests__ src/components/early-birds/__tests__/ListenerPlayer.test.tsx src/lib/listener/__tests__/media-boundary.test.ts
       - name: Type-check the web application
         run: npx tsc --noEmit
       - name: Lint the Listener reactive visualizer

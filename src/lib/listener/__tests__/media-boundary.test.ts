@@ -19,7 +19,12 @@ const MEDIA_FILE_SHA256 = {
     // headroom. Codec, bitrate,
     // channel, gain/fade, AudioContext, intro assets, quota, event and payment
     // behavior remain unchanged.
-    'src/components/early-birds/ListenerPlayer.tsx': '815c8403189c87c8de2a84b4b38d61e72ca30eeb3eeec7c265903e9c61d4b50a',
+    // Re-reviewed for Nicolas's 2026-11-20 background/screen-lock request
+    // (#671): opt-in hidden playback keeps the exact media/HLS/lease; visual
+    // analysis pauses. Hidden handoff/Stop settle without animation frames.
+    // Default suspension, visible fades, assets, codecs, buffer/reservoir,
+    // grant expiry, quota authority and the pinned handlers below are retained.
+    'src/components/early-birds/ListenerPlayer.tsx': '1ed057e8176573252d7459c926e46abd19b6280ee39f77a420efd793180c8158',
     'src/lib/listener/playback-resilience.ts': '758c466216d2dfaef760665f28a35fdcefea167112fdc3ac96feb004dec7737f',
     'src/lib/listener/segment-reservoir.ts': '4bd2a96171caff974003238d665dde73aa9ea8d0cff38e66a37a62b8706a0964',
     // #474 adds server-side interval observation around the existing lease
