@@ -7,6 +7,7 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import manifest from '@/brand/canonical/manifest.json';
+import { HB_MARK_PATH } from '@/brand/canonical/hb-mark';
 import {
     GlobalNavigation,
     GLOBAL_NAVIGATION_ASSET,
@@ -58,10 +59,10 @@ describe('canonical Harmonic Beacon global navigation', () => {
     });
 
     it('loads a byte-pinned local canonical asset instead of remote same-origin code', () => {
-        expect(GLOBAL_NAVIGATION_PROVENANCE).toBe('6bd32262318e9a1faf6f4fc54b85b96f856544df');
+        expect(GLOBAL_NAVIGATION_PROVENANCE).toBe('beacon-mark-7e8f789341ed1db5');
         const bytes = readFileSync(resolve(process.cwd(), 'public/assets/hb-global-nav.js'));
         expect(createHash('sha256').update(bytes).digest('hex')).toBe(GLOBAL_NAVIGATION_SHA256);
-        expect(manifest.globalNavigation.commit).toBe(GLOBAL_NAVIGATION_PROVENANCE);
+        expect(manifest.globalNavigation.version).toBe(GLOBAL_NAVIGATION_PROVENANCE);
         expect(manifest.globalNavigation.sha256).toBe(GLOBAL_NAVIGATION_SHA256);
         expect(manifest.snapshots[manifest.globalNavigation.path as keyof typeof manifest.snapshots])
             .toBe(GLOBAL_NAVIGATION_SHA256);
@@ -74,9 +75,8 @@ describe('canonical Harmonic Beacon global navigation', () => {
         expect(source).toContain('Menú de usuario, sesión iniciada');
         expect(source).toContain('.account-trigger.signed-in::after');
         expect(source).toContain('beaconMarkPath()');
-        expect(source).toContain('Math.cos(angle * 3)');
-        expect(source).toContain('Math.sin(angle * 2)');
-        expect(source).toContain('index <= 280');
+        expect(source).toContain(HB_MARK_PATH);
+        expect(source).not.toContain('Math.cos(angle * 3)');
         expect(source).toContain('@media (max-width:365px) { .wordmark { display:none; } }');
         expect(source).toContain('<svg class="mark"');
         expect(source).toContain('<circle cx="12" cy="8" r="3.25">');
