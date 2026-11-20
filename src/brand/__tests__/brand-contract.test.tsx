@@ -6,7 +6,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { HB_LISSAJOUS_PATH } from "@/brand/canonical/hb-mark";
+import { HB_MARK_PATH } from "@/brand/canonical/hb-mark";
 import manifest from "@/brand/canonical/manifest.json";
 import HarmonicBeaconBrand from "@/components/brand/HarmonicBeaconBrand";
 import HarmonicBeaconMark from "@/components/brand/HarmonicBeaconMark";
@@ -74,7 +74,7 @@ describe("canonical Harmonic Beacon brand contract", () => {
   });
 
   it("consumes the exact canonical path without exposing deformation controls", () => {
-    expect(digest(HB_LISSAJOUS_PATH)).toBe(manifest.extractedPayloads.lissajousPath);
+    expect(digest(HB_MARK_PATH)).toBe(manifest.extractedPayloads.markPath);
 
     const { rerender } = render(<HarmonicBeaconMark size={48} />);
     const hiddenMark = document.querySelector("svg");
@@ -82,7 +82,7 @@ describe("canonical Harmonic Beacon brand contract", () => {
     expect(hiddenMark).toHaveAttribute("height", "48");
     expect(hiddenMark).toHaveAttribute("preserveAspectRatio", "xMidYMid meet");
     expect(hiddenMark).toHaveAttribute("aria-hidden", "true");
-    expect(hiddenMark?.querySelector("path")).toHaveAttribute("d", HB_LISSAJOUS_PATH);
+    expect(hiddenMark?.querySelector("path")).toHaveAttribute("d", HB_MARK_PATH);
 
     rerender(<HarmonicBeaconMark label="Harmonic Beacon" />);
     expect(screen.getByRole("img", { name: "Harmonic Beacon" })).toBeInTheDocument();
