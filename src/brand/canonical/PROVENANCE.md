@@ -8,7 +8,7 @@ and Live without requiring another repository during CI or at runtime.
 - Repository: `AlterMundi/harmonicbeacon.com`
 - Commit: `0052e5f45a108b6069fc11e4c6565f4da4f77d9f` (PR #61)
 - Tokens: the `:root` block of `assets/hb-brand.css`
-- Mark: the `MARK` constant of `assets/hb-main.js`
+- Historical mark: superseded by the selected curve below.
 - Human guide: `docs/brand/BRANDING.md`
 
 `hb-brand-root.css` is a byte-preserving extraction of the canonical root
@@ -25,12 +25,11 @@ manifest and visual-review update together.
 
 ## Global navigation
 
-Listener, Live and Account serve a byte-pinned local snapshot of the canonical
+Listener, Live and Account serve a byte-pinned local derivative of the canonical
 web component rather than executing JavaScript supplied at runtime by another
-origin. The source is `AlterMundi/harmonicbeacon.com` commit
-`6bd32262318e9a1faf6f4fc54b85b96f856544df`; the vendored
-`public/assets/hb-global-nav.js` SHA-256 is
-`5e0add357a923bf4609fd1eafd4a96d4989481f17e6c31296252842ce9d881d6`.
+origin. The navigation behavior remains from `AlterMundi/harmonicbeacon.com` commit
+`6bd32262318e9a1faf6f4fc54b85b96f856544df`; the logo-only derivative is version `beacon-mark-7e8f789341ed1db5` (SHA-256
+`3d3916d26d97b5e8591887bebcb349e83bccd6b5fb0c24efd18d1d63fd5cccb1`). No other upstream navigation behavior was adopted.
 The local light-DOM markup remains the accessible, same-destination fallback.
 Both implementations keep Account out of the primary destination list and
 expose it from the user-icon menu only when the product server supplies the
@@ -63,3 +62,18 @@ Both families are covered by the SIL Open Font License 1.1; the relevant
 
 No font, analytics or decorative brand asset is fetched at runtime. The global
 navigation is served as the byte-pinned local snapshot described above.
+
+## Selected curve update — 2026-11-20
+
+Sai requested the new Beacon symbol on all Beacon websites. `manifest.json`
+pins the source geometry and human selection. The transparent SVG, React path
+and navigation path share that geometry. The small-screen stroke is 10 units
+in the unchanged 200×200 square viewBox. Colors and fonts are unchanged.
+The geometry follows the selected photographed curve; its physical frequency
+ratio is unknown. The isolated lower-right sparkle is not part of the mark.
+
+The vendored generator is unchanged. From this directory, reproduce variants
+with `python3 render_mark.py --geometry beacon-mark-geometry.json --out /tmp/beacon-mark-check`.
+Its optional `--sync-consumers` switch belongs to the upstream Home repository
+and must not be used in this app checkout. Existing typography/token snapshots retain their original
+provenance above. No PsicopoMPo, HIT or AlterMundi identity is replaced.

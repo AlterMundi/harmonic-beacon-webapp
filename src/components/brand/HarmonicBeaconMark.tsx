@@ -1,4 +1,4 @@
-import { HB_LISSAJOUS_PATH } from "@/brand/canonical/hb-mark";
+import { HB_MARK_PATH } from "@/brand/canonical/hb-mark";
 
 interface HarmonicBeaconMarkProps {
   /** A single dimension preserves the canonical square viewBox. */
@@ -8,7 +8,7 @@ interface HarmonicBeaconMarkProps {
   label?: string;
 }
 
-/** Canonical 3:2 Lissajous mark. Transform and non-uniform sizing are intentionally unavailable. */
+/** Canonical source-grounded Beacon mark. Transform and non-uniform sizing are intentionally unavailable. */
 export default function HarmonicBeaconMark({
   size = 32,
   className = "",
@@ -30,9 +30,9 @@ export default function HarmonicBeaconMark({
       focusable="false"
     >
       <path
-        d={HB_LISSAJOUS_PATH}
+        d={HB_MARK_PATH}
         stroke="currentColor"
-        strokeWidth="2.6"
+        strokeWidth="10"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
