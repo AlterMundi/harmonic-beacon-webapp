@@ -388,6 +388,31 @@ test.describe('Listener network resilience', () => {
             message: `${browserName} did not make retained audio immediately playable`,
         }).toBeGreaterThan(5);
         const achievedBufferSeconds = await availablePlaybackSeconds(page);
+        // Exercise our visibility policy with real decoded media. This is a
+        // deterministic lifecycle event, not a physical phone-lock claim.
+        const backgroundOption = page.getByRole('checkbox', {
+            name: /Keep listening with the screen off|Seguir escuchando con la pantalla apagada/,
+        });
+        await backgroundOption.check();
+        const beforeHidden = await mediaState(page);
+        const heartbeatBeforeHidden = heartbeatRequests;
+        await page.evaluate(() => {
+            Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+            document.dispatchEvent(new Event('visibilitychange'));
+        });
+        await expect.poll(async () => (await mediaState(page)).currentTime - beforeHidden.currentTime, {
+            timeout: 15_000,
+            message: `${browserName} stopped opted-in playback on visibility change`,
+        }).toBeGreaterThan(5);
+        expect((await mediaState(page)).paused).toBe(false);
+        expect(leaseRequests).toBe(1);
+        expect(heartbeatRequests).toBeGreaterThan(heartbeatBeforeHidden);
+        await page.evaluate(() => {
+            delete (document as unknown as { visibilityState?: string }).visibilityState;
+            document.dispatchEvent(new Event('visibilitychange'));
+        });
+        await backgroundOption.uncheck();
+
         await page.locator('audio[aria-label="Beacon"]').evaluate((media: HTMLAudioElement) => {
             media.playbackRate = 4;
         });

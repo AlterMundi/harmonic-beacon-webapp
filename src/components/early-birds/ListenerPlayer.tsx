@@ -392,6 +392,8 @@ function ListenerPlayerController({
     const deferLiveFadeForRecovery = useRef<() => void>(() => undefined);
     const backgroundSuspension = useRef<BackgroundSuspension | null>(null);
     const playbackLifecycleGeneration = useRef(0);
+    const [backgroundListening, setBackgroundListening] = useState(false);
+    const backgroundListeningRef = useRef(false);
     const [liveState, setLiveState] = useState<LiveState>('idle');
     const [playingDrop, setPlayingDrop] = useState<DropLanguage | null>(null);
     const [transportStopped, setTransportStopped] = useState(true);
@@ -504,6 +506,10 @@ function ListenerPlayerController({
             for (const listener of analysisFrameListeners.current) {
                 try { listener(null); } catch { /* renderer isolation */ }
             }
+        }
+        if (document.visibilityState !== 'visible') {
+            provider.pauseAnalysis();
+            return;
         }
         void provider.start().then((result) => {
             if (!result.ok) {
@@ -1037,14 +1043,14 @@ function ListenerPlayerController({
     const beginLiveFade = useCallback(() => {
         if (!liveSuppressedForDrop.current) return;
         const audio = liveAudio.current;
-        if (!audio || audio.paused || document.visibilityState !== 'visible') {
+        if (!audio || audio.paused || (document.visibilityState !== 'visible' && !backgroundListeningRef.current)) {
             pendingLiveFade.current = true;
             return;
         }
         cancelLiveFade();
         pendingLiveFade.current = false;
         audio.muted = false;
-        if (volumeSupported && volumeRef.current > 0) {
+        if (volumeSupported && volumeRef.current > 0 && document.visibilityState === 'visible') {
             const startedAt = performance.now();
             audio.volume = 0;
             const step = (now: number) => {
@@ -1086,7 +1092,7 @@ function ListenerPlayerController({
         const frameRef = kind === 'live' ? liveFadeFrame : dropFadeFrame;
         if (kind === 'live') cancelLiveFade();
         else cancelDropFade();
-        if (!volumeSupported || audio.paused || audio.volume <= 0) {
+        if (!volumeSupported || audio.paused || audio.volume <= 0 || document.visibilityState !== 'visible') {
             audio.pause();
             audio.muted = false;
             audio.volume = volumeRef.current;
@@ -1200,7 +1206,7 @@ function ListenerPlayerController({
             if (
                 expectedLifecycleGeneration !== playbackLifecycleGeneration.current
                 || !wantsLivePlayback.current
-                || document.visibilityState !== 'visible'
+                || (document.visibilityState !== 'visible' && !backgroundListeningRef.current)
             ) return false;
             const liveSyncPosition = hls.current?.liveSyncPosition;
             if (typeof liveSyncPosition === 'number' && Number.isFinite(liveSyncPosition)) {
@@ -1215,7 +1221,7 @@ function ListenerPlayerController({
             if (
                 expectedLifecycleGeneration !== playbackLifecycleGeneration.current
                 || !wantsLivePlayback.current
-                || document.visibilityState !== 'visible'
+                || (document.visibilityState !== 'visible' && !backgroundListeningRef.current)
             ) {
                 audio.pause();
                 return false;
@@ -1427,7 +1433,7 @@ function ListenerPlayerController({
                 && wantsLivePlayback.current
                 && activeDrop.current === null
                 && liveStateRef.current === 'playing'
-                && document.visibilityState === 'visible';
+                && (document.visibilityState === 'visible' || backgroundListeningRef.current);
             if (!audio || !eligible) {
                 playbackWatchdog.current.reset();
                 return;
@@ -1589,6 +1595,38 @@ function ListenerPlayerController({
         fadeOutAndPause(live, 'live', () => updateLiveState('paused'));
     }
 
+    useEffect(() => {
+        // A denied/replaced lease must also silence the private intro, whose
+        // muted prestarted Beacon element is not the audible source yet.
+        if (!['error', 'displaced'].includes(liveState) || activeDrop.current === null) return;
+        dropGeneration.current += 1;
+        wantsLivePlayback.current = false;
+        pauseDropIns();
+        setTransportStopped(true);
+        setTransportPaused(false);
+    }, [liveState, pauseDropIns]);
+
+    useEffect(() => {
+        if (!backgroundListening || !('mediaSession' in navigator)) return;
+        const session = navigator.mediaSession;
+        const stop = () => stopTransport();
+        try {
+            session.setActionHandler('play', () => {
+                // A hardware Play action is explicit intent and must traverse
+                // our transport/presence path, not the browser's raw play().
+                if (livePreparedRef.current) startSelectedMode();
+            });
+        } catch { /* optional platform support */ }
+        for (const action of ['pause', 'stop'] as const) {
+            try { session.setActionHandler(action, stop); } catch { /* optional platform support */ }
+        }
+        return () => {
+            for (const action of ['play', 'pause', 'stop'] as const) {
+                try { session.setActionHandler(action, null); } catch { /* optional platform support */ }
+            }
+        };
+    });
+
     const handleNativeInterruption = useCallback((kind: 'error' | 'stalled' | 'suspend') => {
         if (!wantsLivePlayback.current || !['playing', 'recovering'].includes(liveStateRef.current)) {
             return;
@@ -1643,6 +1681,30 @@ function ListenerPlayerController({
     useEffect(() => {
         const suspendForBackground = () => {
             if (document.visibilityState === 'visible' || backgroundSuspension.current) return;
+            // Stop may have begun a visible fade just before lock. Hidden
+            // pages suspend animation frames: finish that terminal action now.
+            if (!wantsLivePlayback.current && activeDrop.current === null) {
+                if (liveFadeFrame.current !== null) {
+                    cancelLiveFade();
+                    liveAudio.current?.pause();
+                    updateLiveState('paused');
+                }
+                if (dropFadeFrame.current !== null) pauseDropIns(true);
+                return;
+            }
+            if (backgroundListeningRef.current) {
+                // Rendering is disposable; the existing audio, HLS and lease are not.
+                analysisProvider.current?.pauseAnalysis();
+                if (liveFadeFrame.current !== null) {
+                    cancelLiveFade();
+                    const live = liveAudio.current;
+                    if (live && activeDrop.current === null) live.volume = volumeRef.current;
+                }
+                // Renew while the visibility event can still run. No longer grant
+                // horizon or bypass of expiry/quota is implied by this mode.
+                if (wantsLivePlayback.current) reportPresence(listenerPresence.current);
+                return;
+            }
             const introduction = activeDrop.current;
             if (!wantsLivePlayback.current && !introduction) return;
 
@@ -1682,6 +1744,15 @@ function ListenerPlayerController({
             const suspension = backgroundSuspension.current;
             if (!suspension) {
                 if (!wantsLivePlayback.current) revalidateIdlePreparedSource();
+                else if (backgroundListeningRef.current) {
+                    const introduction = activeDrop.current ? dropAudio[activeDrop.current].current : null;
+                    if (introduction?.paused) {
+                        setTransportPaused(true);
+                        reportPresence('idle');
+                    } else if (liveAudio.current?.paused || manifestExpiresAt.current <= Date.now() + 30_000) {
+                        scheduleAutomaticRecovery(0, 'background-listening-return');
+                    }
+                }
                 return;
             }
             backgroundSuspension.current = null;
@@ -1706,7 +1777,7 @@ function ListenerPlayerController({
             const [introPlayed, livePlayed] = await Promise.all([introResume, liveResume]);
             if (
                 lifecycleGeneration !== playbackLifecycleGeneration.current
-                || document.visibilityState !== 'visible'
+                || (document.visibilityState !== 'visible' && !backgroundListeningRef.current)
             ) return;
 
             if (livePlayed && introPlayed) {
@@ -1807,6 +1878,7 @@ function ListenerPlayerController({
         deferLiveFade,
         dropAudio,
         reportPresence,
+        pauseDropIns,
         probeExistingLease,
         revalidateIdlePreparedSource,
         scheduleHlsRefill,
@@ -2123,6 +2195,12 @@ function ListenerPlayerController({
                 onError={() => handleNativeInterruption('error')}
                 onStalled={() => handleNativeInterruption('stalled')}
                 onSuspend={() => handleNativeInterruption('suspend')}
+                onPause={() => {
+                    if (backgroundListeningRef.current && wantsLivePlayback.current && activeDrop.current === null) {
+                        reportPresence('idle');
+                        updateLiveState('paused');
+                    }
+                }}
                 onPlaying={handleNativePlaying}
             />
             <section className="listener-stage">
@@ -2161,6 +2239,25 @@ function ListenerPlayerController({
                             {locale === 'es'
                                 ? 'La visualización se detuvo; el audio continúa sin ella.'
                                 : 'The visualization stopped; audio continues without it.'}
+                        </p>
+                    )}
+
+                    <label className="listener-intro-option">
+                        <input
+                            type="checkbox"
+                            checked={backgroundListening}
+                            onChange={(event) => {
+                                backgroundListeningRef.current = event.target.checked;
+                                setBackgroundListening(event.target.checked);
+                            }}
+                        />
+                        <span>{locale === 'es' ? 'Seguir escuchando con la pantalla apagada' : 'Keep listening with the screen off'}</span>
+                    </label>
+                    {backgroundListening && (
+                        <p className="listener-stage__hint">
+                            {locale === 'es'
+                                ? 'La escucha sigue usando tu tiempo disponible. Si el teléfono la interrumpe, volvé a esta página para continuar.'
+                                : 'Listening continues to use your available time. If your phone interrupts it, return to this page to continue.'}
                         </p>
                     )}
 
@@ -2283,6 +2380,12 @@ function ListenerPlayerController({
                                 preload={language === selectedDrop ? 'auto' : 'metadata'}
                                 onLoadedMetadata={() => restoreProgress(language)}
                                 onTimeUpdate={() => storeProgress(language)}
+                                onPause={() => {
+                                    if (backgroundListeningRef.current && activeDrop.current === language && !dropAudio[language].current?.ended) {
+                                        reportPresence('idle');
+                                        setTransportPaused(true);
+                                    }
+                                }}
                                 onEnded={() => finishDropIn(language)}
                                 aria-label={title}
                             />

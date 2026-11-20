@@ -82,12 +82,29 @@ they still have healthy buffered media. They do not by themselves show
 immediate recovery signal; otherwise the fifteen-second media-clock watchdog
 is the authority.
 
-When the document becomes hidden during playback, Listener explicitly pauses
-the introduction and Beacon, reports quota presence idle and releases the
-hls.js pipeline. When visible again it verifies the same lease, rejoins at the
-configured live position and reports listening only after playback succeeds.
-Background time is therefore neither audible nor charged. This is a product
-policy, not a browser best-effort optimization.
+By default, hiding the document pauses the introduction and Beacon, reports
+presence idle and releases HLS. Foreground return verifies the same lease and
+resumes only after playback succeeds.
+
+The explicit **Keep listening with the screen off** option changes that policy
+for the current page only. Hiding it preserves the existing media element,
+HLS instance, buffer and lease; only visualization/analysis pauses. Listening
+presence and the existing minute heartbeat continue, so background listening
+uses ordinary quota. Lock-screen Pause/Stop uses the terminal Stop transport;
+it also works when animation frames are suspended. Intro handoff can unmute
+the already-started Beacon in a hidden page without waiting for animation frames.
+No second audio graph, wake lock, silent loop or background worker is created.
+Stop, denied access, displacement and unmount remain terminal.
+
+This option cannot override OS suspension, audio focus, browser eviction or
+network loss. Native HLS remains preferred on Apple devices. Existing grants
+still expire after at most three minutes without a successful heartbeat; the
+mode does not extend access or bypass quota when JavaScript is suspended.
+Return checks interrupted playback and the same lease; a paused intro exposes
+Resume instead of silently replaying it. Physical screen-lock acceptance on
+Android Chrome and iPhone Safari must be reported separately from emulation.
+Media Session provides device transport controls, not a guarantee of background
+execution: https://developer.chrome.com/blog/media-session .
 
 The browser emits `listener:playback-diagnostic` for reservoir readiness, a
 fatal HLS signal, refill recovery and media-clock recovery. The fixed payload

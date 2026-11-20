@@ -250,9 +250,16 @@ describe('EarlyBird Listener player', () => {
             .toBe(Date.parse('2026-08-09T11:35:23.032Z'));
 
         const englishIntro = screen.getByLabelText('Warm-up · English');
+        fireEvent.click(screen.getByRole('checkbox', { name: 'Keep listening with the screen off' }));
+        Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+        fireEvent(document, new Event('visibilitychange'));
+        Object.defineProperty(beaconAudio, 'paused', { value: false, configurable: true });
         Object.defineProperty(englishIntro, 'ended', { value: true, configurable: true });
         fireEvent.ended(englishIntro);
         expect(analysis.setActiveSource).toHaveBeenLastCalledWith('beacon');
+        expect((beaconAudio as HTMLAudioElement).muted).toBe(false);
+        expect((beaconAudio as HTMLAudioElement).volume).toBe(0.7);
+        expect(analysis.start).toHaveBeenCalledOnce();
     });
 
     it('starts with the reactive field visible when the staging surface requests the lab default', async () => {
@@ -736,6 +743,115 @@ describe('EarlyBird Listener player', () => {
         expect(pause).toHaveBeenCalled();
         expect(screen.queryByText('Restoring connection…')).toBeNull();
         expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument();
+    });
+
+    it('keeps the same audio and lease hidden only after opt-in, and lock-screen Stop is terminal', async () => {
+        const pause = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
+        const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+        vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('');
+        const grant = {
+            leaseId: '00000000-0000-4000-8000-000000000003',
+            leaseGeneration: 1,
+            presenceSequence: 0,
+            leaseExpiresAt: '2099-08-06T12:03:00.000Z',
+            stream: {
+                manifestUrl: '/api/early-birds/stream/manifest?leaseId=background&leaseGeneration=1',
+                expiresAt: '2099-08-06T12:03:00.000Z',
+            },
+        };
+        const presenceBodies: Array<{ presence?: string; presenceSequence?: number }> = [];
+        const fetchMock = vi.fn().mockImplementation((url, init) => {
+            const body = JSON.parse(String(init?.body ?? '{}')) as {
+                presence?: string;
+                presenceSequence?: number;
+            };
+            if (String(url).includes('/heartbeat')) presenceBodies.push(body);
+            return Promise.resolve(new Response(JSON.stringify({
+                ...grant,
+                presenceSequence: body.presenceSequence ?? 0,
+            }), { status: 200 }));
+        });
+        vi.stubGlobal('fetch', fetchMock);
+        render(
+            <LocaleProvider initialLocale="en">
+                <ListenerPlayer dropIns={{ es: null, en: null }} />
+            </LocaleProvider>,
+        );
+
+        const handlers = new Map<string, (() => void) | null>();
+        Object.defineProperty(navigator, 'mediaSession', { configurable: true, value: {
+            setActionHandler: (action: string, handler: (() => void) | null) => handlers.set(action, handler),
+        } });
+        fireEvent.click(screen.getByRole('checkbox', { name: 'Keep listening with the screen off' }));
+        fireEvent.click(await screen.findByRole('button', { name: 'Listen' }));
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument());
+        expect(hlsHarness.instances).toHaveLength(1);
+
+        const pausesBefore = pause.mock.calls.length;
+        Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+        fireEvent(document, new Event('visibilitychange'));
+        await waitFor(() => expect(presenceBodies.at(-1)).toMatchObject({ presence: 'listening' }));
+        expect(hlsHarness.instances).toHaveLength(1);
+        expect(hlsHarness.instances[0].destroy).not.toHaveBeenCalled();
+        expect(pause.mock.calls.length).toBe(pausesBefore);
+        expect(play).toHaveBeenCalledTimes(1);
+
+        // Stop must complete without requestAnimationFrame in a hidden page.
+        act(() => handlers.get('stop')?.());
+        await waitFor(() => expect(presenceBodies.at(-1)).toMatchObject({ presence: 'idle' }));
+        expect(pause.mock.calls.length).toBeGreaterThan(pausesBefore);
+        Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+        fireEvent(document, new Event('visibilitychange'));
+        expect(play).toHaveBeenCalledTimes(1);
+        expect(fetchMock.mock.calls.filter(([url]) => url === '/api/early-birds/stream/lease')).toHaveLength(1);
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Listen' })).toBeEnabled());
+        // Also finish a Stop whose visible fade loses animation frames at lock.
+        fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument());
+        const live = screen.getByLabelText('Beacon');
+        Object.defineProperty(live, 'paused', { value: false, configurable: true });
+        (live as HTMLAudioElement).volume = 0.7;
+        vi.spyOn(window, 'requestAnimationFrame').mockImplementation(() => 123);
+        const pausesBeforeFade = pause.mock.calls.length;
+        fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+        Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+        fireEvent(document, new Event('visibilitychange'));
+        expect(pause.mock.calls.length).toBeGreaterThan(pausesBeforeFade);
+        cleanup();
+        expect(handlers.get('stop')).toBeNull();
+        delete (navigator as unknown as { mediaSession?: unknown }).mediaSession;
+    });
+
+    it('silences the audible intro when its background lease is displaced', async () => {
+        const pause = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
+        const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+        vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('');
+        let displaced = false;
+        vi.stubGlobal('fetch', vi.fn().mockImplementation((_url, init) => {
+            const body = JSON.parse(String(init?.body ?? '{}'));
+            if (displaced) return Promise.resolve(new Response(JSON.stringify({ reason: 'displaced' }), { status: 410 }));
+            return Promise.resolve(new Response(JSON.stringify({
+                leaseId: '00000000-0000-4000-8000-000000000003',
+                leaseGeneration: 1, presenceSequence: body.presenceSequence ?? 0,
+                leaseExpiresAt: '2099-08-06T12:03:00.000Z',
+                stream: { manifestUrl: '/synthetic.m3u8', expiresAt: '2099-08-06T12:03:00.000Z' },
+            }), { status: 200 }));
+        }));
+        render(<LocaleProvider initialLocale="en"><ListenerPlayer dropIns={{ es: null, en: '/intro.m4a' }} /></LocaleProvider>);
+        fireEvent.click(screen.getByRole('checkbox', { name: 'Keep listening with the screen off' }));
+        fireEvent.click(await screen.findByRole('button', { name: 'Listen' }));
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument());
+        const intro = screen.getByLabelText('Warm-up · English');
+        const callsBefore = play.mock.calls.length;
+        displaced = true;
+        Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+        fireEvent(document, new Event('visibilitychange'));
+        await waitFor(() => expect(hlsHarness.instances[0].destroy).toHaveBeenCalled());
+        await waitFor(() => expect(pause.mock.contexts).toContain(intro));
+        expect(screen.queryByRole('button', { name: 'Pause' })).toBeNull();
+        Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+        fireEvent(document, new Event('visibilitychange'));
+        expect(play.mock.calls.length).toBe(callsBefore);
     });
 
     it('does not trust Chromium native HLS claims while preserving Apple native playback', () => {
