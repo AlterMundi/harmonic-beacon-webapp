@@ -44,10 +44,6 @@ export { getOrCreateEarlyBirdDeviceId } from './listener-tab-identity';
 type DropLanguage = 'es' | 'en';
 type PlaybackMode = 'intro' | 'beacon';
 type LiveState = 'idle' | 'loading' | 'recovering' | 'playing' | 'paused' | 'error' | 'displaced';
-type BackgroundSuspension = {
-    source: 'beacon' | DropLanguage;
-    rebuildHls: boolean;
-};
 type LeasePayload = {
     leaseId: string;
     leaseGeneration: number;
@@ -390,10 +386,7 @@ function ListenerPlayerController({
     const listenerPresence = useRef<'idle' | 'listening'>('idle');
     const automaticRecovery = useRef<(initialDelayMs?: number, action?: string) => void>(() => undefined);
     const deferLiveFadeForRecovery = useRef<() => void>(() => undefined);
-    const backgroundSuspension = useRef<BackgroundSuspension | null>(null);
     const playbackLifecycleGeneration = useRef(0);
-    const [backgroundListening, setBackgroundListening] = useState(false);
-    const backgroundListeningRef = useRef(false);
     const [liveState, setLiveState] = useState<LiveState>('idle');
     const [playingDrop, setPlayingDrop] = useState<DropLanguage | null>(null);
     const [transportStopped, setTransportStopped] = useState(true);
@@ -1043,7 +1036,7 @@ function ListenerPlayerController({
     const beginLiveFade = useCallback(() => {
         if (!liveSuppressedForDrop.current) return;
         const audio = liveAudio.current;
-        if (!audio || audio.paused || (document.visibilityState !== 'visible' && !backgroundListeningRef.current)) {
+        if (!audio || audio.paused) {
             pendingLiveFade.current = true;
             return;
         }
@@ -1120,8 +1113,8 @@ function ListenerPlayerController({
     const attemptLivePlayback = useCallback(async (
         forceRefresh = false,
         verifyExistingLease = false,
-        expectedLifecycleGeneration = playbackLifecycleGeneration.current,
     ): Promise<boolean> => {
+        const expectedLifecycleGeneration = playbackLifecycleGeneration.current;
         const audio = liveAudio.current;
         if (!audio || playbackAttemptRunning.current) return false;
         playbackAttemptRunning.current = true;
@@ -1206,7 +1199,6 @@ function ListenerPlayerController({
             if (
                 expectedLifecycleGeneration !== playbackLifecycleGeneration.current
                 || !wantsLivePlayback.current
-                || (document.visibilityState !== 'visible' && !backgroundListeningRef.current)
             ) return false;
             const liveSyncPosition = hls.current?.liveSyncPosition;
             if (typeof liveSyncPosition === 'number' && Number.isFinite(liveSyncPosition)) {
@@ -1221,7 +1213,6 @@ function ListenerPlayerController({
             if (
                 expectedLifecycleGeneration !== playbackLifecycleGeneration.current
                 || !wantsLivePlayback.current
-                || (document.visibilityState !== 'visible' && !backgroundListeningRef.current)
             ) {
                 audio.pause();
                 return false;
@@ -1432,8 +1423,7 @@ function ListenerPlayerController({
             const eligible = Boolean(audio)
                 && wantsLivePlayback.current
                 && activeDrop.current === null
-                && liveStateRef.current === 'playing'
-                && (document.visibilityState === 'visible' || backgroundListeningRef.current);
+                && liveStateRef.current === 'playing';
             if (!audio || !eligible) {
                 playbackWatchdog.current.reset();
                 return;
@@ -1566,7 +1556,6 @@ function ListenerPlayerController({
         trackListener('listener.playback_stopped', { mode: activeDrop.current ? 'intro' : 'beacon' });
         lastPlaybackAction.current = 'stop';
         playbackLifecycleGeneration.current += 1;
-        backgroundSuspension.current = null;
         playbackWatchdog.current.reset();
         dropGeneration.current += 1;
         setTransportStopped(true);
@@ -1606,7 +1595,7 @@ function ListenerPlayerController({
         setTransportPaused(false);
     }, [liveState, pauseDropIns]);
 
-    const requestAudioFocus = backgroundListening && !transportStopped && !transportPaused
+    const requestAudioFocus = !transportStopped && !transportPaused
         && liveState !== 'displaced' && liveState !== 'error';
     useEffect(() => {
         if (!requestAudioFocus) return;
@@ -1626,7 +1615,7 @@ function ListenerPlayerController({
     }, [requestAudioFocus]);
 
     useEffect(() => {
-        if (!backgroundListening || !('mediaSession' in navigator)) return;
+        if (!('mediaSession' in navigator)) return;
         const session = navigator.mediaSession;
         const stop = () => stopTransport();
         try {
@@ -1698,10 +1687,24 @@ function ListenerPlayerController({
     }
 
     useEffect(() => {
-        const suspendForBackground = () => {
-            if (document.visibilityState === 'visible' || backgroundSuspension.current) return;
-            // Stop may have begun a visible fade just before lock. Hidden
-            // pages suspend animation frames: finish that terminal action now.
+        const handleVisibility = () => {
+            if (document.visibilityState === 'visible') {
+                if (!wantsLivePlayback.current) {
+                    revalidateIdlePreparedSource();
+                    return;
+                }
+                const introduction = activeDrop.current ? dropAudio[activeDrop.current].current : null;
+                if (introduction?.paused) {
+                    setTransportPaused(true);
+                    reportPresence('idle');
+                } else if (liveAudio.current?.paused || manifestExpiresAt.current <= Date.now() + 30_000) {
+                    scheduleAutomaticRecovery(0, 'background-listening-return');
+                }
+                return;
+            }
+
+            // Stop can begin a visible fade just before the browser suspends
+            // animation frames. Finish that terminal action immediately.
             if (!wantsLivePlayback.current && activeDrop.current === null) {
                 if (liveFadeFrame.current !== null) {
                     cancelLiveFade();
@@ -1711,124 +1714,19 @@ function ListenerPlayerController({
                 if (dropFadeFrame.current !== null) pauseDropIns(true);
                 return;
             }
-            if (backgroundListeningRef.current) {
-                // Rendering is disposable; the existing audio, HLS and lease are not.
-                analysisProvider.current?.pauseAnalysis();
-                if (liveFadeFrame.current !== null) {
-                    cancelLiveFade();
-                    const live = liveAudio.current;
-                    if (live && activeDrop.current === null) live.volume = volumeRef.current;
-                }
-                // Renew while the visibility event can still run. No longer grant
-                // horizon or bypass of expiry/quota is implied by this mode.
-                if (wantsLivePlayback.current) reportPresence(listenerPresence.current);
-                return;
-            }
-            const introduction = activeDrop.current;
-            if (!wantsLivePlayback.current && !introduction) return;
 
-            playbackLifecycleGeneration.current += 1;
-            const rebuildHls = hls.current !== null;
-            backgroundSuspension.current = {
-                source: introduction ?? 'beacon',
-                rebuildHls,
-            };
-            lastPlaybackAction.current = 'background-suspend';
-            playbackWatchdog.current.reset();
-            cancelRecovery(true);
-            wantsLivePlayback.current = false;
-            reportPresence('idle');
+            // Keep media and its lease running, but suspend visual analysis.
             analysisProvider.current?.pauseAnalysis();
-
-            const live = liveAudio.current;
-            live?.pause();
-            if (introduction) {
-                dropAudio[introduction].current?.pause();
+            if (liveFadeFrame.current !== null) {
                 cancelLiveFade();
-                pendingLiveFade.current = false;
-                liveSuppressedForDrop.current = true;
-                if (live) {
-                    live.muted = true;
-                    if (volumeSupported) live.volume = 0;
-                }
-            } else {
-                deferLiveFade();
+                const live = liveAudio.current;
+                if (live && activeDrop.current === null) live.volume = volumeRef.current;
             }
-            if (rebuildHls) stopHls();
-            updateLiveState('paused');
+            if (wantsLivePlayback.current) reportPresence(listenerPresence.current);
         };
 
-        const resumeAfterBackground = async () => {
-            if (document.visibilityState !== 'visible') return;
-            const suspension = backgroundSuspension.current;
-            if (!suspension) {
-                if (!wantsLivePlayback.current) revalidateIdlePreparedSource();
-                else if (backgroundListeningRef.current) {
-                    const introduction = activeDrop.current ? dropAudio[activeDrop.current].current : null;
-                    if (introduction?.paused) {
-                        setTransportPaused(true);
-                        reportPresence('idle');
-                    } else if (liveAudio.current?.paused || manifestExpiresAt.current <= Date.now() + 30_000) {
-                        scheduleAutomaticRecovery(0, 'background-listening-return');
-                    }
-                }
-                return;
-            }
-            backgroundSuspension.current = null;
-            playbackLifecycleGeneration.current += 1;
-            const lifecycleGeneration = playbackLifecycleGeneration.current;
-            lastPlaybackAction.current = 'foreground-resume';
-            wantsLivePlayback.current = true;
-            cancelRecovery(true);
-            updateLiveState('loading');
-
-            const introduction = suspension.source === 'beacon'
-                ? null
-                : dropAudio[suspension.source].current;
-            const introResume = introduction
-                ? introduction.play().then(() => true).catch(() => false)
-                : Promise.resolve(true);
-            const liveResume = attemptLivePlayback(
-                suspension.rebuildHls,
-                true,
-                lifecycleGeneration,
-            );
-            const [introPlayed, livePlayed] = await Promise.all([introResume, liveResume]);
-            if (
-                lifecycleGeneration !== playbackLifecycleGeneration.current
-                || (document.visibilityState !== 'visible' && !backgroundListeningRef.current)
-            ) return;
-
-            if (livePlayed && introPlayed) {
-                nativeSuspendObserved.current = false;
-                playbackWatchdog.current.reset();
-                setTransportPaused(false);
-                reportPresence('listening');
-                updateLiveState('playing');
-                if (!introduction) beginLiveFade();
-                else startReactiveAnalysis(`intro-${suspension.source}`);
-                return;
-            }
-
-            if (introduction && !introPlayed) {
-                setTransportPaused(true);
-                reportPresence('idle');
-                updateLiveState('paused');
-                return;
-            }
-            scheduleAutomaticRecovery(STALL_RECOVERY_DELAY_MS, 'foreground-resume-failed');
-        };
-
-        const handleVisibility = () => {
-            if (document.visibilityState === 'visible') void resumeAfterBackground();
-            else suspendForBackground();
-        };
         const recoverVisibleTransport = () => {
             if (document.visibilityState !== 'visible') return;
-            if (backgroundSuspension.current) {
-                void resumeAfterBackground();
-                return;
-            }
             if (!wantsLivePlayback.current) {
                 revalidateIdlePreparedSource();
                 return;
@@ -1889,12 +1787,9 @@ function ListenerPlayerController({
             window.removeEventListener('pageshow', recoverVisibleTransport);
         };
     }, [
-        attemptLivePlayback,
-        beginLiveFade,
         cancelLiveFade,
         cancelHlsRefill,
         cancelRecovery,
-        deferLiveFade,
         dropAudio,
         reportPresence,
         pauseDropIns,
@@ -1902,10 +1797,7 @@ function ListenerPlayerController({
         revalidateIdlePreparedSource,
         scheduleHlsRefill,
         scheduleAutomaticRecovery,
-        startReactiveAnalysis,
-        stopHls,
         updateLiveState,
-        volumeSupported,
     ]);
 
     useEffect(() => {
@@ -1970,7 +1862,6 @@ function ListenerPlayerController({
 
     useEffect(() => () => {
         playbackLifecycleGeneration.current += 1;
-        backgroundSuspension.current = null;
         wantsLivePlayback.current = false;
         reportPresence('idle');
         cancelRecovery(true);
@@ -2215,7 +2106,7 @@ function ListenerPlayerController({
                 onStalled={() => handleNativeInterruption('stalled')}
                 onSuspend={() => handleNativeInterruption('suspend')}
                 onPause={() => {
-                    if (backgroundListeningRef.current && wantsLivePlayback.current && activeDrop.current === null) {
+                    if (wantsLivePlayback.current && activeDrop.current === null) {
                         reportPresence('idle');
                         updateLiveState('paused');
                     }
@@ -2258,25 +2149,6 @@ function ListenerPlayerController({
                             {locale === 'es'
                                 ? 'La visualización se detuvo; el audio continúa sin ella.'
                                 : 'The visualization stopped; audio continues without it.'}
-                        </p>
-                    )}
-
-                    <label className="listener-intro-option">
-                        <input
-                            type="checkbox"
-                            checked={backgroundListening}
-                            onChange={(event) => {
-                                backgroundListeningRef.current = event.target.checked;
-                                setBackgroundListening(event.target.checked);
-                            }}
-                        />
-                        <span>{locale === 'es' ? 'Seguir escuchando con la pantalla apagada' : 'Keep listening with the screen off'}</span>
-                    </label>
-                    {backgroundListening && (
-                        <p className="listener-stage__hint">
-                            {locale === 'es'
-                                ? 'La escucha sigue usando tu tiempo disponible. Si el teléfono la interrumpe, volvé a esta página para continuar.'
-                                : 'Listening continues to use your available time. If your phone interrupts it, return to this page to continue.'}
                         </p>
                     )}
 
@@ -2400,7 +2272,7 @@ function ListenerPlayerController({
                                 onLoadedMetadata={() => restoreProgress(language)}
                                 onTimeUpdate={() => storeProgress(language)}
                                 onPause={() => {
-                                    if (backgroundListeningRef.current && activeDrop.current === language && !dropAudio[language].current?.ended) {
+                                    if (activeDrop.current === language && !dropAudio[language].current?.ended) {
                                         reportPresence('idle');
                                         setTransportPaused(true);
                                     }

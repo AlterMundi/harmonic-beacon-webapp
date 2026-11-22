@@ -250,7 +250,6 @@ describe('EarlyBird Listener player', () => {
             .toBe(Date.parse('2026-08-09T11:35:23.032Z'));
 
         const englishIntro = screen.getByLabelText('Warm-up · English');
-        fireEvent.click(screen.getByRole('checkbox', { name: 'Keep listening with the screen off' }));
         Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
         fireEvent(document, new Event('visibilitychange'));
         Object.defineProperty(beaconAudio, 'paused', { value: false, configurable: true });
@@ -687,65 +686,7 @@ describe('EarlyBird Listener player', () => {
         expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument();
     });
 
-    it('suspends quota and HLS in background then rejoins with the same lease in foreground', async () => {
-        const pause = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
-        const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
-        vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('');
-        const grant = {
-            leaseId: '00000000-0000-4000-8000-000000000003',
-            leaseGeneration: 1,
-            presenceSequence: 0,
-            leaseExpiresAt: '2099-08-06T12:03:00.000Z',
-            stream: {
-                manifestUrl: '/api/early-birds/stream/manifest?leaseId=background&leaseGeneration=1',
-                expiresAt: '2099-08-06T12:03:00.000Z',
-            },
-        };
-        const presenceBodies: Array<{ presence?: string; presenceSequence?: number }> = [];
-        const fetchMock = vi.fn().mockImplementation((url, init) => {
-            const body = JSON.parse(String(init?.body ?? '{}')) as {
-                presence?: string;
-                presenceSequence?: number;
-            };
-            if (String(url).includes('/heartbeat')) presenceBodies.push(body);
-            return Promise.resolve(new Response(JSON.stringify({
-                ...grant,
-                presenceSequence: body.presenceSequence ?? 0,
-            }), { status: 200 }));
-        });
-        vi.stubGlobal('fetch', fetchMock);
-        render(
-            <LocaleProvider initialLocale="en">
-                <ListenerPlayer dropIns={{ es: null, en: null }} />
-            </LocaleProvider>,
-        );
-
-        fireEvent.click(await screen.findByRole('button', { name: 'Listen' }));
-        await waitFor(() => expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument());
-        expect(hlsHarness.instances).toHaveLength(1);
-
-        Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
-        fireEvent(document, new Event('visibilitychange'));
-        await waitFor(() => expect(presenceBodies.some(({ presence }) => presence === 'idle')).toBe(true));
-        expect(hlsHarness.instances[0].destroy).toHaveBeenCalledOnce();
-        expect(screen.queryByText('Restoring connection…')).toBeNull();
-
-        Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
-        fireEvent(document, new Event('visibilitychange'));
-        await waitFor(() => expect(hlsHarness.instances).toHaveLength(2));
-        await waitFor(() => expect(presenceBodies.at(-1)).toMatchObject({ presence: 'listening' }));
-
-        expect(fetchMock.mock.calls.filter(([url]) => (
-            url === '/api/early-birds/stream/lease'
-        ))).toHaveLength(1);
-        expect(hlsHarness.instances[1].loadedSources).toEqual([grant.stream.manifestUrl]);
-        expect(play).toHaveBeenCalledTimes(2);
-        expect(pause).toHaveBeenCalled();
-        expect(screen.queryByText('Restoring connection…')).toBeNull();
-        expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument();
-    });
-
-    it('keeps the same audio and lease hidden only after opt-in, and lock-screen Stop is terminal', async () => {
+    it('keeps the same audio and lease while hidden by default, and lock-screen Stop is terminal', async () => {
         const pause = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
         const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
         vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('');
@@ -784,7 +725,7 @@ describe('EarlyBird Listener player', () => {
         Object.defineProperty(navigator, 'mediaSession', { configurable: true, value: {
             setActionHandler: (action: string, handler: (() => void) | null) => handlers.set(action, handler),
         } });
-        fireEvent.click(screen.getByRole('checkbox', { name: 'Keep listening with the screen off' }));
+        expect(screen.queryByRole('checkbox', { name: 'Keep listening with the screen off' })).toBeNull();
         expect(audioSession.type).toBe('ambient');
         fireEvent.click(await screen.findByRole('button', { name: 'Listen' }));
         await waitFor(() => expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument());
@@ -844,7 +785,6 @@ describe('EarlyBird Listener player', () => {
             }), { status: 200 }));
         }));
         render(<LocaleProvider initialLocale="en"><ListenerPlayer dropIns={{ es: null, en: '/intro.m4a' }} /></LocaleProvider>);
-        fireEvent.click(screen.getByRole('checkbox', { name: 'Keep listening with the screen off' }));
         fireEvent.click(await screen.findByRole('button', { name: 'Listen' }));
         await waitFor(() => expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument());
         const intro = screen.getByLabelText('Warm-up · English');

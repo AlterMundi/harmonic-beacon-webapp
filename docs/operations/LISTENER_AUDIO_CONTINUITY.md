@@ -82,27 +82,22 @@ they still have healthy buffered media. They do not by themselves show
 immediate recovery signal; otherwise the fifteen-second media-clock watchdog
 is the authority.
 
-By default, hiding the document pauses the introduction and Beacon, reports
-presence idle and releases HLS. Foreground return verifies the same lease and
-resumes only after playback succeeds.
-
-The explicit **Keep listening with the screen off** option changes that policy
-for the current page only. Hiding it preserves the existing media element,
-HLS instance, buffer and lease; only visualization/analysis pauses. Listening
-presence and the existing minute heartbeat continue, so background listening
-uses ordinary quota. Where Audio Session is available, the opted-in active
-player requests `playback` focus and restores the previous session type on
-Stop, pause, opt-out or unmount. The browser and mobile OS decide how competing
+Once listening starts, hiding the page or locking the screen preserves the
+existing media element, HLS instance, buffer and lease. Visualization and
+analysis pause. Listening presence and the minute heartbeat continue under
+ordinary quota. Where Audio Session is available, active playback requests
+`playback` focus and restores the previous session type on Stop, pause or
+unmount. The browser and mobile OS decide how competing
 apps and system interruptions are handled. Lock-screen Pause/Stop uses the terminal Stop transport;
 it also works when animation frames are suspended. Intro handoff can unmute
 the already-started Beacon in a hidden page without waiting for animation frames.
 No second audio graph, wake lock, silent loop or background worker is created.
 Stop, denied access, displacement and unmount remain terminal.
 
-This option cannot override OS suspension, audio focus, browser eviction or
+Web playback remains subject to OS suspension, audio focus, browser eviction or
 network loss. Native HLS remains preferred on Apple devices. Existing grants
 still expire after at most three minutes without a successful heartbeat; the
-mode does not extend access or bypass quota when JavaScript is suspended.
+same access and quota limits apply when JavaScript is suspended.
 Return checks interrupted playback and the same lease; a paused intro exposes
 Resume instead of silently replaying it. Physical screen-lock acceptance on
 Android Chrome and iPhone Safari must be reported separately from emulation.
