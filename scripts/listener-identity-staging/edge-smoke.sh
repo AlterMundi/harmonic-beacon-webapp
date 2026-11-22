@@ -4,7 +4,6 @@ set -eu
 
 deploy_file=${1:?usage: edge-smoke.sh /etc/harmonic-beacon/listener-identity-staging.deploy.env}
 listener_staging_load "$deploy_file"
-nginx -t
 
 origin=https://earlybirds-staging.harmonicbeacon.com
 curl_edge() {

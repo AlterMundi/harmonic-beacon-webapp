@@ -222,14 +222,8 @@ test('lifecycle is forward-only, provenance checked and scoped away from product
   assert.match(edge, /account-staging\\\.harmonicbeacon\\\.com/);
   assert.match(edge, /Account-on front-channel logout accepted an unsigned request/);
   assert.doesNotMatch(`${smoke}\n${edge}`, /\bnode\b/);
-  assert.match(start, /listener_staging_verify_edge_unchanged/);
   assert.match(start, /edge-smoke\.sh/);
-  assert.match(lib, /nginx-previous\.conf/);
-  assert.match(lib, /nginx-previous\.sha256/);
-  assert.match(lib, /nginx-current\.sha256/);
-  assert.match(lib, /nginx -t/);
-  assert.match(lib, /systemctl reload nginx/);
-  assert.match(rollback, /listener_staging_restore_edge/);
+  assert.doesNotMatch(`${start}\n${rollback}\n${lib}`, /reload nginx|sites-available/);
   assert.match(rollback, /listener_staging_restore_account_enabled/);
   assert.match(rollback, /listener_staging_restore_drop_ins/);
   assert.ok(rollback.indexOf('listener_staging_restore_account_enabled') < rollback.indexOf('compose up'));

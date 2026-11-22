@@ -131,7 +131,7 @@ The script starts only the dedicated database,
 creates and verifies a pre-migration custom-format backup, stops the retained
 disposable staging process, runs `prisma migrate deploy`, then starts the app
 only if migration exits zero. It verifies image and health provenance and proves
-protected production/event container IDs did not change. After local health succeeds, it verifies the existing vhost remains unchanged and exercises the public edge. The exact Account login, callback and
+protected production/event container IDs did not change. After local health succeeds, it exercises the public edge. The exact Account login, callback and
 front-channel logout routes are unlogged; unknown Account suffixes fail closed.
 
 After cutover, verify from the host and externally:
@@ -154,8 +154,7 @@ make this infrastructure smoke pass.
 
 ## Rollback
 
-Rollback verifies the pinned prior image ID, restores the backed-up staging vhost before changing the staging app
-and atomically restores the prior accepted Account enablement flag before it
+Rollback verifies the pinned prior image ID and atomically restores the prior accepted Account enablement flag before it
 recreates the previous immutable app. It publishes the running prior image as current after verification. It also restores the exact ES/EN intro
 paths observed in the previously healthy container, so enabling the mounted
 intros is independently reversible. Secrets remain in the protected app env

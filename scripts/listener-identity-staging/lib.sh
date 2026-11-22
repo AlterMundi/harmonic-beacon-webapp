@@ -3,9 +3,6 @@ set -eu
 
 listener_staging_root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 listener_staging_compose="$listener_staging_root/ops/listener-identity-staging/compose.yml"
-listener_staging_nginx_source="$listener_staging_root/ops/early-birds-preview/nginx/earlybirds-staging.harmonicbeacon.com.conf.template"
-listener_staging_nginx_target=/etc/nginx/sites-available/earlybirds-staging.harmonicbeacon.com
-listener_staging_nginx_enabled=/etc/nginx/sites-enabled/earlybirds-staging.harmonicbeacon.com
 listener_staging_intro_manifest="$listener_staging_root/ops/listener-identity-staging/intro-artifacts.sha256"
 
 listener_staging_fail() {
@@ -260,38 +257,6 @@ listener_staging_capture_previous() {
       > "$LISTENER_IDENTITY_STAGING_STATE_DIR/legacy-runtime"
     chmod 0600 "$LISTENER_IDENTITY_STAGING_STATE_DIR/legacy-runtime"
   fi
-  test -f "$listener_staging_nginx_target" || listener_staging_fail 'public staging vhost is absent'
-  test -L "$listener_staging_nginx_enabled" || listener_staging_fail 'public staging vhost is not enabled'
-  test "$(readlink -f "$listener_staging_nginx_enabled")" = "$listener_staging_nginx_target" ||
-    listener_staging_fail 'public staging vhost symlink targets an unexpected file'
-  cp --preserve=mode,ownership,timestamps "$listener_staging_nginx_target" \
-    "$LISTENER_IDENTITY_STAGING_STATE_DIR/nginx-previous.conf"
-  sha256sum "$listener_staging_nginx_target" | awk '{print $1}' \
-    > "$LISTENER_IDENTITY_STAGING_STATE_DIR/nginx-previous.sha256"
-  chmod 0600 "$LISTENER_IDENTITY_STAGING_STATE_DIR/nginx-previous.conf" \
-    "$LISTENER_IDENTITY_STAGING_STATE_DIR/nginx-previous.sha256"
-}
-
-listener_staging_restore_edge() {
-  previous="$LISTENER_IDENTITY_STAGING_STATE_DIR/nginx-previous.conf"
-  test -f "$previous" || return 0
-  expected=$(sed -n '1p' "$LISTENER_IDENTITY_STAGING_STATE_DIR/nginx-previous.sha256")
-  test "$(sha256sum "$previous" | awk '{print $1}')" = "$expected" ||
-    listener_staging_fail 'backed-up staging vhost checksum mismatch'
-  cmp -s "$previous" "$listener_staging_nginx_target" && return 0
-  install -o root -g root -m 0644 "$previous" "$listener_staging_nginx_target"
-  nginx -t
-  systemctl reload nginx
-}
-
-listener_staging_verify_edge_unchanged() {
-  # The app release preserves the existing edge. The separate brand delivery
-  # owns the static assets. Edge smoke verifies the live routing boundary.
-  cmp -s "$listener_staging_nginx_target" "$LISTENER_IDENTITY_STAGING_STATE_DIR/nginx-previous.conf" ||
-    listener_staging_fail 'staging vhost changed during cutover'
-  sha256sum "$listener_staging_nginx_target" | awk '{print $1}' \
-    > "$LISTENER_IDENTITY_STAGING_STATE_DIR/nginx-current.sha256"
-  chmod 0600 "$LISTENER_IDENTITY_STAGING_STATE_DIR/nginx-current.sha256"
 }
 
 listener_staging_assert_image_id() {

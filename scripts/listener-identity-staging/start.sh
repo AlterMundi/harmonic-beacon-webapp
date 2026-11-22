@@ -56,7 +56,6 @@ test "$(docker inspect listener-identity-staging-app --format '{{.Image}}')" = "
   listener_staging_fail 'running staging image differs from the prepared image'
 listener_staging_wait_healthy
 "$(dirname -- "$0")/health-smoke.sh" "$deploy_file"
-listener_staging_verify_edge_unchanged
 "$(dirname -- "$0")/edge-smoke.sh" "$deploy_file"
 protected_after=$(listener_staging_fingerprint_protected)
 test "$protected_before" = "$protected_after" ||

@@ -6,7 +6,6 @@ deploy_file=${1:?usage: rollback.sh /etc/harmonic-beacon/listener-identity-stagi
 listener_staging_load "$deploy_file"
 exec 9>/run/lock/listener-identity-staging.lock
 flock -n 9 || listener_staging_fail 'another Listener staging operation is active'
-listener_staging_restore_edge
 listener_staging_restore_account_enabled
 listener_staging_restore_drop_ins
 
