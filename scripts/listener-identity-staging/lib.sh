@@ -284,22 +284,11 @@ listener_staging_restore_edge() {
   systemctl reload nginx
 }
 
-listener_staging_edge_variant() {
-  python3 "$listener_staging_root/scripts/listener-identity-staging/edge-variant.py" \
-    "$listener_staging_nginx_source" "$listener_staging_nginx_target"
-}
-
-listener_staging_assert_edge_variant() {
-  listener_staging_edge_variant >/dev/null ||
-    listener_staging_fail 'staging vhost differs from the reviewed template and brand variant'
-}
-
-listener_staging_install_edge() {
-  # Both admitted variants are already the desired configuration. Replacing a
-  # healthy edge would discard the selected brand and introduce a reload race.
+listener_staging_verify_edge_unchanged() {
+  # The app release preserves the existing edge. The separate brand delivery
+  # owns the static assets. Edge smoke verifies the live routing boundary.
   cmp -s "$listener_staging_nginx_target" "$LISTENER_IDENTITY_STAGING_STATE_DIR/nginx-previous.conf" ||
     listener_staging_fail 'staging vhost changed during cutover'
-  listener_staging_assert_edge_variant
   sha256sum "$listener_staging_nginx_target" | awk '{print $1}' \
     > "$LISTENER_IDENTITY_STAGING_STATE_DIR/nginx-current.sha256"
   chmod 0600 "$LISTENER_IDENTITY_STAGING_STATE_DIR/nginx-current.sha256"

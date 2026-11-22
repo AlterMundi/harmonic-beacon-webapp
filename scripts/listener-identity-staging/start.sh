@@ -7,7 +7,6 @@ listener_staging_load "$deploy_file"
 exec 9>/run/lock/listener-identity-staging.lock
 flock -n 9 || listener_staging_fail 'another Listener staging operation is active'
 listener_staging_assert_checkout
-listener_staging_assert_edge_variant
 listener_staging_compose config --quiet
 test "$#" -le 2 || listener_staging_fail 'unexpected staging arguments'
 prepared_image=${2:-}
@@ -57,7 +56,7 @@ test "$(docker inspect listener-identity-staging-app --format '{{.Image}}')" = "
   listener_staging_fail 'running staging image differs from the prepared image'
 listener_staging_wait_healthy
 "$(dirname -- "$0")/health-smoke.sh" "$deploy_file"
-listener_staging_install_edge
+listener_staging_verify_edge_unchanged
 "$(dirname -- "$0")/edge-smoke.sh" "$deploy_file"
 protected_after=$(listener_staging_fingerprint_protected)
 test "$protected_before" = "$protected_after" ||

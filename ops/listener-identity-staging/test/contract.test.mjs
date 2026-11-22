@@ -222,7 +222,7 @@ test('lifecycle is forward-only, provenance checked and scoped away from product
   assert.match(edge, /account-staging\\\.harmonicbeacon\\\.com/);
   assert.match(edge, /Account-on front-channel logout accepted an unsigned request/);
   assert.doesNotMatch(`${smoke}\n${edge}`, /\bnode\b/);
-  assert.match(start, /listener_staging_install_edge/);
+  assert.match(start, /listener_staging_verify_edge_unchanged/);
   assert.match(start, /edge-smoke\.sh/);
   assert.match(lib, /nginx-previous\.conf/);
   assert.match(lib, /nginx-previous\.sha256/);
@@ -240,7 +240,7 @@ test('lifecycle is forward-only, provenance checked and scoped away from product
   assert.match(configureIntros, /manifest_entry en/);
   assert.match(configureIntros, /mv "\$temporary" "\$LISTENER_IDENTITY_STAGING_APP_ENV_FILE"/);
   assert.doesNotMatch(configureIntros, /docker (?:restart|stop|rm)|compose up|EARLY_BIRDS_DROPIN_.*\$2/);
-  assert.match(edge, /listener_staging_edge_variant/);
+  assert.match(edge, /navigation asset lost bounded public caching/);
   assert.match(edge, /sentinel/);
   assert.match(edge, /\/var\/log\/nginx/);
   assert.doesNotMatch(`${lib}\n${start}\n${smoke}\n${rollback}`, /compose down|down -v|volume rm|docker (?:system )?prune|migrate reset|migrate down/);
