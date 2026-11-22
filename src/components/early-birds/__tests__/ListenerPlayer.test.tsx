@@ -778,13 +778,17 @@ describe('EarlyBird Listener player', () => {
             </LocaleProvider>,
         );
 
+        const audioSession = { type: 'ambient' };
+        Object.defineProperty(navigator, 'audioSession', { configurable: true, value: audioSession });
         const handlers = new Map<string, (() => void) | null>();
         Object.defineProperty(navigator, 'mediaSession', { configurable: true, value: {
             setActionHandler: (action: string, handler: (() => void) | null) => handlers.set(action, handler),
         } });
         fireEvent.click(screen.getByRole('checkbox', { name: 'Keep listening with the screen off' }));
+        expect(audioSession.type).toBe('ambient');
         fireEvent.click(await screen.findByRole('button', { name: 'Listen' }));
         await waitFor(() => expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument());
+        expect(audioSession.type).toBe('playback');
         expect(hlsHarness.instances).toHaveLength(1);
 
         const pausesBefore = pause.mock.calls.length;
@@ -798,6 +802,7 @@ describe('EarlyBird Listener player', () => {
 
         // Stop must complete without requestAnimationFrame in a hidden page.
         act(() => handlers.get('stop')?.());
+        expect(audioSession.type).toBe('ambient');
         await waitFor(() => expect(presenceBodies.at(-1)).toMatchObject({ presence: 'idle' }));
         expect(pause.mock.calls.length).toBeGreaterThan(pausesBefore);
         Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
@@ -820,6 +825,7 @@ describe('EarlyBird Listener player', () => {
         cleanup();
         expect(handlers.get('stop')).toBeNull();
         delete (navigator as unknown as { mediaSession?: unknown }).mediaSession;
+        delete (navigator as unknown as { audioSession?: unknown }).audioSession;
     });
 
     it('silences the audible intro when its background lease is displaced', async () => {

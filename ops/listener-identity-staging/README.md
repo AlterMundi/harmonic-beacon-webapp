@@ -35,14 +35,13 @@ must not become unreadable public assets in the application image.
   `/media/artifacts` mount before acceptance. No audio is copied, transcoded or
   changed by this lifecycle.
 
-The active Nginx vhost may predate the three exact Account RP routes. The
-lifecycle therefore backs up the active staging vhost, installs the reviewed
-version from
-`ops/early-birds-preview/nginx/earlybirds-staging.harmonicbeacon.com.conf.template`,
-checks its SHA-256, runs `nginx -t`, reloads only Nginx and restores the prior
-file automatically if validation, reload or edge smoke fails. The template
-sends this hostname to loopback port `13001`; production Listener remains on
-`13000`. Account staging is prepared as confidential client
+Install the reviewed staging vhost before first cutover. The lifecycle accepts
+the exact template or its reviewed two-file brand variant and verifies the
+actual asset hashes plus the Account and private-route boundary. It preserves
+the accepted vhost through app releases, avoiding reload races and accidental
+loss of the selected brand. Restore uses the captured vhost only when its bytes
+differ. The staging hostname uses loopback port `13001`; production Listener
+remains on `13000`. Account staging is prepared as confidential client
 `hb-listener-staging`. It defaults off; a reviewed second cutover may set
 `BEACON_LISTENER_ACCOUNT_ENABLED=1` only after the staging authority, mail and
 RP secrets pass their independent gates. Production Account secrets are always
@@ -122,13 +121,18 @@ sudo scripts/listener-identity-staging/start.sh \
   /etc/harmonic-beacon/listener-identity-staging.deploy.env
 ```
 
-The start script builds one exact-SHA image, starts only the dedicated database,
+By default the start script builds one exact-SHA image. To rehearse rollback
+and forward without another build, pass the verified full `sha256:<image-id>`
+as the second argument. The tag, baked revision and schema must match before
+cutover and the running container must report the same ID. Long detached
+noninteractive commands must use stdin from `/dev/null` and a foreground
+timeout so Docker Compose cannot stop on a terminal read.
+
+The script starts only the dedicated database,
 creates and verifies a pre-migration custom-format backup, stops the retained
 disposable staging process, runs `prisma migrate deploy`, then starts the app
 only if migration exits zero. It verifies image and health provenance and proves
-protected production/event container IDs did not change. Only after the local
-app is healthy does it install the reviewed staging vhost, validate and reload
-Nginx, then exercise the public edge. The exact Account login, callback and
+protected production/event container IDs did not change. After local health succeeds, it verifies the existing reviewed vhost and exercises the public edge. The exact Account login, callback and
 front-channel logout routes are unlogged; unknown Account suffixes fail closed.
 
 After cutover, verify from the host and externally:
@@ -151,9 +155,9 @@ make this infrastructure smoke pass.
 
 ## Rollback
 
-Rollback restores the backed-up staging vhost before changing the staging app
+Rollback verifies the pinned prior image ID, restores the backed-up staging vhost before changing the staging app
 and atomically restores the prior accepted Account enablement flag before it
-recreates the previous immutable app. It also restores the exact ES/EN intro
+recreates the previous immutable app. It publishes the running prior image as current after verification. It also restores the exact ES/EN intro
 paths observed in the previously healthy container, so enabling the mounted
 intros is independently reversible. Secrets remain in the protected app env
 and are never copied into rollback state. Rollback never downgrades the

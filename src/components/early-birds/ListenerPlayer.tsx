@@ -1606,6 +1606,25 @@ function ListenerPlayerController({
         setTransportPaused(false);
     }, [liveState, pauseDropIns]);
 
+    const requestAudioFocus = backgroundListening && !transportStopped && !transportPaused
+        && liveState !== 'displaced' && liveState !== 'error';
+    useEffect(() => {
+        if (!requestAudioFocus) return;
+        const audioSession = (navigator as Navigator & { audioSession?: { type: string } }).audioSession;
+        if (!audioSession) return;
+        try {
+            const previousType = audioSession.type;
+            // Ask the device for the normal long-form playback audio focus.
+            // Browser and operating-system interruption policies still apply.
+            audioSession.type = 'playback';
+            return () => {
+                try {
+                    if (audioSession.type === 'playback') audioSession.type = previousType;
+                } catch { /* optional platform support */ }
+            };
+        } catch { /* optional platform support */ }
+    }, [requestAudioFocus]);
+
     useEffect(() => {
         if (!backgroundListening || !('mediaSession' in navigator)) return;
         const session = navigator.mediaSession;
