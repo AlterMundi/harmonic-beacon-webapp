@@ -8,7 +8,14 @@ exec 9>/run/lock/listener-identity-staging.lock
 flock -n 9 || listener_staging_fail 'another Listener staging operation is active'
 listener_staging_assert_checkout
 listener_staging_compose config --quiet
-listener_staging_compose build app
+test "$#" -le 2 || listener_staging_fail 'unexpected staging arguments'
+prepared_image=${2:-}
+image="harmonic-beacon/listener-identity-staging:$LISTENER_IDENTITY_STAGING_IMAGE_TAG"
+if test -z "$prepared_image"; then
+  listener_staging_compose build app
+  prepared_image=$(docker image inspect "$image" --format '{{.Id}}')
+fi
+listener_staging_assert_image_id "$image" "$prepared_image"
 listener_staging_verify_image
 # Mona intentionally has no host Node runtime. Validate the protected files
 # with the exact reviewed image, before any database or runtime mutation.
@@ -43,21 +50,18 @@ fi
 # Compose runs the exact-image, forward-only migration and starts the app only
 # after migration exits successfully. It never targets the production project.
 cutover_started=1
-listener_staging_compose up -d app
+listener_staging_assert_image_id "$image" "$prepared_image"
+listener_staging_compose up -d --no-build app
+test "$(docker inspect listener-identity-staging-app --format '{{.Image}}')" = "$prepared_image" ||
+  listener_staging_fail 'running staging image differs from the prepared image'
 listener_staging_wait_healthy
 "$(dirname -- "$0")/health-smoke.sh" "$deploy_file"
-listener_staging_install_edge
 "$(dirname -- "$0")/edge-smoke.sh" "$deploy_file"
 protected_after=$(listener_staging_fingerprint_protected)
 test "$protected_before" = "$protected_after" ||
   listener_staging_fail 'a protected Listener production/event container changed during staging cutover'
 
-image="harmonic-beacon/listener-identity-staging:$LISTENER_IDENTITY_STAGING_IMAGE_TAG"
-image_id=$(docker image inspect "$image" --format '{{.Id}}')
-printf '%s\n' "$image" > "$LISTENER_IDENTITY_STAGING_STATE_DIR/current-image"
-printf '%s\n' "$image_id" > "$LISTENER_IDENTITY_STAGING_STATE_DIR/current-image-id"
-chmod 0600 "$LISTENER_IDENTITY_STAGING_STATE_DIR/current-image" \
-  "$LISTENER_IDENTITY_STAGING_STATE_DIR/current-image-id"
+listener_staging_publish_current "$image" "$prepared_image"
 
 cutover_started=0
 trap - EXIT HUP INT TERM

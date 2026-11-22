@@ -183,7 +183,7 @@ test('lifecycle is forward-only, provenance checked and scoped away from product
   assert.match(lib, /listener-identity-staging-postgres/);
   assert.match(start, /listener_staging_backup/);
   assert.ok(start.indexOf('listener_staging_backup') < start.indexOf('docker stop listener-ui-dev'));
-  assert.match(start, /up -d app/);
+  assert.match(start, /up -d --no-build app/);
   assert.match(start, /protected_before=.*listener_staging_fingerprint_protected/);
   assert.match(start, /test "\$protected_before" = "\$protected_after"/);
   assert.match(lib, /image provenance does not match its immutable tag/);
@@ -222,14 +222,8 @@ test('lifecycle is forward-only, provenance checked and scoped away from product
   assert.match(edge, /account-staging\\\.harmonicbeacon\\\.com/);
   assert.match(edge, /Account-on front-channel logout accepted an unsigned request/);
   assert.doesNotMatch(`${smoke}\n${edge}`, /\bnode\b/);
-  assert.match(start, /listener_staging_install_edge/);
   assert.match(start, /edge-smoke\.sh/);
-  assert.match(lib, /nginx-previous\.conf/);
-  assert.match(lib, /nginx-previous\.sha256/);
-  assert.match(lib, /nginx-current\.sha256/);
-  assert.match(lib, /nginx -t/);
-  assert.match(lib, /systemctl reload nginx/);
-  assert.match(rollback, /listener_staging_restore_edge/);
+  assert.doesNotMatch(`${start}\n${rollback}\n${lib}`, /reload nginx|sites-available/);
   assert.match(rollback, /listener_staging_restore_account_enabled/);
   assert.match(rollback, /listener_staging_restore_drop_ins/);
   assert.ok(rollback.indexOf('listener_staging_restore_account_enabled') < rollback.indexOf('compose up'));
@@ -240,7 +234,7 @@ test('lifecycle is forward-only, provenance checked and scoped away from product
   assert.match(configureIntros, /manifest_entry en/);
   assert.match(configureIntros, /mv "\$temporary" "\$LISTENER_IDENTITY_STAGING_APP_ENV_FILE"/);
   assert.doesNotMatch(configureIntros, /docker (?:restart|stop|rm)|compose up|EARLY_BIRDS_DROPIN_.*\$2/);
-  assert.match(edge, /active staging vhost is not the reviewed template/);
+  assert.match(edge, /navigation asset lost bounded public caching/);
   assert.match(edge, /sentinel/);
   assert.match(edge, /\/var\/log\/nginx/);
   assert.doesNotMatch(`${lib}\n${start}\n${smoke}\n${rollback}`, /compose down|down -v|volume rm|docker (?:system )?prune|migrate reset|migrate down/);

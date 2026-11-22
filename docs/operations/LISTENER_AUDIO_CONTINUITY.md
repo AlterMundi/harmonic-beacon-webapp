@@ -90,7 +90,10 @@ The explicit **Keep listening with the screen off** option changes that policy
 for the current page only. Hiding it preserves the existing media element,
 HLS instance, buffer and lease; only visualization/analysis pauses. Listening
 presence and the existing minute heartbeat continue, so background listening
-uses ordinary quota. Lock-screen Pause/Stop uses the terminal Stop transport;
+uses ordinary quota. Where Audio Session is available, the opted-in active
+player requests `playback` focus and restores the previous session type on
+Stop, pause, opt-out or unmount. The browser and mobile OS decide how competing
+apps and system interruptions are handled. Lock-screen Pause/Stop uses the terminal Stop transport;
 it also works when animation frames are suspended. Intro handoff can unmute
 the already-started Beacon in a hidden page without waiting for animation frames.
 No second audio graph, wake lock, silent loop or background worker is created.

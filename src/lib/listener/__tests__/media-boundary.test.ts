@@ -24,7 +24,7 @@ const MEDIA_FILE_SHA256 = {
     // analysis pauses. Hidden handoff/Stop settle without animation frames.
     // Default suspension, visible fades, assets, codecs, buffer/reservoir,
     // grant expiry, quota authority and the pinned handlers below are retained.
-    'src/components/early-birds/ListenerPlayer.tsx': '1ed057e8176573252d7459c926e46abd19b6280ee39f77a420efd793180c8158',
+    'src/components/early-birds/ListenerPlayer.tsx': 'b9c873e47cd9a114966f5aa260b6c4da806f0d9730dfd557e30b75113c27031e',
     'src/lib/listener/playback-resilience.ts': '758c466216d2dfaef760665f28a35fdcefea167112fdc3ac96feb004dec7737f',
     'src/lib/listener/segment-reservoir.ts': '4bd2a96171caff974003238d665dde73aa9ea8d0cff38e66a37a62b8706a0964',
     // #474 adds server-side interval observation around the existing lease

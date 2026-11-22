@@ -3,9 +3,6 @@ set -eu
 
 listener_staging_root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 listener_staging_compose="$listener_staging_root/ops/listener-identity-staging/compose.yml"
-listener_staging_nginx_source="$listener_staging_root/ops/early-birds-preview/nginx/earlybirds-staging.harmonicbeacon.com.conf.template"
-listener_staging_nginx_target=/etc/nginx/sites-available/earlybirds-staging.harmonicbeacon.com
-listener_staging_nginx_enabled=/etc/nginx/sites-enabled/earlybirds-staging.harmonicbeacon.com
 listener_staging_intro_manifest="$listener_staging_root/ops/listener-identity-staging/intro-artifacts.sha256"
 
 listener_staging_fail() {
@@ -212,6 +209,7 @@ listener_staging_capture_previous() {
   # Rollback state describes only the runtime observed at the start of this
   # attempt. Never inherit a failed candidate from an earlier attempt.
   rm -f "$LISTENER_IDENTITY_STAGING_STATE_DIR/previous-image" \
+    "$LISTENER_IDENTITY_STAGING_STATE_DIR/previous-image-id" \
     "$LISTENER_IDENTITY_STAGING_STATE_DIR/previous-account-enabled" \
     "$LISTENER_IDENTITY_STAGING_STATE_DIR/previous-drop-ins" \
     "$LISTENER_IDENTITY_STAGING_STATE_DIR/legacy-runtime"
@@ -223,7 +221,11 @@ listener_staging_capture_previous() {
       previous=$(docker inspect listener-identity-staging-app --format '{{.Config.Image}}')
       printf '%s\n' "$previous" | grep -Eq '^harmonic-beacon/listener-identity-staging:[0-9a-f]{40}$' ||
         listener_staging_fail 'healthy staging app is not an immutable Listener image'
+      previous_id=$(docker inspect listener-identity-staging-app --format '{{.Image}}')
+      listener_staging_assert_image_id "$previous" "$previous_id"
       printf '%s\n' "$previous" > "$LISTENER_IDENTITY_STAGING_STATE_DIR/previous-image"
+      printf '%s\n' "$previous_id" > "$LISTENER_IDENTITY_STAGING_STATE_DIR/previous-image-id"
+      chmod 0600 "$LISTENER_IDENTITY_STAGING_STATE_DIR/previous-image-id"
       previous_account=$(docker inspect listener-identity-staging-app \
         --format '{{range .Config.Env}}{{println .}}{{end}}' | awk -F= '
           $1 == "BEACON_LISTENER_ACCOUNT_ENABLED" { count += 1; value = $2 }
@@ -255,52 +257,29 @@ listener_staging_capture_previous() {
       > "$LISTENER_IDENTITY_STAGING_STATE_DIR/legacy-runtime"
     chmod 0600 "$LISTENER_IDENTITY_STAGING_STATE_DIR/legacy-runtime"
   fi
-  test -f "$listener_staging_nginx_target" || listener_staging_fail 'public staging vhost is absent'
-  test -L "$listener_staging_nginx_enabled" || listener_staging_fail 'public staging vhost is not enabled'
-  test "$(readlink -f "$listener_staging_nginx_enabled")" = "$listener_staging_nginx_target" ||
-    listener_staging_fail 'public staging vhost symlink targets an unexpected file'
-  cp --preserve=mode,ownership,timestamps "$listener_staging_nginx_target" \
-    "$LISTENER_IDENTITY_STAGING_STATE_DIR/nginx-previous.conf"
-  sha256sum "$listener_staging_nginx_target" | awk '{print $1}' \
-    > "$LISTENER_IDENTITY_STAGING_STATE_DIR/nginx-previous.sha256"
-  chmod 0600 "$LISTENER_IDENTITY_STAGING_STATE_DIR/nginx-previous.conf" \
-    "$LISTENER_IDENTITY_STAGING_STATE_DIR/nginx-previous.sha256"
 }
 
-listener_staging_restore_edge() {
-  previous="$LISTENER_IDENTITY_STAGING_STATE_DIR/nginx-previous.conf"
-  test -f "$previous" || return 0
-  expected=$(sed -n '1p' "$LISTENER_IDENTITY_STAGING_STATE_DIR/nginx-previous.sha256")
-  test "$(sha256sum "$previous" | awk '{print $1}')" = "$expected" ||
-    listener_staging_fail 'backed-up staging vhost checksum mismatch'
-  install -o root -g root -m 0644 "$previous" "$listener_staging_nginx_target"
-  nginx -t
-  systemctl reload nginx
+listener_staging_assert_image_id() {
+  printf '%s\n' "$2" | grep -Eq '^sha256:[a-f0-9]{64}$' &&
+    test "$(docker image inspect "$1" --format '{{.Id}}')" = "$2" ||
+    listener_staging_fail 'image reference does not resolve to the selected immutable identity'
 }
 
-listener_staging_install_edge() {
-  test -f "$listener_staging_nginx_source" || listener_staging_fail 'reviewed staging vhost template is absent'
-  install -o root -g root -m 0644 "$listener_staging_nginx_source" "$listener_staging_nginx_target"
-  if ! nginx -t; then
-    listener_staging_restore_edge || true
-    listener_staging_fail 'reviewed staging vhost failed nginx validation'
-  fi
-  if ! systemctl reload nginx; then
-    listener_staging_restore_edge || true
-    listener_staging_fail 'nginx reload failed and the prior staging vhost was restored'
-  fi
-  expected=$(sha256sum "$listener_staging_nginx_source" | awk '{print $1}')
-  test "$(sha256sum "$listener_staging_nginx_target" | awk '{print $1}')" = "$expected" ||
-    listener_staging_fail 'installed staging vhost checksum differs from the reviewed template'
-  printf '%s\n' "$expected" > "$LISTENER_IDENTITY_STAGING_STATE_DIR/nginx-current.sha256"
-  chmod 0600 "$LISTENER_IDENTITY_STAGING_STATE_DIR/nginx-current.sha256"
+listener_staging_publish_current() {
+  for field in image image-id; do
+    value=$1
+    test "$field" != image-id || value=$2
+    temp=$(mktemp "$LISTENER_IDENTITY_STAGING_STATE_DIR/current-$field.XXXXXX")
+    printf '%s\n' "$value" > "$temp"
+    mv -f "$temp" "$LISTENER_IDENTITY_STAGING_STATE_DIR/current-$field"
+  done
 }
 
 listener_staging_backup() {
   install -d -o root -g root -m 0700 "$LISTENER_IDENTITY_STAGING_BACKUP_DIR"
   backup="$LISTENER_IDENTITY_STAGING_BACKUP_DIR/pre-${LISTENER_IDENTITY_STAGING_GIT_SHA}-$(date -u +%Y%m%dT%H%M%SZ).dump"
   listener_staging_compose exec -T postgres pg_dump \
-    --username listener_identity_staging --dbname listener_identity_staging --format custom > "$backup"
+    --username listener_identity_staging --dbname listener_identity_staging --format custom < /dev/null > "$backup"
   chmod 0600 "$backup"
   docker exec -i listener-identity-staging-postgres pg_restore --list < "$backup" >/dev/null
   printf '%s\n' "$backup" > "$LISTENER_IDENTITY_STAGING_STATE_DIR/last-backup"
@@ -313,6 +292,10 @@ listener_staging_verify_image() {
     sed -n 's/^BEACON_GIT_SHA=//p' | tail -n 1)
   test "$actual" = "$LISTENER_IDENTITY_STAGING_GIT_SHA" ||
     listener_staging_fail 'image provenance does not match its immutable tag'
+  schema=$(docker image inspect "$image" --format '{{range .Config.Env}}{{println .}}{{end}}' |
+    sed -n 's/^BEACON_DATABASE_SCHEMA_VERSION=//p')
+  test "$schema" = "$LISTENER_IDENTITY_STAGING_SCHEMA_VERSION" ||
+    listener_staging_fail 'image schema does not match the deployment coordinate'
 }
 
 listener_staging_validate_image() {

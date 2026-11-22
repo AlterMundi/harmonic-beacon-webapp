@@ -6,7 +6,6 @@ deploy_file=${1:?usage: rollback.sh /etc/harmonic-beacon/listener-identity-stagi
 listener_staging_load "$deploy_file"
 exec 9>/run/lock/listener-identity-staging.lock
 flock -n 9 || listener_staging_fail 'another Listener staging operation is active'
-listener_staging_restore_edge
 listener_staging_restore_account_enabled
 listener_staging_restore_drop_ins
 
@@ -15,15 +14,19 @@ if test -f "$previous_file"; then
   previous=$(sed -n '1p' "$previous_file")
   printf '%s\n' "$previous" | grep -Eq '^harmonic-beacon/listener-identity-staging:[0-9a-f]{40}$' ||
     listener_staging_fail 'recorded rollback image is invalid'
-  docker image inspect "$previous" >/dev/null
+  previous_id=$(cat "$LISTENER_IDENTITY_STAGING_STATE_DIR/previous-image-id")
+  listener_staging_assert_image_id "$previous" "$previous_id"
   LISTENER_IDENTITY_STAGING_IMAGE_TAG=${previous##*:}
   LISTENER_IDENTITY_STAGING_GIT_SHA=$LISTENER_IDENTITY_STAGING_IMAGE_TAG
   export LISTENER_IDENTITY_STAGING_IMAGE_TAG LISTENER_IDENTITY_STAGING_GIT_SHA
-  listener_staging_compose up -d --no-deps --force-recreate app
+  listener_staging_compose up -d --no-deps --force-recreate --no-build app
   listener_staging_wait_healthy
   health=$(curl --fail --silent --show-error --max-time 5 http://127.0.0.1:13001/api/health)
   printf '%s\n' "$health" | grep -Fq "\"gitSha\":\"$LISTENER_IDENTITY_STAGING_GIT_SHA\"" ||
     listener_staging_fail 'rollback health provenance mismatch'
+  test "$(docker inspect listener-identity-staging-app --format '{{.Image}}')" = "$previous_id" ||
+    listener_staging_fail 'rollback running image ID mismatch'
+  listener_staging_publish_current "$previous" "$previous_id"
   echo "Listener identity staging rolled back to $LISTENER_IDENTITY_STAGING_GIT_SHA; database was not downgraded."
   exit 0
 fi
