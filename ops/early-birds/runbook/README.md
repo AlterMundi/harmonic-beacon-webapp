@@ -459,6 +459,26 @@ the owning issue; this observer never cancels or edits events. The distinct
 schedule-probe failure alert remains critical, so a failed query cannot look
 like an empty agenda.
 
+### Terminal PMP release archives
+
+The PMP OPS-F writer takes `/var/lib/pmp-ops-f/deploy.lock` and keeps one OCI tar
+per submitted release. Historical terminal requests can be placed on the
+mounted data disk without migrating the writer. Take that same lock, require a
+terminal `COMMITTED` or `ROLLED_BACK` state and its receipt, and verify
+`release.json` against `state.json`. Match the archive size and SHA-256 against
+the release record. Copy only that tar to a root-private directory at
+`/mnt/beacon-data/archives/pmp-ops-f-terminal-requests/<request-id>/`. Verify
+the copied bytes and sync both filesystems. Atomically replace the original
+file with a link to that verified copy. Leave metadata, receipts and
+nonterminal requests in place. The restricted writer returns existing
+terminal receipts in place and does not need to follow the archive link.
+
+The linked tar is the retained copy. Do not apply generated-cache expiry to
+it. Before restoring it to root, confirm space, reacquire the writer lock
+and copy, verify and atomically replace only the corresponding link. A failed
+copy leaves the original untouched. Recheck the actual bytes, active service
+bindings and both filesystem capacities after each bounded archival batch.
+
 ### Host journal and obsolete source trees
 
 Install `journald/60-harmonic-beacon-retention.conf` in
